@@ -4,6 +4,9 @@
   "description": "Need For Kill - Quake 3 in 2d - WebGl game",
   "main": "src/app.js",
   "scripts": {
+    "build": "webpack --mode development",
+    "watch": "webpack --mode development --watch",
+    "dev": "webpack serve --mode development --open",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -24,7 +27,12 @@
   },
   "homepage": "http://needforkill.ru",
   "devDependencies": {
+    "@babel/core": "^7.28.6",
+    "@babel/preset-env": "^7.28.6",
     "babel-core": "^4.6.4",
-    "babel-loader": "^4.0.0"
+    "babel-loader": "^10.0.0",
+    "webpack": "^5.104.1",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.3"
   }
 }
