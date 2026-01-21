@@ -1,9 +1,11 @@
 <a href="README.ru.md">Read this README in Russian ></a>
 
 # NFK-WEB
+
 Need For Kill - Quake 3 in 2d - WebGL game
 
 ## What NFK really is?
+
 Original game called "Need For Kill" was developed by 3d[Power] in early 200x as Windows DirectX game application written in Delphi.
 The game has multiplayer and dedicated servers on the Internet. There are several game modes: duel, teamplay, captu the flag, domintaion and others. The killer features are a progamer physics model and well balanced gameplay!
 
@@ -13,28 +15,32 @@ and more videos on http://www.youtube.com/user/nfk2d and http://www.youtube.com/
 You can download original Need For Kill game from official web-site: http://needforkill.ru/load/need_for_kill_0_77/22-1-0-494
 
 ## What NFK-WEB is?
+
 This project is aimed to rewrite the original game with modern web technologies keeping the same physics model and game balance.
 
 Demo: http://nfk.pqr.su/game/
 
 ## Tehcical Details
+
 - Graphics is rendered by <a href="http://www.pixijs.com/">Pixi.js</a> (WebGL with canvas fallback)
 - JavaScript clien code is written in ECMAScript 2015 (former ES6) standart and trinspiled to ES5 using <a href="http://babeljs.io/">Babel</a>
 - Build system: <a href="http://webpack.github.io/">webpack</a>
 
 ## Roadmap
+
 1. Rewrite collision code (currentelly it looks like spagetti copied from old Delphi sources)
 2. Write detailed manual for developers how to setup environment (node, webpack, ...), may be record a screencast
 3. Implement first weapon: Railgun!
 4. Create mutiplayer and dedicated server with first gamemode: Railarena
 5. Launch official web-site with registration, playres statistic charts, matchmaking
-6. More weapons and items, new game modes: duel, ctf and teamplay 
+6. More weapons and items, new game modes: duel, ctf and teamplay
 7. Enhanced map editing functionality
 8. Bricks textures, models skins
 9. Visual effects
 10. Profit!!!
 
 ## Join Us!
+
 Project is open source under MIT lecince. Issues and pull requests are welcome!
 Especially we are looking for Multiplayer/Network stack developer (both clien and server side)
 
