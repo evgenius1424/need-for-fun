@@ -20,7 +20,31 @@ const localPlayer = new Player()
 const respawn = Map.getRandomRespawn()
 localPlayer.setXY(respawn.col * BRICK_WIDTH + 10, respawn.row * BRICK_HEIGHT - 24)
 
+Projectiles.onExplosion((x, y, type, proj) => {
+    if (type !== 'rocket') return
+
+    const dx = localPlayer.x - x
+    const dy = localPlayer.y - y
+    const distance = Math.hypot(dx, dy)
+    const radius = 90
+
+    if (distance >= radius) return
+
+    const falloff = 1 - distance / radius
+    const damage = WeaponConstants.DAMAGE[WeaponId.ROCKET] * falloff
+    if (damage > 0) {
+        localPlayer.takeDamage(damage, proj?.ownerId ?? localPlayer.id)
+    }
+
+    if (distance > 0) {
+        const knockback = 4 * falloff
+        localPlayer.velocityX += (dx / distance) * knockback
+        localPlayer.velocityY += (dy / distance) * knockback
+    }
+})
+
 let lastMouseX = Input.mouseX
+let lastMoveDir = 0
 
 const gameRoot = document.getElementById('game')
 gameRoot?.addEventListener('click', () => {
@@ -78,6 +102,17 @@ function gameLoop(timestamp) {
         if (mouseDeltaX !== 0) {
             localPlayer.updateAimAngle(mouseDeltaX * Settings.aimSensitivity)
         }
+    }
+
+    // Mirror aim when changing horizontal movement direction
+    const moveDir = Input.keyLeft ? -1 : Input.keyRight ? 1 : 0
+    if (moveDir !== 0 && moveDir !== lastMoveDir) {
+        localPlayer.aimAngle = Math.PI - localPlayer.aimAngle
+        while (localPlayer.aimAngle > Math.PI) localPlayer.aimAngle -= Math.PI * 2
+        while (localPlayer.aimAngle < -Math.PI) localPlayer.aimAngle += Math.PI * 2
+        lastMoveDir = moveDir
+    } else if (moveDir !== 0) {
+        lastMoveDir = moveDir
     }
 
     // Firing

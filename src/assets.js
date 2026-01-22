@@ -110,36 +110,41 @@ function generatePlayerTexture() {
 
     // Body (torso)
     ctx.fillStyle = baseColor
-    ctx.fillRect(4, 12, 12, 20)
+    ctx.fillRect(6, 12, 8, 20)
 
-    // Head
+    // Head (profile, facing right)
     ctx.beginPath()
-    ctx.arc(10, 6, 5, 0, Math.PI * 2)
+    ctx.arc(13, 7, 5, 0, Math.PI * 2)
     ctx.fillStyle = baseColor
     ctx.fill()
 
     // Visor/face detail
     ctx.fillStyle = darkColor
-    ctx.fillRect(6, 4, 8, 3)
+    ctx.fillRect(12, 5, 6, 3)
 
-    // Legs
+    // Backpack
+    ctx.fillStyle = darkColor
+    ctx.fillRect(4, 14, 2, 12)
+
+    // Arms (front arm extended)
     ctx.fillStyle = baseColor
-    ctx.fillRect(4, 32, 5, 16)
-    ctx.fillRect(11, 32, 5, 16)
+    ctx.fillRect(12, 16, 6, 4)
+    ctx.fillRect(7, 17, 3, 4)
 
-    // Arms
-    ctx.fillRect(0, 14, 4, 14)
-    ctx.fillRect(16, 14, 4, 14)
+    // Legs (front/back)
+    ctx.fillStyle = baseColor
+    ctx.fillRect(10, 32, 4, 14)
+    ctx.fillRect(6, 32, 3, 14)
 
     // Armor details
     ctx.fillStyle = darkColor
-    ctx.fillRect(6, 14, 8, 3) // Chest plate top
-    ctx.fillRect(5, 20, 10, 2) // Belt
+    ctx.fillRect(8, 16, 5, 2)
+    ctx.fillRect(7, 22, 7, 2)
 
     // Highlights
     ctx.fillStyle = lightColor
     ctx.globalAlpha = 0.3
-    ctx.fillRect(5, 13, 10, 1) // Shoulder highlight
+    ctx.fillRect(8, 13, 5, 1)
     ctx.globalAlpha = 1
 
     return PIXI.Texture.from(canvas)

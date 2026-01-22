@@ -443,10 +443,10 @@ export const Render = {
         // Player sprite (world coordinates)
         if (!player.dead && playerSprite) {
             playerSprite.x = player.x
-            playerSprite.y = player.crouch ? player.y - 8 : player.y
 
-            // Scale for crouch
-            playerSprite.scale.y = player.crouch ? 0.67 : 1
+            const crouchScale = player.crouch ? 0.67 : 1
+            playerSprite.scale.y = crouchScale
+            playerSprite.y = player.y + (1 - crouchScale) * 24
 
             // Flip based on facing direction (based on aim angle)
             const facingLeft = Math.abs(player.aimAngle) > Math.PI / 2

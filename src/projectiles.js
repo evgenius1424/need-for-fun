@@ -5,7 +5,7 @@ const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
 const projectiles = []
 let nextId = 0
-let explosionCallback = null
+const explosionCallbacks = []
 
 export const Projectiles = {
     create(type, x, y, velocityX, velocityY, ownerId) {
@@ -103,13 +103,13 @@ export const Projectiles = {
             Sound.plasmaHit()
         }
 
-        if (explosionCallback) {
-            explosionCallback(proj.x, proj.y, proj.type)
+        for (const callback of explosionCallbacks) {
+            callback(proj.x, proj.y, proj.type, proj)
         }
     },
 
     onExplosion(callback) {
-        explosionCallback = callback
+        explosionCallbacks.push(callback)
     },
 
     checkPlayerCollision(player, proj) {
