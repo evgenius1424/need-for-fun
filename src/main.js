@@ -1,4 +1,4 @@
-import { Constants, Input, WeaponConstants, WeaponId } from './helpers'
+import { Constants, Input, Settings, WeaponConstants, WeaponId } from './helpers'
 import { Map } from './map'
 import { Player } from './player'
 import { Physics, Render } from './engine'
@@ -21,9 +21,16 @@ const localPlayer = new Player()
 const respawn = Map.getRandomRespawn()
 localPlayer.setXY(respawn.col * BRICK_WIDTH + 10, respawn.row * BRICK_HEIGHT - 24)
 
-// Aim rotation speed (radians per frame based on mouse movement)
-const AIM_ROTATION_SPEED = 0.05
 let lastMouseX = Input.mouseX
+
+const gameRoot = document.getElementById('game')
+gameRoot?.addEventListener('click', () => {
+    const canvas = gameRoot.querySelector('canvas')
+    if (!canvas) return
+    if (document.pointerLockElement !== canvas) {
+        canvas.requestPointerLock()
+    }
+})
 
 const PROJECTILE_DAMAGE = {
     rocket: WeaponConstants.DAMAGE[WeaponId.ROCKET],
@@ -61,10 +68,18 @@ function gameLoop(timestamp) {
     }
 
     // Aim rotation based on mouse movement (NFK style)
-    const mouseDeltaX = Input.mouseX - lastMouseX
-    lastMouseX = Input.mouseX
-    if (mouseDeltaX !== 0) {
-        localPlayer.updateAimAngle(mouseDeltaX * AIM_ROTATION_SPEED)
+    if (Input.pointerLocked) {
+        if (Input.mouseDeltaX !== 0) {
+            const cappedDelta = Math.max(-12, Math.min(12, Input.mouseDeltaX))
+            localPlayer.updateAimAngle(cappedDelta * Settings.aimSensitivity)
+            Input.mouseDeltaX = 0
+        }
+    } else {
+        const mouseDeltaX = Input.mouseX - lastMouseX
+        lastMouseX = Input.mouseX
+        if (mouseDeltaX !== 0) {
+            localPlayer.updateAimAngle(mouseDeltaX * Settings.aimSensitivity)
+        }
     }
 
     // Firing

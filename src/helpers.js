@@ -86,6 +86,29 @@ export const Utils = {
     trunc: Math.trunc,
 }
 
+const AIM_SENSITIVITY_KEY = 'aimSensitivity'
+const DEFAULT_AIM_SENSITIVITY = 0.005
+
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value))
+}
+
+export const Settings = {
+    aimSensitivity: (() => {
+        const stored = Number.parseFloat(localStorage.getItem(AIM_SENSITIVITY_KEY))
+        if (Number.isFinite(stored)) {
+            return clamp(stored, 0.005, 0.2)
+        }
+        return DEFAULT_AIM_SENSITIVITY
+    })(),
+    setAimSensitivity(value) {
+        const nextValue = clamp(value, 0.005, 0.2)
+        this.aimSensitivity = nextValue
+        localStorage.setItem(AIM_SENSITIVITY_KEY, String(nextValue))
+        return nextValue
+    },
+}
+
 export const Input = {
     keyUp: false,
     keyDown: false,
@@ -93,7 +116,9 @@ export const Input = {
     keyRight: false,
     mouseX: 0,
     mouseY: 0,
+    mouseDeltaX: 0,
     mouseDown: false,
+    pointerLocked: false,
     weaponSwitch: -1,
 }
 
@@ -134,6 +159,10 @@ document.addEventListener('keydown', (e) => handleKey(e, true))
 document.addEventListener('keyup', (e) => handleKey(e, false))
 
 document.addEventListener('mousemove', (e) => {
+    if (Input.pointerLocked) {
+        Input.mouseDeltaX += e.movementX
+        return
+    }
     Input.mouseX = e.clientX
     Input.mouseY = e.clientY
 })
@@ -147,6 +176,12 @@ document.addEventListener('mouseup', (e) => {
 })
 
 document.getElementById('game')?.addEventListener('contextmenu', (e) => e.preventDefault())
+
+document.addEventListener('pointerlockchange', () => {
+    const canvas = document.querySelector('#game canvas')
+    Input.pointerLocked = document.pointerLockElement === canvas
+    Input.mouseDeltaX = 0
+})
 
 export const Console = (() => {
     const el = document.getElementById('console')
@@ -188,6 +223,7 @@ export const Console = (() => {
                 writeText('Available commands:')
                 writeText('  help - show this message')
                 writeText('  map <name> - load map')
+                writeText('  sensitivity [value] - get/set mouse aim sensitivity')
                 writeText('  clear - clear console')
             },
             map() {
@@ -196,6 +232,19 @@ export const Console = (() => {
                 } else {
                     writeText('Usage: map <mapname>')
                 }
+            },
+            sensitivity() {
+                if (!args[0]) {
+                    writeText(`Sensitivity: ${Settings.aimSensitivity}`)
+                    return
+                }
+                const nextValue = Number.parseFloat(args[0])
+                if (!Number.isFinite(nextValue)) {
+                    writeText('Usage: sensitivity <number>')
+                    return
+                }
+                const storedValue = Settings.setAimSensitivity(nextValue)
+                writeText(`Sensitivity set to ${storedValue}`)
             },
             clear() {
                 html = ''
