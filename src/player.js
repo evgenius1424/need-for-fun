@@ -39,19 +39,19 @@ export class Player {
 
     // Weapon system
     aimAngle = 0
-    weapons = [true, true, false, false, false, true, false, false, false]
+    weapons = [true, true, false, false, true, true, false, false, false]
     ammo = [
         WeaponConstants.AMMO_START[WeaponId.GAUNTLET],
         WeaponConstants.AMMO_START[WeaponId.MACHINE],
         0,
         0,
-        0,
+        WeaponConstants.AMMO_START[WeaponId.ROCKET],
         WeaponConstants.AMMO_START[WeaponId.RAIL],
         0,
         0,
         0,
     ]
-    currentWeapon = WeaponId.RAIL
+    currentWeapon = WeaponId.ROCKET
     fireCooldown = 0
 
     // Powerups
@@ -233,19 +233,19 @@ export class Player {
         this.velocityX = 0
         this.velocityY = 0
 
-        this.weapons = [true, true, false, false, false, true, false, false, false]
+        this.weapons = [true, true, false, false, true, true, false, false, false]
         this.ammo = [
             WeaponConstants.AMMO_START[WeaponId.GAUNTLET],
             WeaponConstants.AMMO_START[WeaponId.MACHINE],
             0,
             0,
-            0,
+            WeaponConstants.AMMO_START[WeaponId.ROCKET],
             WeaponConstants.AMMO_START[WeaponId.RAIL],
             0,
             0,
             0,
         ]
-        this.currentWeapon = WeaponId.RAIL
+        this.currentWeapon = WeaponId.ROCKET
 
         this.quadDamage = false
         this.quadTimer = 0

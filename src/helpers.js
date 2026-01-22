@@ -52,7 +52,7 @@ export const WeaponConstants = {
         [WeaponId.MACHINE]: 100,
         [WeaponId.SHOTGUN]: 10,
         [WeaponId.GRENADE]: 5,
-        [WeaponId.ROCKET]: 5,
+        [WeaponId.ROCKET]: 20,
         [WeaponId.RAIL]: 10,
         [WeaponId.PLASMA]: 30,
         [WeaponId.SHAFT]: 50,

@@ -1,5 +1,5 @@
 import Stats from 'stats.js'
-import { Constants, Input } from './helpers'
+import { Constants, Input, WeaponConstants, WeaponId } from './helpers'
 import { Map } from './map'
 import { Player } from './player'
 import { Physics, Render } from './engine'
@@ -27,6 +27,27 @@ localPlayer.setXY(respawn.col * BRICK_WIDTH + 10, respawn.row * BRICK_HEIGHT - 2
 // Aim rotation speed (radians per frame based on mouse movement)
 const AIM_ROTATION_SPEED = 0.05
 let lastMouseX = Input.mouseX
+
+const PROJECTILE_DAMAGE = {
+    rocket: WeaponConstants.DAMAGE[WeaponId.ROCKET],
+    grenade: WeaponConstants.DAMAGE[WeaponId.GRENADE],
+    plasma: WeaponConstants.DAMAGE[WeaponId.PLASMA],
+    bfg: WeaponConstants.DAMAGE[WeaponId.BFG],
+}
+
+function applyProjectileHits(player) {
+    const allProjectiles = Projectiles.getAll()
+    for (const proj of allProjectiles) {
+        if (!proj.active) continue
+        if (!Projectiles.checkPlayerCollision(player, proj)) continue
+
+        const damage = PROJECTILE_DAMAGE[proj.type]
+        if (damage) {
+            player.takeDamage(damage, proj.ownerId)
+        }
+        Projectiles.explode(proj)
+    }
+}
 
 function gameLoop(timestamp) {
     stats.begin()
@@ -68,6 +89,7 @@ function gameLoop(timestamp) {
 
     // Update projectiles
     Projectiles.update()
+    applyProjectileHits(localPlayer)
 
     // Render
     Render.renderGame(localPlayer)

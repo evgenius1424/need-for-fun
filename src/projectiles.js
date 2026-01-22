@@ -114,6 +114,7 @@ export const Projectiles = {
 
     checkPlayerCollision(player, proj) {
         if (!proj.active) return false
+        if (proj.ownerId === player.id && proj.age < 8) return false
 
         const dx = player.x - proj.x
         const dy = player.y - proj.y

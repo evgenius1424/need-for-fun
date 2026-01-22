@@ -85,10 +85,18 @@ function fireGrenade(player) {
     const angle = player.aimAngle
     const speed = WeaponConstants.PROJECTILE_SPEED[WeaponId.GRENADE]
 
+    const spawnOffset = 14
     const velocityX = Math.cos(angle) * speed
     const velocityY = Math.sin(angle) * speed - 2
 
-    Projectiles.create('grenade', player.x, player.y, velocityX, velocityY, player.id)
+    Projectiles.create(
+        'grenade',
+        player.x + Math.cos(angle) * spawnOffset,
+        player.y + Math.sin(angle) * spawnOffset,
+        velocityX,
+        velocityY,
+        player.id
+    )
     return { type: 'projectile', projectileType: 'grenade' }
 }
 
@@ -97,10 +105,18 @@ function fireRocket(player) {
     const angle = player.aimAngle
     const speed = WeaponConstants.PROJECTILE_SPEED[WeaponId.ROCKET]
 
+    const spawnOffset = 18
     const velocityX = Math.cos(angle) * speed
     const velocityY = Math.sin(angle) * speed
 
-    Projectiles.create('rocket', player.x, player.y, velocityX, velocityY, player.id)
+    Projectiles.create(
+        'rocket',
+        player.x + Math.cos(angle) * spawnOffset,
+        player.y + Math.sin(angle) * spawnOffset,
+        velocityX,
+        velocityY,
+        player.id
+    )
     return { type: 'projectile', projectileType: 'rocket' }
 }
 
@@ -121,10 +137,18 @@ function firePlasma(player) {
     const angle = player.aimAngle
     const speed = WeaponConstants.PROJECTILE_SPEED[WeaponId.PLASMA]
 
+    const spawnOffset = 12
     const velocityX = Math.cos(angle) * speed
     const velocityY = Math.sin(angle) * speed
 
-    Projectiles.create('plasma', player.x, player.y, velocityX, velocityY, player.id)
+    Projectiles.create(
+        'plasma',
+        player.x + Math.cos(angle) * spawnOffset,
+        player.y + Math.sin(angle) * spawnOffset,
+        velocityX,
+        velocityY,
+        player.id
+    )
     return { type: 'projectile', projectileType: 'plasma' }
 }
 
@@ -145,10 +169,18 @@ function fireBFG(player) {
     const angle = player.aimAngle
     const speed = WeaponConstants.PROJECTILE_SPEED[WeaponId.BFG]
 
+    const spawnOffset = 12
     const velocityX = Math.cos(angle) * speed
     const velocityY = Math.sin(angle) * speed
 
-    Projectiles.create('bfg', player.x, player.y, velocityX, velocityY, player.id)
+    Projectiles.create(
+        'bfg',
+        player.x + Math.cos(angle) * spawnOffset,
+        player.y + Math.sin(angle) * spawnOffset,
+        velocityX,
+        velocityY,
+        player.id
+    )
     return { type: 'projectile', projectileType: 'bfg' }
 }
 

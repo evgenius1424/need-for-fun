@@ -227,7 +227,7 @@ function renderProjectiles() {
         sprite.y = proj.y
 
         // Rotate based on velocity direction
-        sprite.rotation = Math.atan2(proj.vy, proj.vx)
+        sprite.rotation = Math.atan2(proj.velocityY, proj.velocityX)
 
         // Apply color tint
         sprite.tint = projectileColors[proj.type] || 0xffffff
