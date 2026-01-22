@@ -104,6 +104,14 @@ const KEY_MAP = {
     ArrowDown: 'keyDown',
     ArrowLeft: 'keyLeft',
     ArrowRight: 'keyRight',
+    w: 'keyUp',
+    s: 'keyDown',
+    a: 'keyLeft',
+    d: 'keyRight',
+    W: 'keyUp',
+    S: 'keyDown',
+    A: 'keyLeft',
+    D: 'keyRight',
 }
 
 function handleKey(e, pressed) {
