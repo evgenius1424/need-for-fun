@@ -25,8 +25,9 @@ export const Projectiles = {
     },
 
     update() {
-        const gravity = 0.1
-        const bounceDecay = 0.6
+        const gravity = 0.18
+        const bounceDecay = 0.75
+        const grenadeFuseFrames = 180
         const cols = Map.getCols()
         const rows = Map.getRows()
 
@@ -40,7 +41,9 @@ export const Projectiles = {
             proj.age++
 
             if (proj.type === 'grenade') {
-                proj.velocityY += gravity
+                const speed = Math.hypot(proj.velocityX, proj.velocityY)
+                proj.velocityY += gravity + speed * 0.02
+                proj.velocityX *= 0.995
             }
 
             let newX = proj.x + proj.velocityX
@@ -76,7 +79,7 @@ export const Projectiles = {
             proj.x = newX
             proj.y = newY
 
-            if (proj.type === 'grenade' && proj.age > 150) {
+            if (proj.type === 'grenade' && proj.age > grenadeFuseFrames) {
                 this.explode(proj)
                 continue
             }
@@ -115,6 +118,7 @@ export const Projectiles = {
     checkPlayerCollision(player, proj) {
         if (!proj.active) return false
         if (proj.ownerId === player.id && proj.age < 8) return false
+        if (proj.type === 'grenade' && proj.age < 12) return false
 
         const dx = player.x - proj.x
         const dy = player.y - proj.y
@@ -123,6 +127,9 @@ export const Projectiles = {
         let hitRadius = 20
         if (proj.type === 'rocket' || proj.type === 'grenade' || proj.type === 'bfg') {
             hitRadius = 60
+        }
+        if (proj.type === 'grenade') {
+            hitRadius = 16
         }
 
         return distance < hitRadius
