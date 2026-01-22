@@ -1,0 +1,30 @@
+[main]
+name=default
+
+;walk properties
+walkframes=35
+walkstartframe=8
+modelsizex=52
+framerefreshtime=1
+
+;die properties
+dieframes=45
+diesizey=48
+dieframerefreshtime=1
+
+;crouch properties
+crouchsizex=65
+crouchframes=30
+crouchsizey=36
+crouchrefreshtime=1
+crouchstartframe=2
+
+;bitmaps
+crouchbmp=cd.bmp
+walkbmp=wd.bmp
+diebmp=died.bmp
+walkpowerbmp=wp.bmp
+crouchpowerupbmp=cp.bmp
+
+;version. should be 2.
+version=2

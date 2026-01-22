@@ -1,0 +1,30 @@
+[main]
+name=blue
+
+;walk properties
+walkframes=16
+walkstartframe=8
+modelsizex=38
+framerefreshtime=2
+
+;die properties
+dieframes=17
+diesizey=48
+dieframerefreshtime=2
+
+;crouch properties
+crouchsizex=38
+crouchframes=14
+crouchsizey=38
+crouchrefreshtime=2
+crouchstartframe=1
+
+;bitmaps
+crouchbmp=ucb.tga
+walkbmp=uwb.tga
+diebmp=udb.tga
+walkpowerbmp=uwp.bmp
+crouchpowerupbmp=ucp.bmp
+
+;version. should be 2.
+version=2

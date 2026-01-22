@@ -1,0 +1,10 @@
+// Best Xaero
+// Created using 3ds max
+
+Model: Xaero
+Skins: red, blue, default, green, white
+Author: Needle (mailto: eagla [at] yandex.ru)
+Url: www.3dpower.org
+This model is for nfk060 or higher
+
+This model replaces previous xaero model.

@@ -1,0 +1,12 @@
+//===========================================================
+//========= the new generation of NFK modelz ================ 
+//========== high animated & detailed = (HA&D model) ======== 
+//===========================================================
+// Model: Master Shief
+// Skins: default, blue, red.
+// From: Halo
+// Author: asSASsin
+// Graphics makeup: 3d[Power]
+// Url: http://www.3dpower.org
+// This model is for nfkbeta035 or higher.
+//================================================

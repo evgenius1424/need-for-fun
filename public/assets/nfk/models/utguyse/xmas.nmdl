@@ -1,0 +1,30 @@
+[main]
+name=xmas
+
+;walk properties
+walkframes=16
+walkstartframe=1
+modelsizex=38
+framerefreshtime=2
+
+;die properties
+dieframes=17
+diesizey=48
+dieframerefreshtime=2
+
+;crouch properties
+crouchsizex=38
+crouchframes=14
+crouchsizey=38
+crouchrefreshtime=2
+crouchstartframe=1
+
+;bitmaps
+crouchbmp=ucs.tga
+walkbmp=uws.tga
+diebmp=uds.tga
+walkpowerbmp=uwsp.bmp
+crouchpowerupbmp=ucsp.bmp
+
+;version. should be 2.
+version=2

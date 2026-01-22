@@ -1,0 +1,30 @@
+[main]
+name=blue
+
+;walk properties
+walkframes=23
+walkstartframe=1
+modelsizex=37
+framerefreshtime=2
+
+;die properties
+dieframes=22
+diesizey=50
+dieframerefreshtime=2
+
+;crouch properties
+crouchsizex=50
+crouchframes=19
+crouchsizey=40
+crouchrefreshtime=2
+crouchstartframe=0
+
+;bitmaps
+crouchbmp=cb.tga
+walkbmp=wb.tga
+diebmp=db.tga
+walkpowerbmp=wp.tga
+crouchpowerupbmp=cp.tga
+
+;version. should be 2.
+version=2

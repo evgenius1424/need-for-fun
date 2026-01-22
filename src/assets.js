@@ -274,9 +274,27 @@ function generateExplosionTexture() {
  */
 export async function loadAssets() {
     textures.brick = generateBrickTexture()
-    textures.background = generateBackgroundTexture()
-    textures.player = generatePlayerTexture()
     textures.explosion = generateExplosionTexture()
+
+    let backgroundTexture = null
+    try {
+        backgroundTexture = await PIXI.Assets.load('/assets/nfk/backgrounds/bg_1.jpg')
+    } catch (error) {
+        backgroundTexture = generateBackgroundTexture()
+    }
+    textures.background = backgroundTexture
+
+    let playerTexture = null
+    try {
+        const sargeTexture = await PIXI.Assets.load('/assets/nfk/models/sarge/wbn.png')
+        playerTexture = new PIXI.Texture({
+            source: sargeTexture.source,
+            frame: new PIXI.Rectangle(0, 0, 48, 48),
+        })
+    } catch (error) {
+        playerTexture = generatePlayerTexture()
+    }
+    textures.player = playerTexture
 
     // Projectile textures
     textures.projectiles = {

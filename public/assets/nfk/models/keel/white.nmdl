@@ -1,0 +1,30 @@
+[main]
+name=white
+
+;walk properties
+walkframes=19
+walkstartframe=1
+modelsizex=48
+framerefreshtime=2
+
+;die properties
+dieframes=29
+diesizey=54
+dieframerefreshtime=2
+
+;crouch properties
+crouchsizex=52
+crouchframes=18
+crouchsizey=40
+crouchrefreshtime=2
+crouchstartframe=14
+
+;bitmaps
+crouchbmp=cwhite1.tga
+walkbmp=wwhite1.tga
+diebmp=dwhite1.tga
+walkpowerbmp=wp.bmp
+crouchpowerupbmp=cp.bmp
+
+;version. should be 2.
+version=2

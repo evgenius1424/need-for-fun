@@ -1,0 +1,30 @@
+[main]
+name=green
+
+;walk properties
+walkframes=23
+walkstartframe=1
+modelsizex=42
+framerefreshtime=2
+
+;die properties
+dieframes=27
+diesizey=50
+dieframerefreshtime=2
+
+;crouch properties
+crouchsizex=46
+crouchframes=15
+crouchsizey=42
+crouchrefreshtime=2
+crouchstartframe=6
+
+;bitmaps
+crouchbmp=cgreen.tga
+walkbmp=wgreen.tga
+diebmp=dgreen.tga
+walkpowerbmp=wp.bmp
+crouchpowerupbmp=cp.bmp
+
+;version. should be 2.
+version=2

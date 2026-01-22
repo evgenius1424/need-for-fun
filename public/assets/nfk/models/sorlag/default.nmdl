@@ -1,0 +1,32 @@
+[main]
+name=default
+
+;walk properties
+walkframes=17
+walkstartframe=14
+modelsizex=52
+framerefreshtime=2
+
+;die properties
+dieframes=28
+diesizey=51
+dieframerefreshtime=1
+
+;crouch properties
+crouchsizex=44
+crouchframes=22
+crouchsizey=37
+crouchstartframe=8
+crouchrefreshtime=2
+
+
+;bitmaps
+crouchbmp=crouch_d.tga
+walkbmp=walk_d.tga
+diebmp=die_d.tga
+walkpowerbmp=walkpowerD.tga
+crouchpowerupbmp=crouchpowerD.tga
+
+;version. should be 2.
+version=2
+

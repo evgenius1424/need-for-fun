@@ -1,0 +1,31 @@
+[main]
+name=blue
+
+;walk properties
+walkframes=24
+modelsizex=42
+walkstartframe=1
+framerefreshtime=2
+
+;die properties
+dieframes=28
+diesizey=42
+dieframerefreshtime=1
+
+;crouch properties
+crouchframes=12
+crouchsizex=51
+crouchsizey=36
+crouchstartframe=3
+crouchrefreshtime=2
+
+
+;bitmaps
+crouchbmp=crouch_b.tga
+walkbmp=walk_b.tga
+diebmp=die_b.tga
+walkpowerbmp=walkpower.tga
+crouchpowerupbmp=crouchpower.tga
+
+;version. should be 2.
+version=2

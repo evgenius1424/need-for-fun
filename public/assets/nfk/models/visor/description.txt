@@ -1,0 +1,19 @@
+=VisorD=
+
+For Need For Kill
+
+Model: Visor
+From: Quake3 Arena
+Skins: red, blue, default
+Author: [D.o.$]Bozon
+Site: http://www.pointsdos.jimdo.com
+Editor used: MilkShape 3D 1.8.4, Paint.NET 3.5.6, Photoshop, Fraps 3.2.2, FastStone Image Viewer 4.2, q3modelviewer
+
+This model replaces previous Visor\Visor2 model.
+
+Die or $uck
+
+=2011=
+
+
+

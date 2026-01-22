@@ -1,0 +1,18 @@
+//=========================================================== 
+//========= the newest generation of NFK modelz =============
+//====== high animated & Extreme detailed = (HA&ED model) === 
+//===================New wave model========================== 
+//                                                         // 
+// Model: UTGuy SE                                         // 
+//                                                         //
+// Skins: red, blue, default                               //
+// From: Unreal Tournament (Animated by Eagla)             //
+//                                                         //
+// Author: Eagla                                           //
+// Sounds: 3d[Power]                                       //
+//                                                         //
+// E-mail: eagla@yandex.ru                                 //
+// Url: http://www.3dpower.org                             //
+//                                                         //
+// This model is for nfkbeta059b or higer.                 //
+//===========================================================

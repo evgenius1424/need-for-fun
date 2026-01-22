@@ -1,0 +1,30 @@
+[main]
+name=dark
+
+;walk properties
+walkframes=23
+walkstartframe=1
+modelsizex=50
+framerefreshtime=2
+
+;crouch properties
+crouchframes=21
+crouchsizex=55
+crouchsizey=41
+crouchstartframe=1
+crouchrefreshtime=2
+
+;die properties
+dieframes=50
+diesizey=48
+dieframerefreshtime=1
+
+;bitmaps
+crouchbmp=crouch_dark.tga
+walkbmp=walk_dark.tga
+diebmp=die_dark.tga
+walkpowerbmp=walkpower.tga
+crouchpowerupbmp=crouchpower.tga
+
+;version. should be 2.
+version=2

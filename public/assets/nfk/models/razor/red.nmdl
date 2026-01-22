@@ -1,0 +1,31 @@
+[main]
+name=red
+
+;walk properties
+walkframes=17
+walkstartframe=1
+modelsizex=56
+framerefreshtime=2
+
+;crouch properties
+crouchframes=12
+crouchsizex=46
+crouchsizey=40
+crouchstartframe=1
+crouchrefreshtime=2
+
+;die properties
+dieframes=29
+diesizey=51
+dieframerefreshtime=1
+
+;bitmaps
+crouchbmp=crouch_r.tga
+walkbmp=walk_r.tga
+diebmp=die_r.tga
+walkpowerbmp=walkpower.tga
+crouchpowerupbmp=crouchpower.tga
+
+;version. should be 2.
+version=2
+

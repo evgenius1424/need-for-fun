@@ -8,6 +8,9 @@ const { BRICK_WIDTH, BRICK_HEIGHT, PLAYER_MAX_VELOCITY_X } = Constants
 const { trunc } = Utils
 const { isBrick } = Map
 
+const PLAYER_BASE_SCALE_X = 32 / 48
+const PLAYER_BASE_SCALE_Y = 1
+
 const app = new PIXI.Application()
 await app.init({
     width: innerWidth,
@@ -365,6 +368,7 @@ export const Render = {
         if (playerTexture) {
             playerSprite = new PIXI.Sprite(playerTexture)
             playerSprite.anchor.set(0.5, 0.5)
+            playerSprite.scale.set(PLAYER_BASE_SCALE_X, PLAYER_BASE_SCALE_Y)
             // Apply team color (blue by default)
             playerSprite.tint = 0x6f8bff
             worldContainer.addChild(playerSprite)
@@ -445,12 +449,12 @@ export const Render = {
             playerSprite.x = player.x
 
             const crouchScale = player.crouch ? 0.67 : 1
-            playerSprite.scale.y = crouchScale
-            playerSprite.y = player.y + (1 - crouchScale) * 24
+            playerSprite.scale.y = crouchScale * PLAYER_BASE_SCALE_Y
+            playerSprite.y = player.y + (1 - crouchScale) * 24 * PLAYER_BASE_SCALE_Y
 
             // Flip based on facing direction (based on aim angle)
             const facingLeft = Math.abs(player.aimAngle) > Math.PI / 2
-            playerSprite.scale.x = facingLeft ? -1 : 1
+            playerSprite.scale.x = (facingLeft ? -1 : 1) * PLAYER_BASE_SCALE_X
         }
 
         if (!player.dead && playerCenterSprite) {
