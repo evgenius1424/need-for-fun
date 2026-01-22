@@ -22,13 +22,13 @@ export const WeaponConstants = {
     DAMAGE: {
         [WeaponId.GAUNTLET]: 35,
         [WeaponId.MACHINE]: 5,
-        [WeaponId.SHOTGUN]: 8,
+        [WeaponId.SHOTGUN]: 7,
         [WeaponId.GRENADE]: 65,
-        [WeaponId.ROCKET]: 65,
+        [WeaponId.ROCKET]: 100,
         [WeaponId.RAIL]: 75,
         [WeaponId.PLASMA]: 14,
         [WeaponId.SHAFT]: 3,
-        [WeaponId.BFG]: 65,
+        [WeaponId.BFG]: 100,
     },
     FIRE_RATE: {
         [WeaponId.GAUNTLET]: 25,
