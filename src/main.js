@@ -1,4 +1,3 @@
-import Stats from 'stats.js'
 import { Constants, Input, WeaponConstants, WeaponId } from './helpers'
 import { Map } from './map'
 import { Player } from './player'
@@ -8,8 +7,6 @@ import { loadAssets } from './assets'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
-const stats = new Stats()
-document.getElementById('fps').appendChild(stats.domElement)
 
 // Load assets first
 await loadAssets()
@@ -50,7 +47,6 @@ function applyProjectileHits(player) {
 }
 
 function gameLoop(timestamp) {
-    stats.begin()
 
     // Movement input
     localPlayer.keyUp = Input.keyUp
@@ -94,7 +90,6 @@ function gameLoop(timestamp) {
     // Render
     Render.renderGame(localPlayer)
 
-    stats.end()
     requestAnimationFrame(gameLoop)
 }
 

@@ -138,18 +138,27 @@ let halfWidth = 0
 let halfHeight = 0
 let mapDx = 0
 let mapDy = 0
+let worldScale = 1
 
 function recalcFloatCamera() {
     renderer.resize(innerWidth - 20, innerHeight)
-    floatCamera = Map.getRows() > innerHeight / 16 || Map.getCols() > (innerWidth - 20) / 32
+    const mapWidth = Map.getCols() * BRICK_WIDTH
+    const mapHeight = Map.getRows() * BRICK_HEIGHT
+    floatCamera = mapHeight > innerHeight || mapWidth > innerWidth - 20
 
     if (floatCamera) {
         halfWidth = ((innerWidth - 20) / 2) | 0
         halfHeight = (innerHeight / 2) | 0
+        worldScale = 1
     } else {
-        mapDx = ((innerWidth - 20 - Map.getCols() * 32) / 2) | 0
-        mapDy = ((innerHeight - Map.getRows() * 16) / 2) | 0
+        const scaleToFitX = (innerWidth - 20) / mapWidth
+        const scaleToFitY = innerHeight / mapHeight
+        worldScale = Math.min(scaleToFitX, scaleToFitY, 1.6)
+        mapDx = ((innerWidth - 20 - mapWidth * worldScale) / 2) | 0
+        mapDy = ((innerHeight - mapHeight * worldScale) / 2) | 0
     }
+
+    worldContainer.scale.set(worldScale)
 
     // Update background tiling if exists
     if (backgroundSprite) {
