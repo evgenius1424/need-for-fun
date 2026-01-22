@@ -1,4 +1,4 @@
-import { GameConstants, Utils, WeaponConstants, WeaponId } from './helpers'
+import { GameConstants, Sound, Utils, WeaponConstants, WeaponId } from './helpers'
 import { Map } from './map'
 import { Weapons } from './weapons'
 
@@ -9,6 +9,8 @@ let nextPlayerId = 0
 
 export class Player {
     id = nextPlayerId++
+
+    model = 'sarge'
 
     x = 0
     y = 0
@@ -57,6 +59,10 @@ export class Player {
     // Powerups
     quadDamage = false
     quadTimer = 0
+
+    constructor(options = {}) {
+        if (options.model) this.model = options.model
+    }
 
     setX(newX) {
         if (newX === this.x) return
@@ -209,16 +215,20 @@ export class Player {
             actualDamage -= armorDamage
         }
 
-        this.health -= Math.floor(actualDamage)
+        const roundedDamage = Math.floor(actualDamage)
+        this.health -= roundedDamage
 
         if (this.health <= 0) {
             this.die()
+        } else if (roundedDamage > 0) {
+            Sound.pain(this.model, roundedDamage)
         }
     }
 
     die() {
         this.dead = true
         this.respawnTimer = GameConstants.RESPAWN_TIME
+        Sound.death(this.model)
     }
 
     respawn() {

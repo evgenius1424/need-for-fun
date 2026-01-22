@@ -292,6 +292,47 @@ export const MapEditor = {
     setContent() {},
 }
 
+const DEFAULT_MODEL = 'sarge'
+const modelSoundCache = new Map()
+
+function getModelSounds(model) {
+    const key = model || DEFAULT_MODEL
+    if (modelSoundCache.has(key)) return modelSoundCache.get(key)
+
+    const basePath = `/assets/nfk/models/${key}`
+    const sounds = {
+        jump: new Howl({ src: [`${basePath}/jump1.wav`] }),
+        death: [
+            new Howl({ src: [`${basePath}/death1.wav`] }),
+            new Howl({ src: [`${basePath}/death2.wav`] }),
+            new Howl({ src: [`${basePath}/death3.wav`] }),
+        ],
+        pain: {
+            25: new Howl({ src: [`${basePath}/pain25_1.wav`] }),
+            50: new Howl({ src: [`${basePath}/pain50_1.wav`] }),
+            75: new Howl({ src: [`${basePath}/pain75_1.wav`] }),
+            100: new Howl({ src: [`${basePath}/pain100_1.wav`] }),
+        },
+    }
+
+    modelSoundCache.set(key, sounds)
+    return sounds
+}
+
+function pickPainLevel(damage) {
+    if (damage >= 100) return 100
+    if (damage >= 75) return 75
+    if (damage >= 50) return 50
+    if (damage >= 25) return 25
+    return null
+}
+
+function playRandom(sounds) {
+    if (!sounds || sounds.length === 0) return
+    const pick = sounds[Math.floor(Math.random() * sounds.length)]
+    pick.play()
+}
+
 const jumpSound = new Howl({ src: ['/sounds/jump1.wav'] })
 const machinegunSound = new Howl({ src: ['/sounds/machinegun.wav'], volume: 0.5 })
 const shotgunSound = new Howl({ src: ['/sounds/shotgun.wav'], volume: 0.6 })
@@ -306,7 +347,21 @@ const grenadeExplodeSound = new Howl({ src: ['/sounds/grenade_explode.wav'], vol
 const plasmaHitSound = new Howl({ src: ['/sounds/plasma_hit.wav'], volume: 0.4 })
 
 export const Sound = {
-    jump: () => jumpSound.play(),
+    jump: (model) => {
+        if (model) {
+            getModelSounds(model).jump.play()
+            return
+        }
+        jumpSound.play()
+    },
+    death: (model) => {
+        playRandom(getModelSounds(model).death)
+    },
+    pain: (model, damage) => {
+        const level = pickPainLevel(damage)
+        if (!level) return
+        getModelSounds(model).pain[level].play()
+    },
     machinegun: () => machinegunSound.play(),
     shotgun: () => shotgunSound.play(),
     grenade: () => grenadeSound.play(),

@@ -711,11 +711,11 @@ function playerMove(player) {
                     log('dj standard', player)
                 }
                 player.crouch = false
-                Sound.jump()
+                Sound.jump(player.model)
             } else {
                 if (player.doublejumpCountdown === 0) {
                     player.doublejumpCountdown = 14
-                    Sound.jump()
+                    Sound.jump(player.model)
                 }
                 player.velocityY = -2.9 + VELOCITY_Y_SPEED_JUMP[player.speedJump]
                 log('jump', player)
