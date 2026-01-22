@@ -67,9 +67,10 @@ function generateBackgroundTexture() {
     // Add perlin-like noise pattern
     for (let y = 0; y < 64; y++) {
         for (let x = 0; x < 64; x++) {
-            const noise = Math.sin(x * 0.3) * Math.cos(y * 0.3) * 10 +
-                         Math.sin(x * 0.7 + y * 0.5) * 5 +
-                         (Math.random() - 0.5) * 15
+            const noise =
+                Math.sin(x * 0.3) * Math.cos(y * 0.3) * 10 +
+                Math.sin(x * 0.7 + y * 0.5) * 5 +
+                (Math.random() - 0.5) * 15
             const brightness = Math.max(0, Math.min(255, 26 + noise))
             ctx.fillStyle = `rgb(${brightness}, ${brightness}, ${brightness + 10})`
             ctx.fillRect(x, y, 1, 1)

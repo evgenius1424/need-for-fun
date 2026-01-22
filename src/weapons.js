@@ -95,7 +95,7 @@ function fireGrenade(player) {
         player.y + Math.sin(angle) * spawnOffset,
         velocityX,
         velocityY,
-        player.id
+        player.id,
     )
     return { type: 'projectile', projectileType: 'grenade' }
 }
@@ -115,7 +115,7 @@ function fireRocket(player) {
         player.y + Math.sin(angle) * spawnOffset,
         velocityX,
         velocityY,
-        player.id
+        player.id,
     )
     return { type: 'projectile', projectileType: 'rocket' }
 }
@@ -147,7 +147,7 @@ function firePlasma(player) {
         player.y + Math.sin(angle) * spawnOffset,
         velocityX,
         velocityY,
-        player.id
+        player.id,
     )
     return { type: 'projectile', projectileType: 'plasma' }
 }
@@ -179,7 +179,7 @@ function fireBFG(player) {
         player.y + Math.sin(angle) * spawnOffset,
         velocityX,
         velocityY,
-        player.id
+        player.id,
     )
     return { type: 'projectile', projectileType: 'bfg' }
 }

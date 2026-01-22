@@ -7,7 +7,6 @@ import { loadAssets } from './assets'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
-
 // Load assets first
 await loadAssets()
 
@@ -54,7 +53,6 @@ function applyProjectileHits(player) {
 }
 
 function gameLoop(timestamp) {
-
     // Movement input
     localPlayer.keyUp = Input.keyUp
     localPlayer.keyDown = Input.keyDown
@@ -67,7 +65,7 @@ function gameLoop(timestamp) {
         Input.weaponSwitch = -1
     }
 
-    // Aim rotation based on mouse movement (NFK style)
+    // Aim rotation based on mouse movement
     if (Input.pointerLocked) {
         if (Input.mouseDeltaX !== 0) {
             const cappedDelta = Math.max(-12, Math.min(12, Input.mouseDeltaX))

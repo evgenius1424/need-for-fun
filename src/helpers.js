@@ -68,7 +68,17 @@ export const WeaponConstants = {
         [WeaponId.SHAFT]: 50,
         [WeaponId.BFG]: 10,
     },
-    NAMES: ['Gauntlet', 'Machinegun', 'Shotgun', 'Grenade', 'Rocket', 'Railgun', 'Plasma', 'Shaft', 'BFG'],
+    NAMES: [
+        'Gauntlet',
+        'Machinegun',
+        'Shotgun',
+        'Grenade',
+        'Rocket',
+        'Railgun',
+        'Plasma',
+        'Shaft',
+        'BFG',
+    ],
 }
 
 export const GameConstants = {
@@ -190,12 +200,16 @@ export const Console = (() => {
     let isOpen = false
     let html = elContent.innerHTML
 
-    window.addEventListener('keydown', (e) => {
-        if (e.code === 'Backquote' || e.key === '`' || e.key === '~' || e.keyCode === 192) {
-            e.preventDefault()
-            toggle()
-        }
-    }, { capture: true })
+    window.addEventListener(
+        'keydown',
+        (e) => {
+            if (e.code === 'Backquote' || e.key === '`' || e.key === '~' || e.keyCode === 192) {
+                e.preventDefault()
+                toggle()
+            }
+        },
+        { capture: true },
+    )
 
     elInput.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter') return
