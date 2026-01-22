@@ -319,6 +319,26 @@ export async function loadAssets() {
         }),
     )
 
+    textures.itemIcons = {}
+    const itemIconPaths = {
+        health5: '/assets/nfk/items/health5.png',
+        health25: '/assets/nfk/items/health25.png',
+        health50: '/assets/nfk/items/health50.png',
+        health100: '/assets/nfk/items/health100.png',
+        armor50: '/assets/nfk/items/armor50.png',
+        armor100: '/assets/nfk/items/armor100.png',
+        quad: '/assets/nfk/items/quad.png',
+    }
+    await Promise.all(
+        Object.entries(itemIconPaths).map(async ([itemId, path]) => {
+            try {
+                textures.itemIcons[itemId] = await PIXI.Assets.load(path)
+            } catch (error) {
+                textures.itemIcons[itemId] = null
+            }
+        }),
+    )
+
     // Projectile textures
     textures.projectiles = {
         rocket: generateProjectileTexture('rocket'),
@@ -348,9 +368,14 @@ export function getWeaponIcon(weaponId) {
     return textures.weaponIcons?.[weaponId] || null
 }
 
+export function getItemIcon(itemId) {
+    return textures.itemIcons?.[itemId] || null
+}
+
 export const Assets = {
     loadAssets,
     getTexture,
     getProjectileTexture,
     getWeaponIcon,
+    getItemIcon,
 }

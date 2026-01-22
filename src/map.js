@@ -5,6 +5,7 @@ let cols = 0
 let bricks = []
 let tileColors = [] // Store tile colors for team coloring
 const respawns = []
+const items = []
 
 // Team colors
 const TEAM_COLORS = {
@@ -20,6 +21,21 @@ function parseMapText(mapText) {
     bricks = []
     tileColors = []
     respawns.length = 0
+    items.length = 0
+
+    const itemTokens = {
+        H: 'health100',
+        h: 'health25',
+        5: 'health5',
+        6: 'health50',
+        A: 'armor100',
+        a: 'armor50',
+        Q: 'quad',
+        M: 'weapon_machine',
+        T: 'weapon_shotgun',
+        3: 'weapon_grenade',
+        4: 'weapon_rocket',
+    }
 
     for (let row = 0; row < rows; row++) {
         const line = lines[row] ?? ''
@@ -27,6 +43,7 @@ function parseMapText(mapText) {
         tileColors[row] = []
         for (let col = 0; col < cols; col++) {
             const char = line[col] ?? ' '
+            const itemType = itemTokens[char]
             // '0' = neutral brick, '1' = red brick, '2' = blue brick
             const isBrickTile = char === '0' || char === '1' || char === '2'
             bricks[row][col] = isBrickTile
@@ -41,6 +58,15 @@ function parseMapText(mapText) {
             }
 
             if (char === 'R') respawns.push({ row, col })
+            if (itemType) {
+                items.push({
+                    type: itemType,
+                    row,
+                    col,
+                    active: true,
+                    respawnTimer: 0,
+                })
+            }
         }
     }
 }
@@ -85,5 +111,9 @@ export const Map = {
 
     getRandomRespawn() {
         return respawns[(Math.random() * respawns.length) | 0]
+    },
+
+    getItems() {
+        return items
     },
 }

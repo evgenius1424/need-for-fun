@@ -88,6 +88,7 @@ export const GameConstants = {
     ARMOR_ABSORPTION: 0.67,
     SELF_DAMAGE_REDUCTION: 0.5,
     QUAD_MULTIPLIER: 3,
+    QUAD_DURATION: 900,
     GIB_THRESHOLD: -40,
     RESPAWN_TIME: 180,
 }

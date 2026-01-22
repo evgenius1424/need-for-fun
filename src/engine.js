@@ -1,8 +1,8 @@
 import * as PIXI from 'pixi.js'
-import { Console, Constants, Sound, Utils, WeaponConstants } from './helpers'
+import { Console, Constants, Sound, Utils, WeaponConstants, WeaponId } from './helpers'
 import { Map } from './map'
 import { Projectiles } from './projectiles'
-import { getTexture, getProjectileTexture, getWeaponIcon } from './assets'
+import { getTexture, getProjectileTexture, getWeaponIcon, getItemIcon } from './assets'
 
 const { BRICK_WIDTH, BRICK_HEIGHT, PLAYER_MAX_VELOCITY_X } = Constants
 const { trunc } = Utils
@@ -12,6 +12,13 @@ const PLAYER_BASE_SCALE_X = 32 / 48
 const PLAYER_BASE_SCALE_Y = 1
 
 const WEAPON_IN_HAND_SCALE = 0.9
+const BACKGROUND_TILE_SCALE = 0.7
+const WEAPON_ITEM_MAP = {
+    weapon_machine: WeaponId.MACHINE,
+    weapon_shotgun: WeaponId.SHOTGUN,
+    weapon_grenade: WeaponId.GRENADE,
+    weapon_rocket: WeaponId.ROCKET,
+}
 
 const app = new PIXI.Application()
 await app.init({
@@ -39,6 +46,11 @@ worldContainer.addChild(tileContainer)
 const projectilesContainer = new PIXI.Container()
 worldContainer.addChild(projectilesContainer)
 const projectilePool = []
+
+// Items container
+const itemsContainer = new PIXI.Container()
+worldContainer.addChild(itemsContainer)
+const itemSprites = []
 
 // Explosions container with sprite pool
 const explosionsContainer = new PIXI.Container()
@@ -353,6 +365,7 @@ export const Render = {
                 width: innerWidth,
                 height: innerHeight,
             })
+            backgroundSprite.tileScale.set(BACKGROUND_TILE_SCALE)
             worldContainer.addChildAt(backgroundSprite, 0)
         }
 
@@ -392,6 +405,8 @@ export const Render = {
     renderMap() {
         // Clear existing tile sprites
         tileContainer.removeChildren()
+        itemsContainer.removeChildren()
+        itemSprites.length = 0
 
         const rows = Map.getRows()
         const cols = Map.getCols()
@@ -413,6 +428,25 @@ export const Render = {
                     tileContainer.addChild(sprite)
                 }
             }
+        }
+
+        const items = Map.getItems()
+        for (const item of items) {
+            const texture = item.type.startsWith('weapon_')
+                ? getWeaponIcon(WEAPON_ITEM_MAP[item.type])
+                : getItemIcon(item.type)
+            if (!texture) continue
+
+            const sprite = new PIXI.Sprite(texture)
+            const targetSize = BRICK_HEIGHT * 1.2
+            const scale = targetSize / Math.max(texture.width, texture.height)
+            sprite.anchor.set(0.5)
+            sprite.scale.set(scale)
+            sprite.x = item.col * BRICK_WIDTH + BRICK_WIDTH / 2
+            sprite.y = item.row * BRICK_HEIGHT + BRICK_HEIGHT / 2
+            sprite.visible = item.active
+            itemSprites.push({ item, sprite })
+            itemsContainer.addChild(sprite)
         }
 
         app.render()
@@ -476,6 +510,10 @@ export const Render = {
         if (!player.dead && playerCenterSprite) {
             playerCenterSprite.x = player.x
             playerCenterSprite.y = player.y
+        }
+
+        for (const entry of itemSprites) {
+            entry.sprite.visible = entry.item.active
         }
 
         renderProjectiles()
