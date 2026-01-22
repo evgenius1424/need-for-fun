@@ -285,17 +285,67 @@ export async function loadAssets() {
     }
     textures.background = backgroundTexture
 
-    let playerTexture = null
-    try {
-        const sargeTexture = await PIXI.Assets.load('/assets/nfk/models/sarge/wbn.png')
-        playerTexture = new PIXI.Texture({
-            source: sargeTexture.source,
-            frame: new PIXI.Rectangle(0, 0, 48, 48),
-        })
-    } catch (error) {
-        playerTexture = generatePlayerTexture()
+    // Load player sprite sheets for animations
+    textures.playerAnimations = {
+        walk: [],
+        crouch: [],
+        die: [],
     }
-    textures.player = playerTexture
+
+    // Animation config from blue.nmdl
+    const WALK_FRAMES = 18
+    const WALK_FRAME_WIDTH = 45
+    const WALK_FRAME_HEIGHT = 48
+    const CROUCH_FRAMES = 10
+    const CROUCH_FRAME_WIDTH = 50
+    const CROUCH_FRAME_HEIGHT = 40
+    const DIE_FRAMES = 30
+    const DIE_FRAME_WIDTH = 45
+    const DIE_FRAME_HEIGHT = 48
+
+    try {
+        // Load walk sprite sheet
+        const walkSheet = await PIXI.Assets.load('/assets/nfk/models/sarge/wb.png')
+        for (let i = 0; i < WALK_FRAMES; i++) {
+            textures.playerAnimations.walk.push(
+                new PIXI.Texture({
+                    source: walkSheet.source,
+                    frame: new PIXI.Rectangle(i * WALK_FRAME_WIDTH, 0, WALK_FRAME_WIDTH, WALK_FRAME_HEIGHT),
+                }),
+            )
+        }
+
+        // Load crouch sprite sheet
+        const crouchSheet = await PIXI.Assets.load('/assets/nfk/models/sarge/cb.png')
+        for (let i = 0; i < CROUCH_FRAMES; i++) {
+            textures.playerAnimations.crouch.push(
+                new PIXI.Texture({
+                    source: crouchSheet.source,
+                    frame: new PIXI.Rectangle(i * CROUCH_FRAME_WIDTH, 0, CROUCH_FRAME_WIDTH, CROUCH_FRAME_HEIGHT),
+                }),
+            )
+        }
+
+        // Load death sprite sheet
+        const dieSheet = await PIXI.Assets.load('/assets/nfk/models/sarge/db.png')
+        for (let i = 0; i < DIE_FRAMES; i++) {
+            textures.playerAnimations.die.push(
+                new PIXI.Texture({
+                    source: dieSheet.source,
+                    frame: new PIXI.Rectangle(i * DIE_FRAME_WIDTH, 0, DIE_FRAME_WIDTH, DIE_FRAME_HEIGHT),
+                }),
+            )
+        }
+    } catch (error) {
+        // Fallback to generated texture
+        const fallbackTexture = generatePlayerTexture()
+        textures.playerAnimations.walk = [fallbackTexture]
+        textures.playerAnimations.crouch = [fallbackTexture]
+        textures.playerAnimations.die = [fallbackTexture]
+    }
+
+    // Keep a single frame for backward compatibility
+    textures.player = textures.playerAnimations.walk[0] || generatePlayerTexture()
 
     textures.weaponIcons = {}
     const weaponIconPaths = {
@@ -372,10 +422,15 @@ export function getItemIcon(itemId) {
     return textures.itemIcons?.[itemId] || null
 }
 
+export function getPlayerAnimationFrames(animationType) {
+    return textures.playerAnimations?.[animationType] || []
+}
+
 export const Assets = {
     loadAssets,
     getTexture,
     getProjectileTexture,
     getWeaponIcon,
     getItemIcon,
+    getPlayerAnimationFrames,
 }

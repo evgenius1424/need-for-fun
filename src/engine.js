@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js'
 import { Console, Constants, Sound, Utils, WeaponConstants, WeaponId } from './helpers'
 import { Map } from './map'
 import { Projectiles } from './projectiles'
-import { getTexture, getProjectileTexture, getWeaponIcon, getItemIcon } from './assets'
+import { getTexture, getProjectileTexture, getWeaponIcon, getItemIcon, getPlayerAnimationFrames } from './assets'
 
 const { BRICK_WIDTH, BRICK_HEIGHT, PLAYER_MAX_VELOCITY_X } = Constants
 const { trunc } = Utils
@@ -69,6 +69,14 @@ worldContainer.addChild(railShotsGraphics)
 let playerSprite = null
 let playerCenterSprite = null
 let weaponSprite = null
+
+// Player animation state
+let currentAnimation = 'walk'
+let animationFrame = 0
+let animationTimer = 0
+const WALK_FRAME_REFRESH = 2
+const CROUCH_FRAME_REFRESH = 3
+const DIE_FRAME_REFRESH = 2
 
 // HUD Container (fixed position)
 const hudContainer = new PIXI.Container()
@@ -351,7 +359,7 @@ function updateHUD(player) {
     const ammo = player.ammo[player.currentWeapon]
     ammoText.text = ammo === -1 ? '∞' : ammo.toString()
 
-    if (playerSprite) playerSprite.visible = !player.dead
+    // Player sprite visibility is handled in renderGame (shows death animation)
     if (playerCenterSprite) playerCenterSprite.visible = !player.dead
 }
 
@@ -369,14 +377,12 @@ export const Render = {
             worldContainer.addChildAt(backgroundSprite, 0)
         }
 
-        // Create player sprite
-        const playerTexture = getTexture('player')
-        if (playerTexture) {
-            playerSprite = new PIXI.Sprite(playerTexture)
+        // Create player sprite with animation frames
+        const walkFrames = getPlayerAnimationFrames('walk')
+        if (walkFrames.length > 0) {
+            playerSprite = new PIXI.Sprite(walkFrames[0])
             playerSprite.anchor.set(0.5, 0.5)
             playerSprite.scale.set(PLAYER_BASE_SCALE_X, PLAYER_BASE_SCALE_Y)
-            // Apply team color (blue by default)
-            playerSprite.tint = 0x6f8bff
             worldContainer.addChild(playerSprite)
 
             // Player center marker
@@ -476,13 +482,62 @@ export const Render = {
             }
         }
 
-        // Player sprite (world coordinates)
-        if (!player.dead && playerSprite) {
-            playerSprite.x = player.x
+        // Player sprite (world coordinates) with animation
+        if (playerSprite) {
+            // Determine animation state
+            let targetAnimation = 'walk'
+            let frameRefresh = WALK_FRAME_REFRESH
 
-            const crouchScale = player.crouch ? 0.67 : 1
-            playerSprite.scale.y = crouchScale * PLAYER_BASE_SCALE_Y
-            playerSprite.y = player.y + (1 - crouchScale) * 24 * PLAYER_BASE_SCALE_Y
+            if (player.dead) {
+                targetAnimation = 'die'
+                frameRefresh = DIE_FRAME_REFRESH
+            } else if (player.crouch) {
+                targetAnimation = 'crouch'
+                frameRefresh = CROUCH_FRAME_REFRESH
+            }
+
+            // Reset animation frame when state changes
+            if (targetAnimation !== currentAnimation) {
+                currentAnimation = targetAnimation
+                animationFrame = 0
+                animationTimer = 0
+            }
+
+            const frames = getPlayerAnimationFrames(currentAnimation)
+            const isMoving = player.keyLeft !== player.keyRight || player.velocityX !== 0
+
+            // Update animation frame
+            if (frames.length > 1) {
+                animationTimer++
+                if (animationTimer >= frameRefresh) {
+                    animationTimer = 0
+                    if (currentAnimation === 'die') {
+                        // Death animation plays once
+                        if (animationFrame < frames.length - 1) {
+                            animationFrame++
+                        }
+                    } else if (isMoving || currentAnimation === 'crouch') {
+                        // Walk/crouch animation loops when moving
+                        animationFrame = (animationFrame + 1) % frames.length
+                    }
+                }
+            }
+
+            // Apply current frame texture
+            if (frames[animationFrame]) {
+                playerSprite.texture = frames[animationFrame]
+            }
+
+            playerSprite.x = player.x
+            playerSprite.visible = true
+
+            if (player.crouch) {
+                playerSprite.scale.y = PLAYER_BASE_SCALE_Y * 0.83
+                playerSprite.y = player.y + 8
+            } else {
+                playerSprite.scale.y = PLAYER_BASE_SCALE_Y
+                playerSprite.y = player.y
+            }
 
             // Flip based on facing direction (based on aim angle)
             const facingLeft = Math.abs(player.aimAngle) > Math.PI / 2
@@ -495,7 +550,7 @@ export const Render = {
                 const facingLeft = Math.abs(player.aimAngle) > Math.PI / 2
                 weaponSprite.texture = weaponIcon
                 weaponSprite.x = player.x
-                weaponSprite.y = player.y
+                weaponSprite.y = player.crouch ? player.y + 8 : player.y
                 weaponSprite.rotation = player.aimAngle
                 weaponSprite.scale.x = WEAPON_IN_HAND_SCALE
                 weaponSprite.scale.y = (facingLeft ? -1 : 1) * WEAPON_IN_HAND_SCALE
