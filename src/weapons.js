@@ -7,26 +7,76 @@ const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 function rayTrace(startX, startY, angle, maxDistance) {
     const dirX = Math.cos(angle)
     const dirY = Math.sin(angle)
-    const stepSize = 4
 
-    let currentDistance = 0
-    let x = startX
-    let y = startY
+    let mapX = Math.floor(startX / BRICK_WIDTH)
+    let mapY = Math.floor(startY / BRICK_HEIGHT)
 
-    while (currentDistance < maxDistance) {
-        x += dirX * stepSize
-        y += dirY * stepSize
-        currentDistance += stepSize
+    const deltaDistX = dirX === 0 ? 1e30 : Math.abs(1 / dirX)
+    const deltaDistY = dirY === 0 ? 1e30 : Math.abs(1 / dirY)
 
-        const colX = Math.floor(x / BRICK_WIDTH)
-        const colY = Math.floor(y / BRICK_HEIGHT)
+    let stepX = 0
+    let stepY = 0
+    let sideDistX = 0
+    let sideDistY = 0
 
-        if (Map.isBrick(colX, colY)) {
-            return { hit: true, hitWall: true, x, y, distance: currentDistance }
+    if (dirX < 0) {
+        stepX = -1
+        sideDistX = (startX / BRICK_WIDTH - mapX) * deltaDistX
+    } else {
+        stepX = 1
+        sideDistX = (mapX + 1 - startX / BRICK_WIDTH) * deltaDistX
+    }
+
+    if (dirY < 0) {
+        stepY = -1
+        sideDistY = (startY / BRICK_HEIGHT - mapY) * deltaDistY
+    } else {
+        stepY = 1
+        sideDistY = (mapY + 1 - startY / BRICK_HEIGHT) * deltaDistY
+    }
+
+    let hit = false
+    let side = 0
+
+    while (!hit) {
+        if (sideDistX < sideDistY) {
+            sideDistX += deltaDistX
+            mapX += stepX
+            side = 0
+        } else {
+            sideDistY += deltaDistY
+            mapY += stepY
+            side = 1
+        }
+
+        const checkX = (mapX + 0.5) * BRICK_WIDTH
+        const checkY = (mapY + 0.5) * BRICK_HEIGHT
+        if (Math.hypot(checkX - startX, checkY - startY) > maxDistance) {
+            break
+        }
+
+        if (Map.isBrick(mapX, mapY)) {
+            hit = true
         }
     }
 
-    return { hit: false, x, y, distance: currentDistance }
+    let hitX = startX + dirX * maxDistance
+    let hitY = startY + dirY * maxDistance
+    let distance = maxDistance
+
+    if (hit) {
+        if (side === 0) {
+            hitX = (mapX + (stepX === -1 ? 1 : 0)) * BRICK_WIDTH
+            hitY = startY + ((hitX - startX) / dirX) * dirY
+            distance = Math.abs((hitX - startX) / dirX)
+        } else {
+            hitY = (mapY + (stepY === -1 ? 1 : 0)) * BRICK_HEIGHT
+            hitX = startX + ((hitY - startY) / dirY) * dirX
+            distance = Math.abs((hitY - startY) / dirY)
+        }
+    }
+
+    return { hit, hitWall: hit, x: hitX, y: hitY, distance }
 }
 
 function fireGauntlet(player) {
