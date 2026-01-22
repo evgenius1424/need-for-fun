@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js'
+import { WeaponId } from './helpers'
 
 // Texture cache
 const textures = {}
@@ -296,6 +297,28 @@ export async function loadAssets() {
     }
     textures.player = playerTexture
 
+    textures.weaponIcons = {}
+    const weaponIconPaths = {
+        [WeaponId.GAUNTLET]: '/assets/nfk/weapons/gauntlet.png',
+        [WeaponId.MACHINE]: '/assets/nfk/weapons/machinegun.png',
+        [WeaponId.SHOTGUN]: '/assets/nfk/weapons/shotgun.png',
+        [WeaponId.GRENADE]: '/assets/nfk/weapons/grenade.png',
+        [WeaponId.ROCKET]: '/assets/nfk/weapons/rocket.png',
+        [WeaponId.RAIL]: '/assets/nfk/weapons/railgun.png',
+        [WeaponId.PLASMA]: '/assets/nfk/weapons/plasma.png',
+        [WeaponId.SHAFT]: '/assets/nfk/weapons/shaft.png',
+        [WeaponId.BFG]: '/assets/nfk/weapons/bfg.png',
+    }
+    await Promise.all(
+        Object.entries(weaponIconPaths).map(async ([weaponId, path]) => {
+            try {
+                textures.weaponIcons[weaponId] = await PIXI.Assets.load(path)
+            } catch (error) {
+                textures.weaponIcons[weaponId] = null
+            }
+        }),
+    )
+
     // Projectile textures
     textures.projectiles = {
         rocket: generateProjectileTexture('rocket'),
@@ -321,8 +344,13 @@ export function getProjectileTexture(type) {
     return textures.projectiles?.[type] || textures.projectiles?.rocket
 }
 
+export function getWeaponIcon(weaponId) {
+    return textures.weaponIcons?.[weaponId] || null
+}
+
 export const Assets = {
     loadAssets,
     getTexture,
     getProjectileTexture,
+    getWeaponIcon,
 }

@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js'
 import { Console, Constants, Sound, Utils, WeaponConstants } from './helpers'
 import { Map } from './map'
 import { Projectiles } from './projectiles'
-import { getTexture, getProjectileTexture } from './assets'
+import { getTexture, getProjectileTexture, getWeaponIcon } from './assets'
 
 const { BRICK_WIDTH, BRICK_HEIGHT, PLAYER_MAX_VELOCITY_X } = Constants
 const { trunc } = Utils
@@ -10,6 +10,8 @@ const { isBrick } = Map
 
 const PLAYER_BASE_SCALE_X = 32 / 48
 const PLAYER_BASE_SCALE_Y = 1
+
+const WEAPON_IN_HAND_SCALE = 0.9
 
 const app = new PIXI.Application()
 await app.init({
@@ -54,6 +56,7 @@ worldContainer.addChild(railShotsGraphics)
 // Player sprite (replaces localPlayerGraphics)
 let playerSprite = null
 let playerCenterSprite = null
+let weaponSprite = null
 
 // HUD Container (fixed position)
 const hudContainer = new PIXI.Container()
@@ -276,16 +279,6 @@ function renderExplosions() {
 
 function renderAimLine(player) {
     aimLineGraphics.clear()
-    if (player.dead) return
-
-    const aimLength = 28
-    const endX = player.x + Math.cos(player.aimAngle) * aimLength
-    const endY = player.y + Math.sin(player.aimAngle) * aimLength
-
-    aimLineGraphics
-        .moveTo(player.x, player.y)
-        .lineTo(endX, endY)
-        .stroke({ width: 2, color: 0xff0000, alpha: 0.7 })
 }
 
 function renderRailShots() {
@@ -378,6 +371,11 @@ export const Render = {
             playerCenterSprite.rect(-1, -1, 2, 2).fill(0x0000aa)
             worldContainer.addChild(playerCenterSprite)
         }
+
+        weaponSprite = new PIXI.Sprite()
+        weaponSprite.anchor.set(0.5, 0.5)
+        weaponSprite.scale.set(WEAPON_IN_HAND_SCALE)
+        worldContainer.addChild(weaponSprite)
     },
 
     addRailShot(shot) {
@@ -455,6 +453,24 @@ export const Render = {
             // Flip based on facing direction (based on aim angle)
             const facingLeft = Math.abs(player.aimAngle) > Math.PI / 2
             playerSprite.scale.x = (facingLeft ? -1 : 1) * PLAYER_BASE_SCALE_X
+        }
+
+        if (!player.dead && weaponSprite) {
+            const weaponIcon = getWeaponIcon(player.currentWeapon)
+            if (weaponIcon) {
+                const facingLeft = Math.abs(player.aimAngle) > Math.PI / 2
+                weaponSprite.texture = weaponIcon
+                weaponSprite.x = player.x
+                weaponSprite.y = player.y
+                weaponSprite.rotation = player.aimAngle
+                weaponSprite.scale.x = WEAPON_IN_HAND_SCALE
+                weaponSprite.scale.y = (facingLeft ? -1 : 1) * WEAPON_IN_HAND_SCALE
+                weaponSprite.visible = true
+            } else {
+                weaponSprite.visible = false
+            }
+        } else if (weaponSprite) {
+            weaponSprite.visible = false
         }
 
         if (!player.dead && playerCenterSprite) {
