@@ -1,8 +1,9 @@
-import { GameConstants, Sound, Utils, WeaponConstants, WeaponId } from './helpers'
+import { Constants, GameConstants, Sound, Utils, WeaponConstants, WeaponId } from './helpers'
 import { Map } from './map'
 import { Weapons } from './weapons'
 
 const { trunc } = Utils
+const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 const { isBrick } = Map
 
 let nextPlayerId = 0
@@ -111,40 +112,40 @@ export class Player {
     #updateCacheOnGround() {
         const { x, y } = this
         this.cacheOnGround =
-            (isBrick(trunc((x - 9) / 32), trunc((y + 25) / 16)) &&
-                !isBrick(trunc((x - 9) / 32), trunc((y + 23) / 16))) ||
-            (isBrick(trunc((x + 9) / 32), trunc((y + 25) / 16)) &&
-                !isBrick(trunc((x + 9) / 32), trunc((y + 23) / 16))) ||
-            (isBrick(trunc((x - 9) / 32), trunc((y + 24) / 16)) &&
-                !isBrick(trunc((x - 9) / 32), trunc((y + 8) / 16))) ||
-            (isBrick(trunc((x + 9) / 32), trunc((y + 24) / 16)) &&
-                !isBrick(trunc((x + 9) / 32), trunc((y + 8) / 16)))
+            (isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y + 25) / BRICK_HEIGHT)) &&
+                !isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y + 23) / BRICK_HEIGHT))) ||
+            (isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y + 25) / BRICK_HEIGHT)) &&
+                !isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y + 23) / BRICK_HEIGHT))) ||
+            (isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y + 24) / BRICK_HEIGHT)) &&
+                !isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y + 8) / BRICK_HEIGHT))) ||
+            (isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y + 24) / BRICK_HEIGHT)) &&
+                !isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y + 8) / BRICK_HEIGHT)))
     }
 
     #updateCacheBrickOnHead() {
         const { x, y } = this
         this.cacheBrickOnHead =
-            (isBrick(trunc((x - 9) / 32), trunc((y - 25) / 16)) &&
-                !isBrick(trunc((x - 9) / 32), trunc((y - 23) / 16))) ||
-            (isBrick(trunc((x + 9) / 32), trunc((y - 25) / 16)) &&
-                !isBrick(trunc((x + 9) / 32), trunc((y - 23) / 16))) ||
-            (isBrick(trunc((x - 9) / 32), trunc((y - 24) / 16)) &&
-                !isBrick(trunc((x - 9) / 32), trunc((y - 8) / 16))) ||
-            (isBrick(trunc((x + 9) / 32), trunc((y - 24) / 16)) &&
-                !isBrick(trunc((x + 9) / 32), trunc((y - 8) / 16)))
+            (isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y - 25) / BRICK_HEIGHT)) &&
+                !isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y - 23) / BRICK_HEIGHT))) ||
+            (isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y - 25) / BRICK_HEIGHT)) &&
+                !isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y - 23) / BRICK_HEIGHT))) ||
+            (isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y - 24) / BRICK_HEIGHT)) &&
+                !isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y - 8) / BRICK_HEIGHT))) ||
+            (isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y - 24) / BRICK_HEIGHT)) &&
+                !isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y - 8) / BRICK_HEIGHT)))
     }
 
     #updateCacheBrickCrouchOnHead() {
         const { x, y } = this
         this.cacheBrickCrouchOnHead =
-            (isBrick(trunc((x - 8) / 32), trunc((y - 9) / 16)) &&
-                !isBrick(trunc((x - 8) / 32), trunc((y - 7) / 16))) ||
-            (isBrick(trunc((x + 8) / 32), trunc((y - 9) / 16)) &&
-                !isBrick(trunc((x + 8) / 32), trunc((y - 7) / 16))) ||
-            isBrick(trunc((x - 8) / 32), trunc((y - 23) / 16)) ||
-            isBrick(trunc((x + 8) / 32), trunc((y - 23) / 16)) ||
-            isBrick(trunc((x - 8) / 32), trunc((y - 16) / 16)) ||
-            isBrick(trunc((x + 8) / 32), trunc((y - 16) / 16))
+            (isBrick(trunc((x - 8) / BRICK_WIDTH), trunc((y - 9) / BRICK_HEIGHT)) &&
+                !isBrick(trunc((x - 8) / BRICK_WIDTH), trunc((y - 7) / BRICK_HEIGHT))) ||
+            (isBrick(trunc((x + 8) / BRICK_WIDTH), trunc((y - 9) / BRICK_HEIGHT)) &&
+                !isBrick(trunc((x + 8) / BRICK_WIDTH), trunc((y - 7) / BRICK_HEIGHT))) ||
+            isBrick(trunc((x - 8) / BRICK_WIDTH), trunc((y - 23) / BRICK_HEIGHT)) ||
+            isBrick(trunc((x + 8) / BRICK_WIDTH), trunc((y - 23) / BRICK_HEIGHT)) ||
+            isBrick(trunc((x - 8) / BRICK_WIDTH), trunc((y - 16) / BRICK_HEIGHT)) ||
+            isBrick(trunc((x + 8) / BRICK_WIDTH), trunc((y - 16) / BRICK_HEIGHT))
     }
 
     // Combat methods
@@ -235,7 +236,7 @@ export class Player {
     respawn() {
         const spawn = Map.getRandomRespawn()
         if (spawn) {
-            this.setXY(spawn.col * 32 + 10, spawn.row * 16 - 24)
+            this.setXY(spawn.col * BRICK_WIDTH + 10, spawn.row * BRICK_HEIGHT - 24)
         }
 
         this.health = GameConstants.MAX_HEALTH

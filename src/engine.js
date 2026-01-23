@@ -14,7 +14,7 @@ const { BRICK_WIDTH, BRICK_HEIGHT, PLAYER_MAX_VELOCITY_X } = Constants
 const { trunc } = Utils
 const { isBrick } = Map
 
-const PLAYER_BASE_SCALE_X = 32 / 48
+const PLAYER_BASE_SCALE_X = BRICK_WIDTH / 48
 const PLAYER_BASE_SCALE_Y = 1
 
 const WEAPON_IN_HAND_SCALE = 0.9
@@ -428,8 +428,8 @@ export const Render = {
             for (let col = 0; col < cols; col++) {
                 if (isBrick(col, row)) {
                     const sprite = new PIXI.Sprite(brickTexture)
-                    sprite.x = col * 32
-                    sprite.y = row * 16
+                    sprite.x = col * BRICK_WIDTH
+                    sprite.y = row * BRICK_HEIGHT
 
                     // Apply team color based on tile type
                     const tileColor = Map.getTileColor ? Map.getTileColor(col, row) : null
@@ -642,25 +642,29 @@ function playerPhysics(player) {
     if (player.crouch) {
         if (player.isOnGround() && (player.isBrickCrouchOnHead() || player.velocityY > 0)) {
             player.velocityY = 0
-            player.setY(trunc(Math.round(player.y) / 16) * 16 + 8)
+            player.setY(
+                trunc(Math.round(player.y) / BRICK_HEIGHT) * BRICK_HEIGHT + BRICK_HEIGHT / 2
+            )
         } else if (player.isBrickCrouchOnHead() && player.velocityY < 0) {
             player.velocityY = 0
             player.doublejumpCountdown = 3
-            player.setY(trunc(Math.round(player.y) / 16) * 16 + 8)
+            player.setY(
+                trunc(Math.round(player.y) / BRICK_HEIGHT) * BRICK_HEIGHT + BRICK_HEIGHT / 2
+            )
         }
     }
 
     if (player.velocityX !== 0) {
-        const col = trunc(Math.round(startX + (player.velocityX < 0 ? -11 : 11)) / 32)
+        const col = trunc(Math.round(startX + (player.velocityX < 0 ? -11 : 11)) / BRICK_WIDTH)
         const checkY = player.crouch ? player.y : startY
         const headOffset = player.crouch ? 8 : 16
 
         if (
-            isBrick(col, trunc(Math.round(checkY - headOffset) / 16)) ||
-            isBrick(col, trunc(Math.round(checkY) / 16)) ||
-            isBrick(col, trunc(Math.round(checkY + 16) / 16))
+            isBrick(col, trunc(Math.round(checkY - headOffset) / BRICK_HEIGHT)) ||
+            isBrick(col, trunc(Math.round(checkY) / BRICK_HEIGHT)) ||
+            isBrick(col, trunc(Math.round(checkY + BRICK_HEIGHT) / BRICK_HEIGHT))
         ) {
-            player.setX(trunc(startX / 32) * 32 + (player.velocityX < 0 ? 9 : 22))
+            player.setX(trunc(startX / BRICK_WIDTH) * BRICK_WIDTH + (player.velocityX < 0 ? 9 : 22))
             player.velocityX = 0
             player.speedJump = 0
             if (startX !== player.x) log('wall', player)
@@ -669,7 +673,7 @@ function playerPhysics(player) {
 
     if (player.isOnGround() && (player.isBrickOnHead() || player.velocityY > 0)) {
         player.velocityY = 0
-        player.setY(trunc(Math.round(player.y) / 16) * 16 + 8)
+        player.setY(trunc(Math.round(player.y) / BRICK_HEIGHT) * BRICK_HEIGHT + BRICK_HEIGHT / 2)
     } else if (player.isBrickOnHead() && player.velocityY < 0) {
         player.velocityY = 0
         player.doublejumpCountdown = 3

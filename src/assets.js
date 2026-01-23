@@ -1,5 +1,7 @@
 import * as PIXI from 'pixi.js'
-import { WeaponId } from './helpers'
+import { Constants, WeaponId } from './helpers'
+
+const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
 // Texture cache
 const textures = {}
@@ -9,16 +11,16 @@ const textures = {}
  */
 function generateBrickTexture() {
     const canvas = document.createElement('canvas')
-    canvas.width = 32
-    canvas.height = 16
+    canvas.width = BRICK_WIDTH
+    canvas.height = BRICK_HEIGHT
     const ctx = canvas.getContext('2d')
 
     // Base color with slight variation
     ctx.fillStyle = '#888888'
-    ctx.fillRect(0, 0, 32, 16)
+    ctx.fillRect(0, 0, BRICK_WIDTH, BRICK_HEIGHT)
 
     // Add noise texture
-    const imageData = ctx.getImageData(0, 0, 32, 16)
+    const imageData = ctx.getImageData(0, 0, BRICK_WIDTH, BRICK_HEIGHT)
     const data = imageData.data
     for (let i = 0; i < data.length; i += 4) {
         const noise = (Math.random() - 0.5) * 20
@@ -30,24 +32,24 @@ function generateBrickTexture() {
 
     // Top edge highlight
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'
-    ctx.fillRect(0, 0, 32, 2)
+    ctx.fillRect(0, 0, BRICK_WIDTH, 2)
 
     // Left edge highlight
     ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'
-    ctx.fillRect(0, 0, 2, 16)
+    ctx.fillRect(0, 0, 2, BRICK_HEIGHT)
 
     // Bottom edge shadow
     ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'
-    ctx.fillRect(0, 14, 32, 2)
+    ctx.fillRect(0, BRICK_HEIGHT - 2, BRICK_WIDTH, 2)
 
     // Right edge shadow
     ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'
-    ctx.fillRect(30, 0, 2, 16)
+    ctx.fillRect(BRICK_WIDTH - 2, 0, 2, BRICK_HEIGHT)
 
     // Inner border line
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)'
     ctx.lineWidth = 1
-    ctx.strokeRect(1, 1, 30, 14)
+    ctx.strokeRect(1, 1, BRICK_WIDTH - 2, BRICK_HEIGHT - 2)
 
     return PIXI.Texture.from(canvas)
 }
