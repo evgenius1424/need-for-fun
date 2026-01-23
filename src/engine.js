@@ -14,11 +14,25 @@ const { BRICK_WIDTH, BRICK_HEIGHT, PLAYER_MAX_VELOCITY_X } = Constants
 const { trunc } = Utils
 const { isBrick } = Map
 
-const PLAYER_BASE_SCALE_X = BRICK_WIDTH / 48
-const PLAYER_BASE_SCALE_Y = 1
+const PLAYER_SCALE_X = BRICK_WIDTH / 48
+const PLAYER_SCALE_Y = 1
+const WEAPON_SCALE = 0.9
+const BG_TILE_SCALE = 0.7
+const FRAME_MS = 16
 
-const WEAPON_IN_HAND_SCALE = 0.9
-const BACKGROUND_TILE_SCALE = 0.7
+const ANIMATION = {
+    walk: { refresh: 2, loop: true },
+    crouch: { refresh: 3, loop: true },
+    die: { refresh: 2, loop: false },
+}
+
+const PROJECTILE_COLORS = {
+    rocket: 0xff6600,
+    plasma: 0x00ffff,
+    grenade: 0x666666,
+    bfg: 0x00ff00,
+}
+
 const WEAPON_ITEM_MAP = {
     weapon_machine: WeaponId.MACHINE,
     weapon_shotgun: WeaponId.SHOTGUN,
@@ -26,141 +40,49 @@ const WEAPON_ITEM_MAP = {
     weapon_rocket: WeaponId.ROCKET,
 }
 
-const app = new PIXI.Application()
-try {
-    await app.init({
-        width: innerWidth,
-        height: innerHeight,
-        background: 0x262626,
-        preference: 'webgl',
-        autoDensity: true,
-        resolution: Math.min(window.devicePixelRatio || 1, 2),
-    })
-} catch (error) {
-    Console.writeText(`renderer init failed: ${error?.message ?? error}`)
-    throw error
-}
-app.canvas.style.display = 'block'
-document.getElementById('game').appendChild(app.canvas)
+const SPEED_JUMP_Y = [0, 0, 0.4, 0.8, 1.0, 1.2, 1.4]
+const SPEED_JUMP_X = [0, 0.33, 0.8, 1.1, 1.4, 1.8, 2.2]
 
+const app = await initApp()
 const { renderer, stage } = app
+
+const world = new PIXI.Container()
+stage.addChild(world)
 stage.visible = false
 
-// World container (moves with camera)
-const worldContainer = new PIXI.Container()
-stage.addChild(worldContainer)
+let bgSprite = null
+const tiles = new PIXI.Container()
+const items = new PIXI.Container()
+const projectiles = new PIXI.Container()
+const explosionsLayer = new PIXI.Container()
+const aimLine = new PIXI.Graphics()
+const railLines = new PIXI.Graphics()
 
-// Background tiling sprite (added first, behind everything)
-let backgroundSprite = null
+world.addChild(tiles)
+world.addChild(projectiles)
+world.addChild(items)
+world.addChild(explosionsLayer)
+world.addChild(aimLine)
+world.addChild(railLines)
 
-// Map tiles container (replaces mapGraphics)
-const tileContainer = new PIXI.Container()
-worldContainer.addChild(tileContainer)
-
-// Projectiles container with sprite pool
-const projectilesContainer = new PIXI.Container()
-worldContainer.addChild(projectilesContainer)
 const projectilePool = []
-
-// Items container
-const itemsContainer = new PIXI.Container()
-worldContainer.addChild(itemsContainer)
-const itemSprites = []
-
-// Explosions container with sprite pool
-const explosionsContainer = new PIXI.Container()
-worldContainer.addChild(explosionsContainer)
 const explosionPool = []
-
-// Weapon aim line (keep as Graphics - lines work fine)
-const aimLineGraphics = new PIXI.Graphics()
-worldContainer.addChild(aimLineGraphics)
-
-// Railgun shots
-const railShotsGraphics = new PIXI.Graphics()
-worldContainer.addChild(railShotsGraphics)
-
-// Player sprite (replaces localPlayerGraphics)
-let playerSprite = null
-let playerCenterSprite = null
-let weaponSprite = null
-
-// Player animation state
-let currentAnimation = 'walk'
-let animationFrame = 0
-let animationTimer = 0
-const WALK_FRAME_REFRESH = 2
-const CROUCH_FRAME_REFRESH = 3
-const DIE_FRAME_REFRESH = 2
-
-// HUD Container (fixed position)
-const hudContainer = new PIXI.Container()
-stage.addChild(hudContainer)
-
-const healthText = new PIXI.Text({
-    text: '100',
-    style: {
-        fontFamily: 'Arial',
-        fontSize: 32,
-        fontWeight: 'bold',
-        fill: 0x00ff00,
-        stroke: { color: 0x000000, width: 3 },
-    },
-})
-healthText.x = 20
-hudContainer.addChild(healthText)
-
-const armorText = new PIXI.Text({
-    text: '0',
-    style: {
-        fontFamily: 'Arial',
-        fontSize: 24,
-        fontWeight: 'bold',
-        fill: 0xffff00,
-        stroke: { color: 0x000000, width: 2 },
-    },
-})
-armorText.x = 20
-hudContainer.addChild(armorText)
-
-const weaponText = new PIXI.Text({
-    text: 'Machinegun',
-    style: {
-        fontFamily: 'Arial',
-        fontSize: 20,
-        fill: 0xffffff,
-        stroke: { color: 0x000000, width: 2 },
-    },
-})
-weaponText.anchor.set(1, 0)
-hudContainer.addChild(weaponText)
-
-const ammoText = new PIXI.Text({
-    text: '100',
-    style: {
-        fontFamily: 'Arial',
-        fontSize: 28,
-        fontWeight: 'bold',
-        fill: 0xffffff,
-        stroke: { color: 0x000000, width: 2 },
-    },
-})
-ammoText.anchor.set(1, 0)
-hudContainer.addChild(ammoText)
-
-// Explosions array (data)
+const itemSprites = []
 const explosions = []
 const railShots = []
 
-// Projectile colors for tinting
-const projectileColors = {
-    rocket: 0xff6600,
-    plasma: 0x00ffff,
-    grenade: 0x666666,
-    bfg: 0x00ff00,
-}
+let playerSprite = null
+let playerCenter = null
+let weaponSprite = null
+let currentAnim = 'walk'
+let animFrame = 0
+let animTimer = 0
 
-// Register explosion callback
+const hud = createHUD()
+stage.addChild(hud.container)
+
+const camera = { float: false, halfW: 0, halfH: 0, dx: 0, dy: 0, scale: 1 }
+
 Projectiles.onExplosion((x, y, type) => {
     const radius = type === 'rocket' || type === 'grenade' || type === 'bfg' ? 40 : 15
     explosions.push({
@@ -170,269 +92,46 @@ Projectiles.onExplosion((x, y, type) => {
         maxRadius: radius,
         age: 0,
         maxAge: 15,
-        color: projectileColors[type] || 0xff6600,
+        color: PROJECTILE_COLORS[type] ?? 0xff6600,
     })
 })
 
-let floatCamera = false
-let halfWidth = 0
-let halfHeight = 0
-let mapDx = 0
-let mapDy = 0
-let worldScale = 1
-
-function recalcFloatCamera() {
-    renderer.resize(innerWidth - 20, innerHeight)
-    const mapWidth = Map.getCols() * BRICK_WIDTH
-    const mapHeight = Map.getRows() * BRICK_HEIGHT
-    floatCamera = mapHeight > innerHeight || mapWidth > innerWidth - 20
-
-    if (floatCamera) {
-        halfWidth = ((innerWidth - 20) / 2) | 0
-        halfHeight = (innerHeight / 2) | 0
-        worldScale = 1
-    } else {
-        const scaleToFitX = (innerWidth - 20) / mapWidth
-        const scaleToFitY = innerHeight / mapHeight
-        worldScale = Math.min(scaleToFitX, scaleToFitY, 1.6)
-        mapDx = ((innerWidth - 20 - mapWidth * worldScale) / 2) | 0
-        mapDy = ((innerHeight - mapHeight * worldScale) / 2) | 0
-    }
-
-    worldContainer.scale.set(worldScale)
-
-    // Update background tiling if exists
-    if (backgroundSprite) {
-        backgroundSprite.width = innerWidth
-        backgroundSprite.height = innerHeight
-    }
-
-    // Update HUD positions
-    healthText.y = innerHeight - 50
-    armorText.y = innerHeight - 80
-    weaponText.x = innerWidth - 40
-    weaponText.y = innerHeight - 50
-    ammoText.x = innerWidth - 40
-    ammoText.y = innerHeight - 80
-}
-
-addEventListener('resize', recalcFloatCamera)
-
-/**
- * Get or create a projectile sprite from the pool
- */
-function getProjectileSprite(type) {
-    // Try to find an inactive sprite in the pool
-    for (const sprite of projectilePool) {
-        if (!sprite.visible) {
-            sprite.visible = true
-            return sprite
-        }
-    }
-
-    // Create new sprite if pool is empty
-    const texture = getProjectileTexture(type)
-    const sprite = new PIXI.Sprite(texture)
-    sprite.anchor.set(0.5)
-    projectilePool.push(sprite)
-    projectilesContainer.addChild(sprite)
-    return sprite
-}
-
-/**
- * Get or create an explosion sprite from the pool
- */
-function getExplosionSprite() {
-    // Try to find an inactive sprite in the pool
-    for (const sprite of explosionPool) {
-        if (!sprite.visible) {
-            sprite.visible = true
-            return sprite
-        }
-    }
-
-    // Create new sprite if pool is empty
-    const texture = getTexture('explosion')
-    const sprite = new PIXI.Sprite(texture)
-    sprite.anchor.set(0.5)
-    explosionPool.push(sprite)
-    explosionsContainer.addChild(sprite)
-    return sprite
-}
-
-function renderProjectiles() {
-    // Hide all projectile sprites first
-    for (const sprite of projectilePool) {
-        sprite.visible = false
-    }
-
-    const allProjectiles = Projectiles.getAll()
-
-    for (const proj of allProjectiles) {
-        if (!proj.active) continue
-
-        const sprite = getProjectileSprite(proj.type)
-        sprite.texture = getProjectileTexture(proj.type)
-        sprite.x = proj.x
-        sprite.y = proj.y
-
-        // Rotate based on velocity direction
-        sprite.rotation = Math.atan2(proj.velocityY, proj.velocityX)
-
-        // Apply color tint
-        sprite.tint = projectileColors[proj.type] || 0xffffff
-    }
-}
-
-function renderExplosions() {
-    // Hide all explosion sprites first
-    for (const sprite of explosionPool) {
-        sprite.visible = false
-    }
-
-    for (let i = explosions.length - 1; i >= 0; i--) {
-        const exp = explosions[i]
-        exp.age++
-
-        if (exp.age > exp.maxAge) {
-            explosions.splice(i, 1)
-            continue
-        }
-
-        const progress = exp.age / exp.maxAge
-        const scale = (1 + progress) * (exp.radius / 16) // Scale based on radius
-        const alpha = 1 - progress
-
-        const sprite = getExplosionSprite()
-        sprite.x = exp.x
-        sprite.y = exp.y
-        sprite.scale.set(scale)
-        sprite.alpha = alpha
-        sprite.tint = exp.color
-    }
-}
-
-function renderAimLine(player) {
-    aimLineGraphics.clear()
-    if (!player || player.dead) return
-
-    const originX = player.x
-    const originY = player.crouch ? player.y + 8 : player.y
-    const aimDistance = BRICK_WIDTH * 2.6
-    const crossHalf = Math.max(2, BRICK_WIDTH * 0.1)
-    const x = originX + Math.cos(player.aimAngle) * aimDistance
-    const y = originY + Math.sin(player.aimAngle) * aimDistance
-
-    aimLineGraphics
-        .moveTo(x - crossHalf, y)
-        .lineTo(x + crossHalf, y)
-        .stroke({ width: 1, color: 0xffffff, alpha: 0.7 })
-
-    aimLineGraphics
-        .moveTo(x, y - crossHalf)
-        .lineTo(x, y + crossHalf)
-        .stroke({ width: 1, color: 0xffffff, alpha: 0.7 })
-}
-
-function renderRailShots() {
-    railShotsGraphics.clear()
-
-    for (let i = railShots.length - 1; i >= 0; i--) {
-        const shot = railShots[i]
-        shot.age++
-        if (shot.age > shot.maxAge) {
-            railShots.splice(i, 1)
-            continue
-        }
-
-        const progress = shot.age / shot.maxAge
-        const alpha = 1 - progress
-        const dx = shot.x2 - shot.x1
-        const dy = shot.y2 - shot.y1
-        const length = Math.hypot(dx, dy) || 1
-        const nx = (-dy / length) * (1.5 + Math.random() * 1.5)
-        const ny = (dx / length) * (1.5 + Math.random() * 1.5)
-
-        railShotsGraphics
-            .moveTo(shot.x1, shot.y1)
-            .lineTo(shot.x2, shot.y2)
-            .stroke({ width: 6, color: 0x66ddff, alpha: alpha * 0.35 })
-
-        railShotsGraphics
-            .moveTo(shot.x1 + nx, shot.y1 + ny)
-            .lineTo(shot.x2 + nx, shot.y2 + ny)
-            .stroke({ width: 3, color: 0x9ff0ff, alpha: alpha * 0.55 })
-
-        railShotsGraphics
-            .moveTo(shot.x1, shot.y1)
-            .lineTo(shot.x2, shot.y2)
-            .stroke({ width: 2, color: 0xffffff, alpha: alpha })
-
-        railShotsGraphics.circle(shot.x2, shot.y2, 6).fill({ color: 0x9ff0ff, alpha: alpha * 0.6 })
-    }
-}
-
-function updateHUD(player) {
-    healthText.text = Math.max(0, player.health).toString()
-    if (player.health > 100) {
-        healthText.style.fill = 0x00aaff
-    } else if (player.health > 50) {
-        healthText.style.fill = 0x00ff00
-    } else if (player.health > 25) {
-        healthText.style.fill = 0xffff00
-    } else {
-        healthText.style.fill = 0xff0000
-    }
-
-    armorText.text = player.armor.toString()
-    armorText.visible = player.armor > 0
-
-    weaponText.text = WeaponConstants.NAMES[player.currentWeapon]
-
-    const ammo = player.ammo[player.currentWeapon]
-    ammoText.text = ammo === -1 ? '∞' : ammo.toString()
-
-    // Player sprite visibility is handled in renderGame (shows death animation)
-    if (playerCenterSprite) playerCenterSprite.visible = !player.dead
-}
+addEventListener('resize', recalcCamera)
 
 export const Render = {
     initSprites() {
-        // Create background tiling sprite
-        const bgTexture = getTexture('background')
-        if (bgTexture) {
-            backgroundSprite = new PIXI.TilingSprite({
-                texture: bgTexture,
+        const bgTex = getTexture('background')
+        if (bgTex) {
+            bgSprite = new PIXI.TilingSprite({
+                texture: bgTex,
                 width: innerWidth,
                 height: innerHeight,
             })
-            backgroundSprite.tileScale.set(BACKGROUND_TILE_SCALE)
-            worldContainer.addChildAt(backgroundSprite, 0)
+            bgSprite.tileScale.set(BG_TILE_SCALE)
+            world.addChildAt(bgSprite, 0)
         }
 
-        // Create player sprite with animation frames
         const walkFrames = getPlayerAnimationFrames('walk')
         if (walkFrames.length > 0) {
             playerSprite = new PIXI.Sprite(walkFrames[0])
-            playerSprite.anchor.set(0.5, 0.5)
-            playerSprite.scale.set(PLAYER_BASE_SCALE_X, PLAYER_BASE_SCALE_Y)
-            worldContainer.addChild(playerSprite)
+            playerSprite.anchor.set(0.5)
+            playerSprite.scale.set(PLAYER_SCALE_X, PLAYER_SCALE_Y)
+            world.addChild(playerSprite)
 
-            // Player center marker
-            playerCenterSprite = new PIXI.Graphics()
-            playerCenterSprite.rect(-1, -1, 2, 2).fill(0x0000aa)
-            worldContainer.addChild(playerCenterSprite)
+            playerCenter = new PIXI.Graphics()
+            playerCenter.rect(-1, -1, 2, 2).fill(0x0000aa)
+            world.addChild(playerCenter)
         }
 
         weaponSprite = new PIXI.Sprite()
-        weaponSprite.anchor.set(0.5, 0.5)
-        weaponSprite.scale.set(WEAPON_IN_HAND_SCALE)
-        worldContainer.addChild(weaponSprite)
+        weaponSprite.anchor.set(0.5)
+        weaponSprite.scale.set(WEAPON_SCALE)
+        world.addChild(weaponSprite)
     },
 
     setSceneReady(visible) {
         stage.visible = visible
-        hudContainer.visible = visible
+        hud.container.visible = visible
     },
 
     addRailShot(shot) {
@@ -447,212 +146,419 @@ export const Render = {
     },
 
     renderMap() {
-        // Clear existing tile sprites
-        tileContainer.removeChildren()
-        itemsContainer.removeChildren()
+        tiles.removeChildren()
+        items.removeChildren()
         itemSprites.length = 0
 
         const rows = Map.getRows()
         const cols = Map.getCols()
-        const brickTexture = getTexture('brick')
+        const brickTex = getTexture('brick')
 
         for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
-                if (isBrick(col, row)) {
-                    const sprite = new PIXI.Sprite(brickTexture)
-                    sprite.x = col * BRICK_WIDTH
-                    sprite.y = row * BRICK_HEIGHT
-
-                    // Apply team color based on tile type
-                    const tileColor = Map.getTileColor ? Map.getTileColor(col, row) : null
-                    if (tileColor) {
-                        sprite.tint = tileColor
-                    }
-
-                    tileContainer.addChild(sprite)
-                }
+                if (!isBrick(col, row)) continue
+                const sprite = new PIXI.Sprite(brickTex)
+                sprite.x = col * BRICK_WIDTH
+                sprite.y = row * BRICK_HEIGHT
+                const tint = Map.getTileColor?.(col, row)
+                if (tint) sprite.tint = tint
+                tiles.addChild(sprite)
             }
         }
 
-        const items = Map.getItems()
-        for (const item of items) {
-            const texture = item.type.startsWith('weapon_')
+        for (const item of Map.getItems()) {
+            const tex = item.type.startsWith('weapon_')
                 ? getWeaponIcon(WEAPON_ITEM_MAP[item.type])
                 : getItemIcon(item.type)
-            if (!texture) continue
+            if (!tex) continue
 
-            const sprite = new PIXI.Sprite(texture)
-            const targetSize = BRICK_HEIGHT * 1.2
-            const scale = targetSize / Math.max(texture.width, texture.height)
+            const sprite = new PIXI.Sprite(tex)
+            const scale = (BRICK_HEIGHT * 1.2) / Math.max(tex.width, tex.height)
             sprite.anchor.set(0.5)
             sprite.scale.set(scale)
             sprite.x = item.col * BRICK_WIDTH + BRICK_WIDTH / 2
             sprite.y = item.row * BRICK_HEIGHT + BRICK_HEIGHT / 2
             sprite.visible = item.active
             itemSprites.push({ item, sprite })
-            itemsContainer.addChild(sprite)
+            items.addChild(sprite)
         }
 
         app.render()
-        recalcFloatCamera()
+        recalcCamera()
     },
 
     renderGame(player) {
-        if (floatCamera) {
-            worldContainer.x = halfWidth - player.x
-            worldContainer.y = halfHeight - player.y
-
-            // Update background tiling offset for parallax effect
-            if (backgroundSprite) {
-                backgroundSprite.tilePosition.x = -player.x * 0.3
-                backgroundSprite.tilePosition.y = -player.y * 0.3
-                // Keep background fixed to screen
-                backgroundSprite.x = player.x - halfWidth
-                backgroundSprite.y = player.y - halfHeight
-            }
-        } else {
-            worldContainer.x = mapDx
-            worldContainer.y = mapDy
-
-            if (backgroundSprite) {
-                backgroundSprite.x = -mapDx
-                backgroundSprite.y = -mapDy
-            }
-        }
-
-        // Player sprite (world coordinates) with animation
-        if (playerSprite) {
-            // Determine animation state
-            let targetAnimation = 'walk'
-            let frameRefresh = WALK_FRAME_REFRESH
-
-            if (player.dead) {
-                targetAnimation = 'die'
-                frameRefresh = DIE_FRAME_REFRESH
-            } else if (player.crouch) {
-                targetAnimation = 'crouch'
-                frameRefresh = CROUCH_FRAME_REFRESH
-            }
-
-            // Reset animation frame when state changes
-            if (targetAnimation !== currentAnimation) {
-                currentAnimation = targetAnimation
-                animationFrame = 0
-                animationTimer = 0
-            }
-
-            const frames = getPlayerAnimationFrames(currentAnimation)
-            const isMoving = player.keyLeft !== player.keyRight || player.velocityX !== 0
-
-            // Update animation frame
-            if (frames.length > 1) {
-                animationTimer++
-                if (animationTimer >= frameRefresh) {
-                    animationTimer = 0
-                    if (currentAnimation === 'die') {
-                        // Death animation plays once
-                        if (animationFrame < frames.length - 1) {
-                            animationFrame++
-                        }
-                    } else if (isMoving || currentAnimation === 'crouch') {
-                        // Walk/crouch animation loops when moving
-                        animationFrame = (animationFrame + 1) % frames.length
-                    }
-                }
-            }
-
-            // Apply current frame texture
-            if (frames[animationFrame]) {
-                playerSprite.texture = frames[animationFrame]
-            }
-
-            playerSprite.x = player.x
-            playerSprite.visible = true
-
-            if (player.crouch) {
-                playerSprite.scale.y = PLAYER_BASE_SCALE_Y * 0.83
-                playerSprite.y = player.y + 8
-            } else {
-                playerSprite.scale.y = PLAYER_BASE_SCALE_Y
-                playerSprite.y = player.y
-            }
-
-            // Flip based on facing direction (keys-only)
-            const facingLeft = player.facingLeft
-            playerSprite.scale.x = (facingLeft ? -1 : 1) * PLAYER_BASE_SCALE_X
-        }
-
-        if (!player.dead && weaponSprite) {
-            const weaponIcon = getWeaponIcon(player.currentWeapon)
-            if (weaponIcon) {
-                const facingLeft = player.facingLeft
-                weaponSprite.texture = weaponIcon
-                weaponSprite.x = player.x
-                weaponSprite.y = player.crouch ? player.y + 8 : player.y
-                weaponSprite.rotation = player.aimAngle
-                weaponSprite.scale.x = WEAPON_IN_HAND_SCALE
-                weaponSprite.scale.y = (facingLeft ? -1 : 1) * WEAPON_IN_HAND_SCALE
-                weaponSprite.visible = true
-            } else {
-                weaponSprite.visible = false
-            }
-        } else if (weaponSprite) {
-            weaponSprite.visible = false
-        }
-
-        if (!player.dead && playerCenterSprite) {
-            playerCenterSprite.x = player.x
-            playerCenterSprite.y = player.y
-        }
-
-        for (const entry of itemSprites) {
-            entry.sprite.visible = entry.item.active
-        }
-
+        updateCamera(player)
+        updatePlayerSprite(player)
+        updateWeaponSprite(player)
+        updateItemSprites()
         renderProjectiles()
         renderExplosions()
         renderRailShots()
         renderAimLine(player)
         updateHUD(player)
-
         app.render()
     },
 
-    /**
-     * Set player team color
-     * @param {number} color - Hex color (0xff4444 for red, 0x4444ff for blue)
-     */
     setPlayerColor(color) {
-        if (playerSprite) {
-            playerSprite.tint = color
-        }
+        if (playerSprite) playerSprite.tint = color
     },
 }
 
-const FRAME_MS = 16
-const LOG_THROTTLE_MS = 50
-const VELOCITY_Y_SPEED_JUMP = [0, 0, 0.4, 0.8, 1.0, 1.2, 1.4]
-const VELOCITY_X_SPEED_JUMP = [0, 0.33, 0.8, 1.1, 1.4, 1.8, 2.2]
-
-let time = 0
-let logLine = 0
-let lastLogTime = 0
-let lastWasJump = false
-let lastKeyUp = false
-let speedJumpDirection = 0
-
-function clampVelocity(player) {
-    player.velocityX = Math.max(-5, Math.min(5, player.velocityX))
-    player.velocityY = Math.max(-5, Math.min(5, player.velocityY))
+const physics = {
+    time: 0,
+    lastKeyUp: false,
+    lastWasJump: false,
+    speedJumpDir: 0,
+    logLine: 0,
+    lastLogTime: 0,
 }
 
-function getSpeedX(player) {
-    return player.velocityX !== 0
-        ? Math.sign(player.velocityX) * VELOCITY_X_SPEED_JUMP[player.speedJump]
-        : 0
+export const Physics = {
+    updateGame(player, timestamp) {
+        if (physics.time === 0) physics.time = timestamp - FRAME_MS
+
+        const delta = timestamp - physics.time
+        let frames = trunc(delta / FRAME_MS)
+        if (frames === 0) return false
+
+        physics.time += frames * FRAME_MS
+        while (frames-- > 0) playerMove(player)
+        return true
+    },
 }
 
-function playerPhysics(player) {
+async function initApp() {
+    const app = new PIXI.Application()
+    try {
+        await app.init({
+            width: innerWidth,
+            height: innerHeight,
+            background: 0x262626,
+            preference: 'webgl',
+            autoDensity: true,
+            resolution: Math.min(devicePixelRatio || 1, 2),
+        })
+    } catch (err) {
+        Console.writeText(`renderer init failed: ${err?.message ?? err}`)
+        throw err
+    }
+    app.canvas.style.display = 'block'
+    document.getElementById('game').appendChild(app.canvas)
+    return app
+}
+
+function createHUD() {
+    const container = new PIXI.Container()
+
+    const health = new PIXI.Text({
+        text: '100',
+        style: {
+            fontFamily: 'Arial',
+            fontSize: 32,
+            fontWeight: 'bold',
+            fill: 0x00ff00,
+            stroke: { color: 0x000000, width: 3 },
+        },
+    })
+    health.x = 20
+
+    const armor = new PIXI.Text({
+        text: '0',
+        style: {
+            fontFamily: 'Arial',
+            fontSize: 24,
+            fontWeight: 'bold',
+            fill: 0xffff00,
+            stroke: { color: 0x000000, width: 2 },
+        },
+    })
+    armor.x = 20
+
+    const weapon = new PIXI.Text({
+        text: 'Machinegun',
+        style: {
+            fontFamily: 'Arial',
+            fontSize: 20,
+            fill: 0xffffff,
+            stroke: { color: 0x000000, width: 2 },
+        },
+    })
+    weapon.anchor.set(1, 0)
+
+    const ammo = new PIXI.Text({
+        text: '100',
+        style: {
+            fontFamily: 'Arial',
+            fontSize: 28,
+            fontWeight: 'bold',
+            fill: 0xffffff,
+            stroke: { color: 0x000000, width: 2 },
+        },
+    })
+    ammo.anchor.set(1, 0)
+
+    container.addChild(health, armor, weapon, ammo)
+    return { container, health, armor, weapon, ammo }
+}
+
+function recalcCamera() {
+    renderer.resize(innerWidth - 20, innerHeight)
+    const mapW = Map.getCols() * BRICK_WIDTH
+    const mapH = Map.getRows() * BRICK_HEIGHT
+    camera.float = mapH > innerHeight || mapW > innerWidth - 20
+
+    if (camera.float) {
+        camera.halfW = ((innerWidth - 20) / 2) | 0
+        camera.halfH = (innerHeight / 2) | 0
+        camera.scale = 1
+    } else {
+        camera.scale = Math.min((innerWidth - 20) / mapW, innerHeight / mapH, 1.6)
+        camera.dx = ((innerWidth - 20 - mapW * camera.scale) / 2) | 0
+        camera.dy = ((innerHeight - mapH * camera.scale) / 2) | 0
+    }
+
+    world.scale.set(camera.scale)
+
+    if (bgSprite) {
+        bgSprite.width = innerWidth
+        bgSprite.height = innerHeight
+    }
+
+    hud.health.y = innerHeight - 50
+    hud.armor.y = innerHeight - 80
+    hud.weapon.x = innerWidth - 40
+    hud.weapon.y = innerHeight - 50
+    hud.ammo.x = innerWidth - 40
+    hud.ammo.y = innerHeight - 80
+}
+
+function updateCamera(player) {
+    if (camera.float) {
+        world.x = camera.halfW - player.x
+        world.y = camera.halfH - player.y
+        if (bgSprite) {
+            bgSprite.tilePosition.x = -player.x * 0.3
+            bgSprite.tilePosition.y = -player.y * 0.3
+            bgSprite.x = player.x - camera.halfW
+            bgSprite.y = player.y - camera.halfH
+        }
+    } else {
+        world.x = camera.dx
+        world.y = camera.dy
+        if (bgSprite) {
+            bgSprite.x = -camera.dx
+            bgSprite.y = -camera.dy
+        }
+    }
+}
+
+function updatePlayerSprite(player) {
+    if (!playerSprite) return
+
+    const targetAnim = player.dead ? 'die' : player.crouch ? 'crouch' : 'walk'
+    if (targetAnim !== currentAnim) {
+        currentAnim = targetAnim
+        animFrame = 0
+        animTimer = 0
+    }
+
+    const frames = getPlayerAnimationFrames(currentAnim)
+    const cfg = ANIMATION[currentAnim]
+    const isMoving = player.keyLeft !== player.keyRight || player.velocityX !== 0
+
+    if (frames.length > 1 && ++animTimer >= cfg.refresh) {
+        animTimer = 0
+        if (cfg.loop) {
+            if (isMoving || currentAnim === 'crouch') animFrame = (animFrame + 1) % frames.length
+        } else if (animFrame < frames.length - 1) {
+            animFrame++
+        }
+    }
+
+    if (frames[animFrame]) playerSprite.texture = frames[animFrame]
+
+    playerSprite.x = player.x
+    playerSprite.visible = true
+    playerSprite.scale.x = (player.facingLeft ? -1 : 1) * PLAYER_SCALE_X
+
+    if (player.crouch) {
+        playerSprite.scale.y = PLAYER_SCALE_Y * 0.83
+        playerSprite.y = player.y + 8
+    } else {
+        playerSprite.scale.y = PLAYER_SCALE_Y
+        playerSprite.y = player.y
+    }
+
+    if (playerCenter) {
+        playerCenter.visible = !player.dead
+        playerCenter.x = player.x
+        playerCenter.y = player.y
+    }
+}
+
+function updateWeaponSprite(player) {
+    if (!weaponSprite) return
+
+    if (player.dead) {
+        weaponSprite.visible = false
+        return
+    }
+
+    const icon = getWeaponIcon(player.currentWeapon)
+    if (!icon) {
+        weaponSprite.visible = false
+        return
+    }
+
+    weaponSprite.texture = icon
+    weaponSprite.x = player.x
+    weaponSprite.y = player.crouch ? player.y + 8 : player.y
+    weaponSprite.rotation = player.aimAngle
+    weaponSprite.scale.x = WEAPON_SCALE
+    weaponSprite.scale.y = (player.facingLeft ? -1 : 1) * WEAPON_SCALE
+    weaponSprite.visible = true
+}
+
+function updateItemSprites() {
+    for (const { item, sprite } of itemSprites) {
+        sprite.visible = item.active
+    }
+}
+
+function updateHUD(player) {
+    const hp = Math.max(0, player.health)
+    hud.health.text = hp.toString()
+    hud.health.style.fill = hp > 100 ? 0x00aaff : hp > 50 ? 0x00ff00 : hp > 25 ? 0xffff00 : 0xff0000
+
+    hud.armor.text = player.armor.toString()
+    hud.armor.visible = player.armor > 0
+
+    hud.weapon.text = WeaponConstants.NAMES[player.currentWeapon]
+
+    const ammo = player.ammo[player.currentWeapon]
+    hud.ammo.text = ammo === -1 ? '∞' : ammo.toString()
+}
+
+function poolGet(pool, container, createFn) {
+    for (const sprite of pool) {
+        if (!sprite.visible) {
+            sprite.visible = true
+            return sprite
+        }
+    }
+    const sprite = createFn()
+    pool.push(sprite)
+    container.addChild(sprite)
+    return sprite
+}
+
+function renderProjectiles() {
+    for (const s of projectilePool) s.visible = false
+
+    for (const proj of Projectiles.getAll()) {
+        if (!proj.active) continue
+        const sprite = poolGet(projectilePool, projectiles, () => {
+            const s = new PIXI.Sprite(getProjectileTexture(proj.type))
+            s.anchor.set(0.5)
+            return s
+        })
+        sprite.texture = getProjectileTexture(proj.type)
+        sprite.x = proj.x
+        sprite.y = proj.y
+        sprite.rotation = Math.atan2(proj.velocityY, proj.velocityX)
+        sprite.tint = PROJECTILE_COLORS[proj.type] ?? 0xffffff
+    }
+}
+
+function renderExplosions() {
+    for (const s of explosionPool) s.visible = false
+
+    for (let i = explosions.length - 1; i >= 0; i--) {
+        const exp = explosions[i]
+        if (++exp.age > exp.maxAge) {
+            explosions.splice(i, 1)
+            continue
+        }
+        const progress = exp.age / exp.maxAge
+        const sprite = poolGet(explosionPool, explosionsLayer, () => {
+            const s = new PIXI.Sprite(getTexture('explosion'))
+            s.anchor.set(0.5)
+            return s
+        })
+        sprite.x = exp.x
+        sprite.y = exp.y
+        sprite.scale.set((1 + progress) * (exp.radius / 16))
+        sprite.alpha = 1 - progress
+        sprite.tint = exp.color
+    }
+}
+
+function renderRailShots() {
+    railLines.clear()
+
+    for (let i = railShots.length - 1; i >= 0; i--) {
+        const shot = railShots[i]
+        if (++shot.age > shot.maxAge) {
+            railShots.splice(i, 1)
+            continue
+        }
+        const alpha = 1 - shot.age / shot.maxAge
+        const dx = shot.x2 - shot.x1
+        const dy = shot.y2 - shot.y1
+        const len = Math.hypot(dx, dy) || 1
+        const nx = (-dy / len) * (1.5 + Math.random() * 1.5)
+        const ny = (dx / len) * (1.5 + Math.random() * 1.5)
+
+        railLines
+            .moveTo(shot.x1, shot.y1)
+            .lineTo(shot.x2, shot.y2)
+            .stroke({ width: 6, color: 0x66ddff, alpha: alpha * 0.35 })
+        railLines
+            .moveTo(shot.x1 + nx, shot.y1 + ny)
+            .lineTo(shot.x2 + nx, shot.y2 + ny)
+            .stroke({ width: 3, color: 0x9ff0ff, alpha: alpha * 0.55 })
+        railLines
+            .moveTo(shot.x1, shot.y1)
+            .lineTo(shot.x2, shot.y2)
+            .stroke({ width: 2, color: 0xffffff, alpha })
+        railLines.circle(shot.x2, shot.y2, 6).fill({ color: 0x9ff0ff, alpha: alpha * 0.6 })
+    }
+}
+
+function renderAimLine(player) {
+    aimLine.clear()
+    if (!player || player.dead) return
+
+    const originX = player.x
+    const originY = player.crouch ? player.y + 8 : player.y
+    const dist = BRICK_WIDTH * 2.6
+    const half = Math.max(2, BRICK_WIDTH * 0.1)
+    const x = originX + Math.cos(player.aimAngle) * dist
+    const y = originY + Math.sin(player.aimAngle) * dist
+
+    aimLine
+        .moveTo(x - half, y)
+        .lineTo(x + half, y)
+        .stroke({ width: 1, color: 0xffffff, alpha: 0.7 })
+    aimLine
+        .moveTo(x, y - half)
+        .lineTo(x, y + half)
+        .stroke({ width: 1, color: 0xffffff, alpha: 0.7 })
+}
+
+function playerMove(player) {
+    applyPhysics(player)
+
+    if (player.doublejumpCountdown > 0) player.doublejumpCountdown--
+    if (player.isOnGround()) player.velocityY = 0
+
+    handleJump(player)
+    handleCrouch(player)
+    handleHorizontalMovement(player)
+}
+
+function applyPhysics(player) {
     const startX = player.x
     const startY = player.y
 
@@ -689,17 +595,17 @@ function playerPhysics(player) {
     if (player.velocityX !== 0) {
         const col = trunc(Math.round(startX + (player.velocityX < 0 ? -11 : 11)) / BRICK_WIDTH)
         const checkY = player.crouch ? player.y : startY
-        const headOffset = player.crouch ? 8 : 16
+        const headOff = player.crouch ? 8 : 16
 
         if (
-            isBrick(col, trunc(Math.round(checkY - headOffset) / BRICK_HEIGHT)) ||
+            isBrick(col, trunc(Math.round(checkY - headOff) / BRICK_HEIGHT)) ||
             isBrick(col, trunc(Math.round(checkY) / BRICK_HEIGHT)) ||
             isBrick(col, trunc(Math.round(checkY + BRICK_HEIGHT) / BRICK_HEIGHT))
         ) {
             player.setX(trunc(startX / BRICK_WIDTH) * BRICK_WIDTH + (player.velocityX < 0 ? 9 : 22))
             player.velocityX = 0
             player.speedJump = 0
-            if (startX !== player.x) log('wall', player)
+            if (startX !== player.x) logPhysics('wall', player)
         }
     }
 
@@ -711,103 +617,110 @@ function playerPhysics(player) {
         player.doublejumpCountdown = 3
     }
 
-    clampVelocity(player)
+    player.velocityX = clamp(player.velocityX, -5, 5)
+    player.velocityY = clamp(player.velocityY, -5, 5)
 }
 
-function playerMove(player) {
-    playerPhysics(player)
+function handleJump(player) {
+    const keysChanged =
+        player.keyUp !== physics.lastKeyUp ||
+        (player.keyLeft && physics.speedJumpDir !== -1) ||
+        (player.keyRight && physics.speedJumpDir !== 1)
 
-    if (player.doublejumpCountdown > 0) player.doublejumpCountdown--
-    if (player.isOnGround()) player.velocityY = 0
+    if (player.speedJump > 0 && keysChanged) {
+        player.speedJump = 0
+        logPhysics('sj 0 - change keys', player)
+    }
 
+    physics.lastKeyUp = player.keyUp
     let jumped = false
 
-    if (
-        player.speedJump > 0 &&
-        (player.keyUp !== lastKeyUp ||
-            (player.keyLeft && speedJumpDirection !== -1) ||
-            (player.keyRight && speedJumpDirection !== 1))
-    ) {
-        player.speedJump = 0
-        log('sj 0 - change keys', player)
-    }
+    if (player.keyUp && player.isOnGround() && !player.isBrickOnHead() && !physics.lastWasJump) {
+        const isDoubleJump = player.doublejumpCountdown > 4 && player.doublejumpCountdown < 11
 
-    lastKeyUp = player.keyUp
+        if (isDoubleJump) {
+            player.doublejumpCountdown = 14
+            player.velocityY = -3
 
-    if (player.keyUp) {
-        if (player.isOnGround() && !player.isBrickOnHead() && !lastWasJump) {
-            if (player.doublejumpCountdown > 4 && player.doublejumpCountdown < 11) {
-                player.doublejumpCountdown = 14
-                player.velocityY = -3
+            const totalSpeedX =
+                player.velocityX !== 0
+                    ? Math.abs(player.velocityX) + SPEED_JUMP_X[player.speedJump]
+                    : 0
 
-                const totalSpeedX =
-                    player.velocityX !== 0
-                        ? Math.abs(player.velocityX) + VELOCITY_X_SPEED_JUMP[player.speedJump]
-                        : 0
-
-                if (totalSpeedX > 3) {
-                    const bonus = totalSpeedX - 3
-                    player.velocityY -= bonus
-                    log(`dj higher (bonus +${formatNum(bonus)})`, player)
-                } else {
-                    log('dj standard', player)
-                }
-                player.crouch = false
-                Sound.jump(player.model)
+            if (totalSpeedX > 3) {
+                const bonus = totalSpeedX - 3
+                player.velocityY -= bonus
+                logPhysics(`dj higher (bonus +${formatNum(bonus)})`, player)
             } else {
-                if (player.doublejumpCountdown === 0) {
-                    player.doublejumpCountdown = 14
-                    Sound.jump(player.model)
-                }
-                player.velocityY = -2.9 + VELOCITY_Y_SPEED_JUMP[player.speedJump]
-                log('jump', player)
-
-                if (player.speedJump < 6 && !lastWasJump && player.keyLeft !== player.keyRight) {
-                    speedJumpDirection = player.keyLeft ? -1 : 1
-                    player.speedJump++
-                    log('increase sj', player)
-                }
+                logPhysics('dj standard', player)
             }
-            jumped = true
+            player.crouch = false
+            Sound.jump(player.model)
+        } else {
+            if (player.doublejumpCountdown === 0) {
+                player.doublejumpCountdown = 14
+                Sound.jump(player.model)
+            }
+            player.velocityY = -2.9 + SPEED_JUMP_Y[player.speedJump]
+            logPhysics('jump', player)
+
+            if (
+                player.speedJump < 6 &&
+                !physics.lastWasJump &&
+                player.keyLeft !== player.keyRight
+            ) {
+                physics.speedJumpDir = player.keyLeft ? -1 : 1
+                player.speedJump++
+                logPhysics('increase sj', player)
+            }
         }
+        jumped = true
     } else if (player.isOnGround() && player.speedJump > 0 && !player.keyDown) {
         player.speedJump = 0
-        log('sj 0 - on ground', player)
+        logPhysics('sj 0 - on ground', player)
     }
 
+    physics.lastWasJump = jumped
+}
+
+function handleCrouch(player) {
     if (!player.keyUp && player.keyDown) {
         player.crouch = player.isOnGround() || player.isBrickCrouchOnHead()
     } else {
         player.crouch = player.isOnGround() && player.isBrickCrouchOnHead()
     }
+}
 
-    lastWasJump = jumped
+function handleHorizontalMovement(player) {
+    if (player.keyLeft === player.keyRight) return
 
-    if (player.keyLeft !== player.keyRight) {
-        let maxVelX = PLAYER_MAX_VELOCITY_X
-        if (player.crouch) maxVelX--
+    let maxVel = PLAYER_MAX_VELOCITY_X
+    if (player.crouch) maxVel--
 
-        const sign = player.keyLeft ? -1 : 1
-        if (player.velocityX * sign < 0) player.velocityX += sign * 0.8
+    const sign = player.keyLeft ? -1 : 1
+    if (player.velocityX * sign < 0) player.velocityX += sign * 0.8
 
-        const absVelX = Math.abs(player.velocityX)
-        if (absVelX < maxVelX) {
-            player.velocityX += sign * 0.35
-        } else if (absVelX > maxVelX) {
-            player.velocityX = sign * maxVelX
-        }
+    const absVel = Math.abs(player.velocityX)
+    if (absVel < maxVel) {
+        player.velocityX += sign * 0.35
+    } else if (absVel > maxVel) {
+        player.velocityX = sign * maxVel
     }
 }
 
-function log(text, player) {
+function getSpeedX(player) {
+    return player.velocityX !== 0 ? Math.sign(player.velocityX) * SPEED_JUMP_X[player.speedJump] : 0
+}
+
+function logPhysics(text, player) {
     const now = performance.now()
-    if (now - lastLogTime < LOG_THROTTLE_MS) return
-    lastLogTime = now
-    logLine++
+    if (now - physics.lastLogTime < 50) return
+    physics.lastLogTime = now
+    physics.logLine++
 
     const dx = getSpeedX(player)
     Console.writeText(
-        `${logLine} ${text} (x:${formatNum(player.x)} y:${formatNum(player.y)} ` +
+        `${physics.logLine} ${text} (x:${formatNum(player.x)} y:${formatNum(player.y)} ` +
             `dx:${formatNum(dx)} dy:${formatNum(player.velocityY)} sj:${player.speedJump})`,
     )
 }
@@ -817,15 +730,6 @@ function formatNum(val) {
     return `${i}.${Math.abs(trunc(val * 10) - i * 10)}`
 }
 
-export const Physics = {
-    updateGame(player, timestamp) {
-        if (time === 0) time = timestamp - FRAME_MS
-
-        const delta = timestamp - time
-        let frames = trunc(delta / FRAME_MS)
-        if (frames === 0) return false
-
-        time += frames * FRAME_MS
-        while (frames-- > 0) playerMove(player)
-    },
+function clamp(val, min, max) {
+    return val < min ? min : val > max ? max : val
 }
