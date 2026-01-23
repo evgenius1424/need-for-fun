@@ -3,6 +3,105 @@ import { Map } from './map'
 import { Projectiles } from './projectiles'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
+const { DAMAGE, PROJECTILE_SPEED, FIRE_RATE } = WeaponConstants
+
+const HITSCAN_RANGE = { [WeaponId.MACHINE]: 1000, [WeaponId.RAIL]: 2000, [WeaponId.SHAFT]: 400 }
+const SHOTGUN_RANGE = 800
+const SHOTGUN_PELLETS = 11
+const SHOTGUN_SPREAD = 0.15
+const GAUNTLET_RANGE = 50
+const GRENADE_LOFT = 2
+
+const PROJECTILE_CONFIG = {
+    [WeaponId.GRENADE]: { type: 'grenade', offset: 14, loft: GRENADE_LOFT, sound: Sound.grenade },
+    [WeaponId.ROCKET]: { type: 'rocket', offset: 18, loft: 0, sound: Sound.rocket },
+    [WeaponId.PLASMA]: { type: 'plasma', offset: 12, loft: 0, sound: Sound.plasma },
+    [WeaponId.BFG]: { type: 'bfg', offset: 12, loft: 0, sound: Sound.bfg },
+}
+
+const HITSCAN_CONFIG = {
+    [WeaponId.MACHINE]: { type: 'hitscan', sound: Sound.machinegun },
+    [WeaponId.RAIL]: { type: 'rail', sound: Sound.railgun },
+    [WeaponId.SHAFT]: { type: 'shaft', sound: Sound.shaft },
+}
+
+export const Weapons = {
+    fire(player, weaponId) {
+        if (weaponId === WeaponId.GAUNTLET) return fireGauntlet(player)
+        if (weaponId === WeaponId.SHOTGUN) return fireShotgun(player)
+
+        const projCfg = PROJECTILE_CONFIG[weaponId]
+        if (projCfg) return fireProjectile(player, weaponId, projCfg)
+
+        const hitCfg = HITSCAN_CONFIG[weaponId]
+        if (hitCfg) return fireHitscan(player, weaponId, hitCfg)
+
+        return null
+    },
+
+    getFireRate: (weaponId) => FIRE_RATE[weaponId] ?? 50,
+
+    rayTrace,
+}
+
+function fireGauntlet(player) {
+    const { cos, sin } = Math
+    const angle = player.aimAngle
+    return {
+        type: 'gauntlet',
+        damage: DAMAGE[WeaponId.GAUNTLET],
+        hitX: player.x + cos(angle) * GAUNTLET_RANGE,
+        hitY: player.y + sin(angle) * GAUNTLET_RANGE,
+        angle,
+    }
+}
+
+function fireShotgun(player) {
+    Sound.shotgun()
+    const { x, y, aimAngle } = player
+    const pellets = []
+
+    for (let i = 0; i < SHOTGUN_PELLETS; i++) {
+        const angle = aimAngle + (Math.random() - 0.5) * SHOTGUN_SPREAD
+        pellets.push({
+            trace: rayTrace(x, y, angle, SHOTGUN_RANGE),
+            damage: DAMAGE[WeaponId.SHOTGUN],
+        })
+    }
+
+    return { type: 'shotgun', pellets, startX: x, startY: y }
+}
+
+function fireProjectile(player, weaponId, cfg) {
+    cfg.sound()
+    const { x, y, aimAngle, id } = player
+    const speed = PROJECTILE_SPEED[weaponId]
+    const cos = Math.cos(aimAngle)
+    const sin = Math.sin(aimAngle)
+
+    Projectiles.create(
+        cfg.type,
+        x + cos * cfg.offset,
+        y + sin * cfg.offset,
+        cos * speed,
+        sin * speed - cfg.loft,
+        id,
+    )
+
+    return { type: 'projectile', projectileType: cfg.type }
+}
+
+function fireHitscan(player, weaponId, cfg) {
+    cfg.sound()
+    const { x, y, aimAngle } = player
+    return {
+        type: cfg.type,
+        trace: rayTrace(x, y, aimAngle, HITSCAN_RANGE[weaponId]),
+        damage: DAMAGE[weaponId],
+        startX: x,
+        startY: y,
+    }
+}
 
 function rayTrace(startX, startY, angle, maxDistance) {
     const dirX = Math.cos(angle)
@@ -14,29 +113,22 @@ function rayTrace(startX, startY, angle, maxDistance) {
     const deltaDistX = dirX === 0 ? 1e30 : Math.abs(1 / dirX)
     const deltaDistY = dirY === 0 ? 1e30 : Math.abs(1 / dirY)
 
-    let stepX = 0
-    let stepY = 0
-    let sideDistX = 0
-    let sideDistY = 0
+    const stepX = dirX < 0 ? -1 : 1
+    const stepY = dirY < 0 ? -1 : 1
 
-    if (dirX < 0) {
-        stepX = -1
-        sideDistX = (startX / BRICK_WIDTH - mapX) * deltaDistX
-    } else {
-        stepX = 1
-        sideDistX = (mapX + 1 - startX / BRICK_WIDTH) * deltaDistX
-    }
+    let sideDistX =
+        dirX < 0
+            ? (startX / BRICK_WIDTH - mapX) * deltaDistX
+            : (mapX + 1 - startX / BRICK_WIDTH) * deltaDistX
 
-    if (dirY < 0) {
-        stepY = -1
-        sideDistY = (startY / BRICK_HEIGHT - mapY) * deltaDistY
-    } else {
-        stepY = 1
-        sideDistY = (mapY + 1 - startY / BRICK_HEIGHT) * deltaDistY
-    }
+    let sideDistY =
+        dirY < 0
+            ? (startY / BRICK_HEIGHT - mapY) * deltaDistY
+            : (mapY + 1 - startY / BRICK_HEIGHT) * deltaDistY
 
     let hit = false
     let side = 0
+    const maxDistSq = maxDistance * maxDistance
 
     while (!hit) {
         if (sideDistX < sideDistY) {
@@ -49,212 +141,33 @@ function rayTrace(startX, startY, angle, maxDistance) {
             side = 1
         }
 
-        const checkX = (mapX + 0.5) * BRICK_WIDTH
-        const checkY = (mapY + 0.5) * BRICK_HEIGHT
-        if (Math.hypot(checkX - startX, checkY - startY) > maxDistance) {
-            break
-        }
+        const checkX = (mapX + 0.5) * BRICK_WIDTH - startX
+        const checkY = (mapY + 0.5) * BRICK_HEIGHT - startY
+        if (checkX * checkX + checkY * checkY > maxDistSq) break
 
-        if (Map.isBrick(mapX, mapY)) {
-            hit = true
-        }
+        if (Map.isBrick(mapX, mapY)) hit = true
     }
 
-    let hitX = startX + dirX * maxDistance
-    let hitY = startY + dirY * maxDistance
-    let distance = maxDistance
-
-    if (hit) {
-        if (side === 0) {
-            hitX = (mapX + (stepX === -1 ? 1 : 0)) * BRICK_WIDTH
-            hitY = startY + ((hitX - startX) / dirX) * dirY
-            distance = Math.abs((hitX - startX) / dirX)
-        } else {
-            hitY = (mapY + (stepY === -1 ? 1 : 0)) * BRICK_HEIGHT
-            hitX = startX + ((hitY - startY) / dirY) * dirX
-            distance = Math.abs((hitY - startY) / dirY)
+    if (!hit) {
+        return {
+            hit: false,
+            hitWall: false,
+            x: startX + dirX * maxDistance,
+            y: startY + dirY * maxDistance,
+            distance: maxDistance,
         }
     }
 
-    return { hit, hitWall: hit, x: hitX, y: hitY, distance }
-}
-
-function fireGauntlet(player) {
-    const angle = player.aimAngle
-    const range = 50
-    const targetX = player.x + Math.cos(angle) * range
-    const targetY = player.y + Math.sin(angle) * range
-
-    return {
-        type: 'gauntlet',
-        damage: WeaponConstants.DAMAGE[WeaponId.GAUNTLET],
-        hitX: targetX,
-        hitY: targetY,
-        angle,
-    }
-}
-
-function fireMachinegun(player) {
-    Sound.machinegun()
-    const trace = rayTrace(player.x, player.y, player.aimAngle, 1000)
-    return {
-        type: 'hitscan',
-        trace,
-        damage: WeaponConstants.DAMAGE[WeaponId.MACHINE],
-        startX: player.x,
-        startY: player.y,
-    }
-}
-
-function fireShotgun(player) {
-    Sound.shotgun()
-    const pellets = []
-    const numPellets = 11
-    const spreadAngle = 0.15
-    const baseAngle = player.aimAngle
-
-    for (let i = 0; i < numPellets; i++) {
-        const angle = baseAngle + (Math.random() - 0.5) * spreadAngle
-        const trace = rayTrace(player.x, player.y, angle, 800)
-        pellets.push({
-            trace,
-            damage: WeaponConstants.DAMAGE[WeaponId.SHOTGUN],
-        })
+    let hitX, hitY, distance
+    if (side === 0) {
+        hitX = (mapX + (stepX === -1 ? 1 : 0)) * BRICK_WIDTH
+        hitY = startY + ((hitX - startX) / dirX) * dirY
+        distance = Math.abs((hitX - startX) / dirX)
+    } else {
+        hitY = (mapY + (stepY === -1 ? 1 : 0)) * BRICK_HEIGHT
+        hitX = startX + ((hitY - startY) / dirY) * dirX
+        distance = Math.abs((hitY - startY) / dirY)
     }
 
-    return {
-        type: 'shotgun',
-        pellets,
-        startX: player.x,
-        startY: player.y,
-    }
-}
-
-function fireGrenade(player) {
-    Sound.grenade()
-    const angle = player.aimAngle
-    const speed = WeaponConstants.PROJECTILE_SPEED[WeaponId.GRENADE]
-
-    const spawnOffset = 14
-    const velocityX = Math.cos(angle) * speed
-    const velocityY = Math.sin(angle) * speed - 2
-
-    Projectiles.create(
-        'grenade',
-        player.x + Math.cos(angle) * spawnOffset,
-        player.y + Math.sin(angle) * spawnOffset,
-        velocityX,
-        velocityY,
-        player.id,
-    )
-    return { type: 'projectile', projectileType: 'grenade' }
-}
-
-function fireRocket(player) {
-    Sound.rocket()
-    const angle = player.aimAngle
-    const speed = WeaponConstants.PROJECTILE_SPEED[WeaponId.ROCKET]
-
-    const spawnOffset = 18
-    const velocityX = Math.cos(angle) * speed
-    const velocityY = Math.sin(angle) * speed
-
-    Projectiles.create(
-        'rocket',
-        player.x + Math.cos(angle) * spawnOffset,
-        player.y + Math.sin(angle) * spawnOffset,
-        velocityX,
-        velocityY,
-        player.id,
-    )
-    return { type: 'projectile', projectileType: 'rocket' }
-}
-
-function fireRailgun(player) {
-    Sound.railgun()
-    const trace = rayTrace(player.x, player.y, player.aimAngle, 2000)
-    return {
-        type: 'rail',
-        trace,
-        damage: WeaponConstants.DAMAGE[WeaponId.RAIL],
-        startX: player.x,
-        startY: player.y,
-    }
-}
-
-function firePlasma(player) {
-    Sound.plasma()
-    const angle = player.aimAngle
-    const speed = WeaponConstants.PROJECTILE_SPEED[WeaponId.PLASMA]
-
-    const spawnOffset = 12
-    const velocityX = Math.cos(angle) * speed
-    const velocityY = Math.sin(angle) * speed
-
-    Projectiles.create(
-        'plasma',
-        player.x + Math.cos(angle) * spawnOffset,
-        player.y + Math.sin(angle) * spawnOffset,
-        velocityX,
-        velocityY,
-        player.id,
-    )
-    return { type: 'projectile', projectileType: 'plasma' }
-}
-
-function fireShaft(player) {
-    Sound.shaft()
-    const trace = rayTrace(player.x, player.y, player.aimAngle, 400)
-    return {
-        type: 'shaft',
-        trace,
-        damage: WeaponConstants.DAMAGE[WeaponId.SHAFT],
-        startX: player.x,
-        startY: player.y,
-    }
-}
-
-function fireBFG(player) {
-    Sound.bfg()
-    const angle = player.aimAngle
-    const speed = WeaponConstants.PROJECTILE_SPEED[WeaponId.BFG]
-
-    const spawnOffset = 12
-    const velocityX = Math.cos(angle) * speed
-    const velocityY = Math.sin(angle) * speed
-
-    Projectiles.create(
-        'bfg',
-        player.x + Math.cos(angle) * spawnOffset,
-        player.y + Math.sin(angle) * spawnOffset,
-        velocityX,
-        velocityY,
-        player.id,
-    )
-    return { type: 'projectile', projectileType: 'bfg' }
-}
-
-const fireFunctions = {
-    [WeaponId.GAUNTLET]: fireGauntlet,
-    [WeaponId.MACHINE]: fireMachinegun,
-    [WeaponId.SHOTGUN]: fireShotgun,
-    [WeaponId.GRENADE]: fireGrenade,
-    [WeaponId.ROCKET]: fireRocket,
-    [WeaponId.RAIL]: fireRailgun,
-    [WeaponId.PLASMA]: firePlasma,
-    [WeaponId.SHAFT]: fireShaft,
-    [WeaponId.BFG]: fireBFG,
-}
-
-export const Weapons = {
-    fire(player, weaponId) {
-        const fn = fireFunctions[weaponId]
-        return fn ? fn(player) : null
-    },
-
-    getFireRate(weaponId) {
-        return WeaponConstants.FIRE_RATE[weaponId] ?? 50
-    },
-
-    rayTrace,
+    return { hit: true, hitWall: true, x: hitX, y: hitY, distance }
 }

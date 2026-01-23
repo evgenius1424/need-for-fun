@@ -3,14 +3,29 @@ import { Map } from './map'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
-const projectiles = []
-let nextId = 0
-const explosionCallbacks = []
+const GRAVITY = 0.18
+const BOUNCE_DECAY = 0.75
+const GRENADE_FUSE = 180
+const GRENADE_MIN_VELOCITY = 0.5
+const BOUNDS_MARGIN = 100
+const SELF_HIT_GRACE = 8
+const GRENADE_HIT_GRACE = 12
+
+const HIT_RADIUS = { rocket: 28, bfg: 28, grenade: 16, plasma: 20 }
+
+const EXPLODE_SOUND = {
+    rocket: Sound.rocketExplode,
+    grenade: Sound.grenadeExplode,
+    plasma: Sound.plasmaHit,
+    bfg: Sound.plasmaHit,
+}
+
+const state = { projectiles: [], nextId: 0, explosionCallbacks: [] }
 
 export const Projectiles = {
     create(type, x, y, velocityX, velocityY, ownerId) {
         const proj = {
-            id: nextId++,
+            id: state.nextId++,
             type,
             x,
             y,
@@ -20,75 +35,48 @@ export const Projectiles = {
             age: 0,
             active: true,
         }
-        projectiles.push(proj)
+        state.projectiles.push(proj)
         return proj
     },
 
     update() {
-        const gravity = 0.18
-        const bounceDecay = 0.75
-        const grenadeFuseFrames = 180
         const cols = Map.getCols()
         const rows = Map.getRows()
+        const maxX = cols * BRICK_WIDTH + BOUNDS_MARGIN
+        const maxY = rows * BRICK_HEIGHT + BOUNDS_MARGIN
 
-        for (let i = projectiles.length - 1; i >= 0; i--) {
-            const proj = projectiles[i]
+        for (let i = state.projectiles.length - 1; i >= 0; i--) {
+            const proj = state.projectiles[i]
+
             if (!proj.active) {
-                projectiles.splice(i, 1)
+                state.projectiles.splice(i, 1)
                 continue
             }
 
             proj.age++
 
             if (proj.type === 'grenade') {
-                const speed = Math.hypot(proj.velocityX, proj.velocityY)
-                proj.velocityY += gravity + speed * 0.02
-                proj.velocityX *= 0.995
+                applyGrenadePhysics(proj)
             }
 
-            let newX = proj.x + proj.velocityX
-            let newY = proj.y + proj.velocityY
+            const newX = proj.x + proj.velocityX
+            const newY = proj.y + proj.velocityY
 
-            const colX = Math.floor(newX / BRICK_WIDTH)
-            const colY = Math.floor(newY / BRICK_HEIGHT)
-
-            if (Map.isBrick(colX, colY)) {
-                if (proj.type === 'grenade') {
-                    const oldColX = Math.floor(proj.x / BRICK_WIDTH)
-                    const oldColY = Math.floor(proj.y / BRICK_HEIGHT)
-
-                    if (oldColX !== colX) {
-                        proj.velocityX = -proj.velocityX * bounceDecay
-                        newX = proj.x + proj.velocityX
-                    }
-                    if (oldColY !== colY) {
-                        proj.velocityY = -proj.velocityY * bounceDecay
-                        newY = proj.y + proj.velocityY
-                    }
-
-                    if (Math.abs(proj.velocityX) < 0.5 && Math.abs(proj.velocityY) < 0.5) {
-                        proj.velocityX = 0
-                        proj.velocityY = 0
-                    }
-                } else {
-                    this.explode(proj)
-                    continue
-                }
-            }
+            if (checkWallCollision(proj, newX, newY)) continue
 
             proj.x = newX
             proj.y = newY
 
-            if (proj.type === 'grenade' && proj.age > grenadeFuseFrames) {
+            if (proj.type === 'grenade' && proj.age > GRENADE_FUSE) {
                 this.explode(proj)
                 continue
             }
 
             if (
-                proj.x < -100 ||
-                proj.x > cols * BRICK_WIDTH + 100 ||
-                proj.y < -100 ||
-                proj.y > rows * BRICK_HEIGHT + 100
+                proj.x < -BOUNDS_MARGIN ||
+                proj.x > maxX ||
+                proj.y < -BOUNDS_MARGIN ||
+                proj.y > maxY
             ) {
                 proj.active = false
             }
@@ -97,49 +85,65 @@ export const Projectiles = {
 
     explode(proj) {
         proj.active = false
-
-        if (proj.type === 'rocket') {
-            Sound.rocketExplode()
-        } else if (proj.type === 'grenade') {
-            Sound.grenadeExplode()
-        } else if (proj.type === 'plasma' || proj.type === 'bfg') {
-            Sound.plasmaHit()
-        }
-
-        for (const callback of explosionCallbacks) {
-            callback(proj.x, proj.y, proj.type, proj)
+        EXPLODE_SOUND[proj.type]?.()
+        for (const cb of state.explosionCallbacks) {
+            cb(proj.x, proj.y, proj.type, proj)
         }
     },
 
     onExplosion(callback) {
-        explosionCallbacks.push(callback)
+        state.explosionCallbacks.push(callback)
     },
 
     checkPlayerCollision(player, proj) {
         if (!proj.active) return false
-        if (proj.ownerId === player.id && proj.age < 8) return false
-        if (proj.type === 'grenade' && proj.age < 12) return false
+        if (proj.ownerId === player.id && proj.age < SELF_HIT_GRACE) return false
+        if (proj.type === 'grenade' && proj.age < GRENADE_HIT_GRACE) return false
 
         const dx = player.x - proj.x
         const dy = player.y - proj.y
-        const distance = Math.sqrt(dx * dx + dy * dy)
+        const radius = HIT_RADIUS[proj.type] ?? 20
 
-        let hitRadius = 20
-        if (proj.type === 'rocket' || proj.type === 'bfg') {
-            hitRadius = 28
-        }
-        if (proj.type === 'grenade') {
-            hitRadius = 16
-        }
-
-        return distance < hitRadius
+        return dx * dx + dy * dy < radius * radius
     },
 
-    getAll() {
-        return projectiles
-    },
+    getAll: () => state.projectiles,
 
     clear() {
-        projectiles.length = 0
+        state.projectiles.length = 0
     },
+}
+
+function applyGrenadePhysics(proj) {
+    const speed = Math.hypot(proj.velocityX, proj.velocityY)
+    proj.velocityY += GRAVITY + speed * 0.02
+    proj.velocityX *= 0.995
+}
+
+function checkWallCollision(proj, newX, newY) {
+    const colX = Math.floor(newX / BRICK_WIDTH)
+    const colY = Math.floor(newY / BRICK_HEIGHT)
+
+    if (!Map.isBrick(colX, colY)) return false
+
+    if (proj.type !== 'grenade') {
+        Projectiles.explode(proj)
+        return true
+    }
+
+    const oldColX = Math.floor(proj.x / BRICK_WIDTH)
+    const oldColY = Math.floor(proj.y / BRICK_HEIGHT)
+
+    if (oldColX !== colX) proj.velocityX *= -BOUNCE_DECAY
+    if (oldColY !== colY) proj.velocityY *= -BOUNCE_DECAY
+
+    if (
+        Math.abs(proj.velocityX) < GRENADE_MIN_VELOCITY &&
+        Math.abs(proj.velocityY) < GRENADE_MIN_VELOCITY
+    ) {
+        proj.velocityX = 0
+        proj.velocityY = 0
+    }
+
+    return false
 }

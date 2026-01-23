@@ -3,85 +3,169 @@ import { Constants, WeaponId } from './helpers'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
-// Texture cache
+const ANIM_CONFIG = {
+    walk: { frames: 18, width: 45, height: 48, file: 'wb.png' },
+    crouch: { frames: 10, width: 50, height: 40, file: 'cb.png' },
+    die: { frames: 30, width: 45, height: 48, file: 'db.png' },
+}
+
+const WEAPON_PATHS = {
+    [WeaponId.GAUNTLET]: '/assets/nfk/weapons/gauntlet.png',
+    [WeaponId.MACHINE]: '/assets/nfk/weapons/machinegun.png',
+    [WeaponId.SHOTGUN]: '/assets/nfk/weapons/shotgun.png',
+    [WeaponId.GRENADE]: '/assets/nfk/weapons/grenade.png',
+    [WeaponId.ROCKET]: '/assets/nfk/weapons/rocket.png',
+    [WeaponId.RAIL]: '/assets/nfk/weapons/railgun.png',
+    [WeaponId.PLASMA]: '/assets/nfk/weapons/plasma.png',
+    [WeaponId.SHAFT]: '/assets/nfk/weapons/shaft.png',
+    [WeaponId.BFG]: '/assets/nfk/weapons/bfg.png',
+}
+
+const ITEM_PATHS = {
+    health5: '/assets/nfk/items/health5.png',
+    health25: '/assets/nfk/items/health25.png',
+    health50: '/assets/nfk/items/health50.png',
+    health100: '/assets/nfk/items/health100.png',
+    armor50: '/assets/nfk/items/armor50.png',
+    armor100: '/assets/nfk/items/armor100.png',
+    quad: '/assets/nfk/items/quad.png',
+}
+
 const textures = {}
 
-/**
- * Generate a brick texture with beveled edges (32x16)
- */
-function generateBrickTexture() {
-    const canvas = document.createElement('canvas')
-    canvas.width = BRICK_WIDTH
-    canvas.height = BRICK_HEIGHT
-    const ctx = canvas.getContext('2d')
+export async function loadAssets() {
+    textures.brick = genBrickTexture()
+    textures.explosion = genExplosionTexture()
+    textures.background = await loadWithFallback(
+        '/assets/nfk/backgrounds/bg_1.jpg',
+        genBackgroundTexture,
+    )
+    textures.projectiles = {
+        rocket: genProjectileTexture('rocket'),
+        plasma: genProjectileTexture('plasma'),
+        grenade: genProjectileTexture('grenade'),
+        bfg: genProjectileTexture('bfg'),
+    }
 
-    // Base color with slight variation
+    await loadPlayerAnimations()
+    textures.player = textures.playerAnimations.walk[0] || genPlayerTexture()
+
+    textures.weaponIcons = await loadIconMap(WEAPON_PATHS)
+    textures.itemIcons = await loadIconMap(ITEM_PATHS)
+
+    return textures
+}
+
+export const getTexture = (name) => textures[name]
+export const getProjectileTexture = (type) =>
+    textures.projectiles?.[type] ?? textures.projectiles?.rocket
+export const getWeaponIcon = (id) => textures.weaponIcons?.[id] ?? null
+export const getItemIcon = (id) => textures.itemIcons?.[id] ?? null
+export const getPlayerAnimationFrames = (type) => textures.playerAnimations?.[type] ?? []
+
+async function loadWithFallback(path, fallbackFn) {
+    try {
+        return await PIXI.Assets.load(path)
+    } catch {
+        return fallbackFn()
+    }
+}
+
+async function loadIconMap(paths) {
+    const icons = {}
+    await Promise.all(
+        Object.entries(paths).map(async ([id, path]) => {
+            try {
+                icons[id] = await PIXI.Assets.load(path)
+            } catch {
+                icons[id] = null
+            }
+        }),
+    )
+    return icons
+}
+
+async function loadPlayerAnimations() {
+    textures.playerAnimations = { walk: [], crouch: [], die: [] }
+
+    try {
+        for (const [name, cfg] of Object.entries(ANIM_CONFIG)) {
+            const sheet = await PIXI.Assets.load(`/assets/nfk/models/sarge/${cfg.file}`)
+            for (let i = 0; i < cfg.frames; i++) {
+                textures.playerAnimations[name].push(
+                    new PIXI.Texture({
+                        source: sheet.source,
+                        frame: new PIXI.Rectangle(i * cfg.width, 0, cfg.width, cfg.height),
+                    }),
+                )
+            }
+        }
+    } catch {
+        const fallback = genPlayerTexture()
+        textures.playerAnimations.walk = [fallback]
+        textures.playerAnimations.crouch = [fallback]
+        textures.playerAnimations.die = [fallback]
+    }
+}
+
+function createCanvas(w, h) {
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    return { canvas, ctx: canvas.getContext('2d') }
+}
+
+function genBrickTexture() {
+    const { canvas, ctx } = createCanvas(BRICK_WIDTH, BRICK_HEIGHT)
+
     ctx.fillStyle = '#888888'
     ctx.fillRect(0, 0, BRICK_WIDTH, BRICK_HEIGHT)
 
-    // Add noise texture
     const imageData = ctx.getImageData(0, 0, BRICK_WIDTH, BRICK_HEIGHT)
     const data = imageData.data
     for (let i = 0; i < data.length; i += 4) {
         const noise = (Math.random() - 0.5) * 20
-        data[i] = Math.max(0, Math.min(255, data[i] + noise))
-        data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + noise))
-        data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + noise))
+        data[i] = clamp(data[i] + noise)
+        data[i + 1] = clamp(data[i + 1] + noise)
+        data[i + 2] = clamp(data[i + 2] + noise)
     }
     ctx.putImageData(imageData, 0, 0)
 
-    // Top edge highlight
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'
     ctx.fillRect(0, 0, BRICK_WIDTH, 2)
-
-    // Left edge highlight
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'
     ctx.fillRect(0, 0, 2, BRICK_HEIGHT)
-
-    // Bottom edge shadow
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'
     ctx.fillRect(0, BRICK_HEIGHT - 2, BRICK_WIDTH, 2)
-
-    // Right edge shadow
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'
     ctx.fillRect(BRICK_WIDTH - 2, 0, 2, BRICK_HEIGHT)
 
-    // Inner border line
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)'
+    ctx.strokeStyle = 'rgba(0,0,0,0.15)'
     ctx.lineWidth = 1
     ctx.strokeRect(1, 1, BRICK_WIDTH - 2, BRICK_HEIGHT - 2)
 
     return PIXI.Texture.from(canvas)
 }
 
-/**
- * Generate a tileable background texture (64x64)
- */
-function generateBackgroundTexture() {
-    const canvas = document.createElement('canvas')
-    canvas.width = 64
-    canvas.height = 64
-    const ctx = canvas.getContext('2d')
+function genBackgroundTexture() {
+    const { canvas, ctx } = createCanvas(64, 64)
 
-    // Dark base
     ctx.fillStyle = '#1a1a2e'
     ctx.fillRect(0, 0, 64, 64)
 
-    // Add perlin-like noise pattern
     for (let y = 0; y < 64; y++) {
         for (let x = 0; x < 64; x++) {
             const noise =
                 Math.sin(x * 0.3) * Math.cos(y * 0.3) * 10 +
                 Math.sin(x * 0.7 + y * 0.5) * 5 +
                 (Math.random() - 0.5) * 15
-            const brightness = Math.max(0, Math.min(255, 26 + noise))
-            ctx.fillStyle = `rgb(${brightness}, ${brightness}, ${brightness + 10})`
+            const b = clamp(26 + noise)
+            ctx.fillStyle = `rgb(${b},${b},${b + 10})`
             ctx.fillRect(x, y, 1, 1)
         }
     }
 
-    // Add subtle grid lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)'
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)'
     ctx.lineWidth = 1
     for (let i = 0; i < 64; i += 16) {
         ctx.beginPath()
@@ -97,74 +181,64 @@ function generateBackgroundTexture() {
     return PIXI.Texture.from(canvas)
 }
 
-/**
- * Generate a player texture (20x48) - humanoid silhouette
- */
-function generatePlayerTexture() {
-    const canvas = document.createElement('canvas')
-    canvas.width = 20
-    canvas.height = 48
-    const ctx = canvas.getContext('2d')
+function genPlayerTexture() {
+    const { canvas, ctx } = createCanvas(20, 48)
+    const base = '#cccccc',
+        dark = '#888888',
+        light = '#ffffff'
 
-    // Use neutral gray - will be tinted at runtime
-    const baseColor = '#cccccc'
-    const darkColor = '#888888'
-    const lightColor = '#ffffff'
-
-    // Body (torso)
-    ctx.fillStyle = baseColor
+    ctx.fillStyle = base
     ctx.fillRect(6, 12, 8, 20)
-
-    // Head (profile, facing right)
     ctx.beginPath()
     ctx.arc(13, 7, 5, 0, Math.PI * 2)
-    ctx.fillStyle = baseColor
     ctx.fill()
 
-    // Visor/face detail
-    ctx.fillStyle = darkColor
+    ctx.fillStyle = dark
     ctx.fillRect(12, 5, 6, 3)
-
-    // Backpack
-    ctx.fillStyle = darkColor
     ctx.fillRect(4, 14, 2, 12)
-
-    // Arms (front arm extended)
-    ctx.fillStyle = baseColor
-    ctx.fillRect(12, 16, 6, 4)
-    ctx.fillRect(7, 17, 3, 4)
-
-    // Legs (front/back)
-    ctx.fillStyle = baseColor
-    ctx.fillRect(10, 32, 4, 14)
-    ctx.fillRect(6, 32, 3, 14)
-
-    // Armor details
-    ctx.fillStyle = darkColor
     ctx.fillRect(8, 16, 5, 2)
     ctx.fillRect(7, 22, 7, 2)
 
-    // Highlights
-    ctx.fillStyle = lightColor
+    ctx.fillStyle = base
+    ctx.fillRect(12, 16, 6, 4)
+    ctx.fillRect(7, 17, 3, 4)
+    ctx.fillRect(10, 32, 4, 14)
+    ctx.fillRect(6, 32, 3, 14)
+
+    ctx.fillStyle = light
     ctx.globalAlpha = 0.3
     ctx.fillRect(8, 13, 5, 1)
-    ctx.globalAlpha = 1
 
     return PIXI.Texture.from(canvas)
 }
 
-/**
- * Generate projectile textures
- */
-function generateProjectileTexture(type) {
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
+function genExplosionTexture() {
+    const { canvas, ctx } = createCanvas(32, 32)
 
-    switch (type) {
-        case 'rocket': {
-            canvas.width = 16
-            canvas.height = 8
-            // Rocket body
+    const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16)
+    gradient.addColorStop(0, '#ffffff')
+    gradient.addColorStop(0.2, '#ffff00')
+    gradient.addColorStop(0.5, '#ff6600')
+    gradient.addColorStop(1, 'rgba(255,0,0,0)')
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, 32, 32)
+
+    ctx.fillStyle = '#ffffff'
+    ctx.globalAlpha = 0.7
+    for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2
+        ctx.beginPath()
+        ctx.arc(16 + Math.cos(angle) * 8, 16 + Math.sin(angle) * 8, 2, 0, Math.PI * 2)
+        ctx.fill()
+    }
+
+    return PIXI.Texture.from(canvas)
+}
+
+function genProjectileTexture(type) {
+    const generators = {
+        rocket() {
+            const { canvas, ctx } = createCanvas(16, 8)
             ctx.fillStyle = '#ff6600'
             ctx.beginPath()
             ctx.moveTo(16, 4)
@@ -174,271 +248,61 @@ function generateProjectileTexture(type) {
             ctx.lineTo(4, 8)
             ctx.closePath()
             ctx.fill()
-            // Flame trail
             ctx.fillStyle = '#ffff00'
             ctx.fillRect(0, 2, 3, 4)
-            // Tip highlight
             ctx.fillStyle = '#ffffff'
             ctx.globalAlpha = 0.5
             ctx.fillRect(12, 3, 3, 2)
-            break
-        }
-        case 'plasma': {
-            canvas.width = 12
-            canvas.height = 12
-            // Outer glow
-            const gradient = ctx.createRadialGradient(6, 6, 0, 6, 6, 6)
-            gradient.addColorStop(0, '#ffffff')
-            gradient.addColorStop(0.3, '#00ffff')
-            gradient.addColorStop(1, 'rgba(0, 255, 255, 0)')
-            ctx.fillStyle = gradient
+            return canvas
+        },
+        plasma() {
+            const { canvas, ctx } = createCanvas(12, 12)
+            const g = ctx.createRadialGradient(6, 6, 0, 6, 6, 6)
+            g.addColorStop(0, '#ffffff')
+            g.addColorStop(0.3, '#00ffff')
+            g.addColorStop(1, 'rgba(0,255,255,0)')
+            ctx.fillStyle = g
             ctx.fillRect(0, 0, 12, 12)
-            break
-        }
-        case 'grenade': {
-            canvas.width = 10
-            canvas.height = 10
-            // Grenade body
+            return canvas
+        },
+        grenade() {
+            const { canvas, ctx } = createCanvas(10, 10)
             ctx.fillStyle = '#666666'
             ctx.beginPath()
             ctx.arc(5, 5, 4, 0, Math.PI * 2)
             ctx.fill()
-            // Highlight
             ctx.fillStyle = '#888888'
             ctx.beginPath()
             ctx.arc(4, 4, 2, 0, Math.PI * 2)
             ctx.fill()
-            // Pin detail
             ctx.fillStyle = '#444444'
             ctx.fillRect(4, 0, 2, 2)
-            break
-        }
-        case 'bfg': {
-            canvas.width = 24
-            canvas.height = 24
-            // Large glowing orb
-            const bfgGradient = ctx.createRadialGradient(12, 12, 0, 12, 12, 12)
-            bfgGradient.addColorStop(0, '#ffffff')
-            bfgGradient.addColorStop(0.2, '#00ff00')
-            bfgGradient.addColorStop(0.6, '#00aa00')
-            bfgGradient.addColorStop(1, 'rgba(0, 255, 0, 0)')
-            ctx.fillStyle = bfgGradient
+            return canvas
+        },
+        bfg() {
+            const { canvas, ctx } = createCanvas(24, 24)
+            const g = ctx.createRadialGradient(12, 12, 0, 12, 12, 12)
+            g.addColorStop(0, '#ffffff')
+            g.addColorStop(0.2, '#00ff00')
+            g.addColorStop(0.6, '#00aa00')
+            g.addColorStop(1, 'rgba(0,255,0,0)')
+            ctx.fillStyle = g
             ctx.fillRect(0, 0, 24, 24)
-            break
-        }
-        default: {
-            canvas.width = 8
-            canvas.height = 8
-            ctx.fillStyle = '#ff0000'
-            ctx.beginPath()
-            ctx.arc(4, 4, 3, 0, Math.PI * 2)
-            ctx.fill()
-        }
+            return canvas
+        },
     }
 
+    const gen = generators[type]
+    if (gen) return PIXI.Texture.from(gen())
+
+    const { canvas, ctx } = createCanvas(8, 8)
+    ctx.fillStyle = '#ff0000'
+    ctx.beginPath()
+    ctx.arc(4, 4, 3, 0, Math.PI * 2)
+    ctx.fill()
     return PIXI.Texture.from(canvas)
 }
 
-/**
- * Generate explosion texture (32x32)
- */
-function generateExplosionTexture() {
-    const canvas = document.createElement('canvas')
-    canvas.width = 32
-    canvas.height = 32
-    const ctx = canvas.getContext('2d')
-
-    // Radial gradient burst
-    const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16)
-    gradient.addColorStop(0, '#ffffff')
-    gradient.addColorStop(0.2, '#ffff00')
-    gradient.addColorStop(0.5, '#ff6600')
-    gradient.addColorStop(1, 'rgba(255, 0, 0, 0)')
-    ctx.fillStyle = gradient
-    ctx.fillRect(0, 0, 32, 32)
-
-    // Add some particle-like details
-    ctx.fillStyle = '#ffffff'
-    ctx.globalAlpha = 0.7
-    for (let i = 0; i < 8; i++) {
-        const angle = (i / 8) * Math.PI * 2
-        const x = 16 + Math.cos(angle) * 8
-        const y = 16 + Math.sin(angle) * 8
-        ctx.beginPath()
-        ctx.arc(x, y, 2, 0, Math.PI * 2)
-        ctx.fill()
-    }
-
-    return PIXI.Texture.from(canvas)
-}
-
-/**
- * Load all assets and return a Promise
- */
-export async function loadAssets() {
-    textures.brick = generateBrickTexture()
-    textures.explosion = generateExplosionTexture()
-
-    let backgroundTexture = null
-    try {
-        backgroundTexture = await PIXI.Assets.load('/assets/nfk/backgrounds/bg_1.jpg')
-    } catch (error) {
-        backgroundTexture = generateBackgroundTexture()
-    }
-    textures.background = backgroundTexture
-
-    // Load player sprite sheets for animations
-    textures.playerAnimations = {
-        walk: [],
-        crouch: [],
-        die: [],
-    }
-
-    // Animation config from blue.nmdl
-    const WALK_FRAMES = 18
-    const WALK_FRAME_WIDTH = 45
-    const WALK_FRAME_HEIGHT = 48
-    const CROUCH_FRAMES = 10
-    const CROUCH_FRAME_WIDTH = 50
-    const CROUCH_FRAME_HEIGHT = 40
-    const DIE_FRAMES = 30
-    const DIE_FRAME_WIDTH = 45
-    const DIE_FRAME_HEIGHT = 48
-
-    try {
-        // Load walk sprite sheet
-        const walkSheet = await PIXI.Assets.load('/assets/nfk/models/sarge/wb.png')
-        for (let i = 0; i < WALK_FRAMES; i++) {
-            textures.playerAnimations.walk.push(
-                new PIXI.Texture({
-                    source: walkSheet.source,
-                    frame: new PIXI.Rectangle(
-                        i * WALK_FRAME_WIDTH,
-                        0,
-                        WALK_FRAME_WIDTH,
-                        WALK_FRAME_HEIGHT,
-                    ),
-                }),
-            )
-        }
-
-        // Load crouch sprite sheet
-        const crouchSheet = await PIXI.Assets.load('/assets/nfk/models/sarge/cb.png')
-        for (let i = 0; i < CROUCH_FRAMES; i++) {
-            textures.playerAnimations.crouch.push(
-                new PIXI.Texture({
-                    source: crouchSheet.source,
-                    frame: new PIXI.Rectangle(
-                        i * CROUCH_FRAME_WIDTH,
-                        0,
-                        CROUCH_FRAME_WIDTH,
-                        CROUCH_FRAME_HEIGHT,
-                    ),
-                }),
-            )
-        }
-
-        // Load death sprite sheet
-        const dieSheet = await PIXI.Assets.load('/assets/nfk/models/sarge/db.png')
-        for (let i = 0; i < DIE_FRAMES; i++) {
-            textures.playerAnimations.die.push(
-                new PIXI.Texture({
-                    source: dieSheet.source,
-                    frame: new PIXI.Rectangle(
-                        i * DIE_FRAME_WIDTH,
-                        0,
-                        DIE_FRAME_WIDTH,
-                        DIE_FRAME_HEIGHT,
-                    ),
-                }),
-            )
-        }
-    } catch (error) {
-        // Fallback to generated texture
-        const fallbackTexture = generatePlayerTexture()
-        textures.playerAnimations.walk = [fallbackTexture]
-        textures.playerAnimations.crouch = [fallbackTexture]
-        textures.playerAnimations.die = [fallbackTexture]
-    }
-
-    // Keep a single frame for backward compatibility
-    textures.player = textures.playerAnimations.walk[0] || generatePlayerTexture()
-
-    textures.weaponIcons = {}
-    const weaponIconPaths = {
-        [WeaponId.GAUNTLET]: '/assets/nfk/weapons/gauntlet.png',
-        [WeaponId.MACHINE]: '/assets/nfk/weapons/machinegun.png',
-        [WeaponId.SHOTGUN]: '/assets/nfk/weapons/shotgun.png',
-        [WeaponId.GRENADE]: '/assets/nfk/weapons/grenade.png',
-        [WeaponId.ROCKET]: '/assets/nfk/weapons/rocket.png',
-        [WeaponId.RAIL]: '/assets/nfk/weapons/railgun.png',
-        [WeaponId.PLASMA]: '/assets/nfk/weapons/plasma.png',
-        [WeaponId.SHAFT]: '/assets/nfk/weapons/shaft.png',
-        [WeaponId.BFG]: '/assets/nfk/weapons/bfg.png',
-    }
-    await Promise.all(
-        Object.entries(weaponIconPaths).map(async ([weaponId, path]) => {
-            try {
-                textures.weaponIcons[weaponId] = await PIXI.Assets.load(path)
-            } catch (error) {
-                textures.weaponIcons[weaponId] = null
-            }
-        }),
-    )
-
-    textures.itemIcons = {}
-    const itemIconPaths = {
-        health5: '/assets/nfk/items/health5.png',
-        health25: '/assets/nfk/items/health25.png',
-        health50: '/assets/nfk/items/health50.png',
-        health100: '/assets/nfk/items/health100.png',
-        armor50: '/assets/nfk/items/armor50.png',
-        armor100: '/assets/nfk/items/armor100.png',
-        quad: '/assets/nfk/items/quad.png',
-    }
-    await Promise.all(
-        Object.entries(itemIconPaths).map(async ([itemId, path]) => {
-            try {
-                textures.itemIcons[itemId] = await PIXI.Assets.load(path)
-            } catch (error) {
-                textures.itemIcons[itemId] = null
-            }
-        }),
-    )
-
-    // Projectile textures
-    textures.projectiles = {
-        rocket: generateProjectileTexture('rocket'),
-        plasma: generateProjectileTexture('plasma'),
-        grenade: generateProjectileTexture('grenade'),
-        bfg: generateProjectileTexture('bfg'),
-    }
-
-    return textures
-}
-
-/**
- * Get a loaded texture by name
- */
-export function getTexture(name) {
-    return textures[name]
-}
-
-/**
- * Get projectile texture by type
- */
-export function getProjectileTexture(type) {
-    return textures.projectiles?.[type] || textures.projectiles?.rocket
-}
-
-export function getWeaponIcon(weaponId) {
-    return textures.weaponIcons?.[weaponId] || null
-}
-
-export function getItemIcon(itemId) {
-    return textures.itemIcons?.[itemId] || null
-}
-
-export function getPlayerAnimationFrames(animationType) {
-    return textures.playerAnimations?.[animationType] || []
+function clamp(v, min = 0, max = 255) {
+    return v < min ? min : v > max ? max : v
 }
