@@ -1,11 +1,5 @@
 import { Howl } from 'howler'
 
-export const Constants = {
-    BRICK_WIDTH: 32,
-    BRICK_HEIGHT: 16,
-    PLAYER_MAX_VELOCITY_X: 3,
-}
-
 export const WeaponId = {
     GAUNTLET: 0,
     MACHINE: 1,
@@ -18,67 +12,10 @@ export const WeaponId = {
     BFG: 8,
 }
 
-export const WeaponConstants = {
-    DAMAGE: {
-        [WeaponId.GAUNTLET]: 35,
-        [WeaponId.MACHINE]: 5,
-        [WeaponId.SHOTGUN]: 7,
-        [WeaponId.GRENADE]: 65,
-        [WeaponId.ROCKET]: 100,
-        [WeaponId.RAIL]: 75,
-        [WeaponId.PLASMA]: 14,
-        [WeaponId.SHAFT]: 3,
-        [WeaponId.BFG]: 100,
-    },
-    FIRE_RATE: {
-        [WeaponId.GAUNTLET]: 25,
-        [WeaponId.MACHINE]: 5,
-        [WeaponId.SHOTGUN]: 50,
-        [WeaponId.GRENADE]: 45,
-        [WeaponId.ROCKET]: 40,
-        [WeaponId.RAIL]: 85,
-        [WeaponId.PLASMA]: 5,
-        [WeaponId.SHAFT]: 1,
-        [WeaponId.BFG]: 100,
-    },
-    PROJECTILE_SPEED: {
-        [WeaponId.ROCKET]: 6,
-        [WeaponId.PLASMA]: 7,
-        [WeaponId.BFG]: 7,
-        [WeaponId.GRENADE]: 5,
-    },
-    AMMO_START: {
-        [WeaponId.GAUNTLET]: -1,
-        [WeaponId.MACHINE]: 100,
-        [WeaponId.SHOTGUN]: 10,
-        [WeaponId.GRENADE]: 5,
-        [WeaponId.ROCKET]: 20,
-        [WeaponId.RAIL]: 10,
-        [WeaponId.PLASMA]: 30,
-        [WeaponId.SHAFT]: 50,
-        [WeaponId.BFG]: 10,
-    },
-    AMMO_PICKUP: {
-        [WeaponId.MACHINE]: 50,
-        [WeaponId.SHOTGUN]: 10,
-        [WeaponId.GRENADE]: 5,
-        [WeaponId.ROCKET]: 5,
-        [WeaponId.RAIL]: 10,
-        [WeaponId.PLASMA]: 30,
-        [WeaponId.SHAFT]: 50,
-        [WeaponId.BFG]: 10,
-    },
-    NAMES: [
-        'Gauntlet',
-        'Machinegun',
-        'Shotgun',
-        'Grenade',
-        'Rocket',
-        'Railgun',
-        'Plasma',
-        'Shaft',
-        'BFG',
-    ],
+export const Constants = {
+    BRICK_WIDTH: 32,
+    BRICK_HEIGHT: 16,
+    PLAYER_MAX_VELOCITY_X: 3,
 }
 
 export const GameConstants = {
@@ -93,32 +30,31 @@ export const GameConstants = {
     RESPAWN_TIME: 180,
 }
 
-export const Utils = {
-    trunc: Math.trunc,
-}
-
-const AIM_SENSITIVITY_KEY = 'aimSensitivity'
-const DEFAULT_AIM_SENSITIVITY = 0.005
-
-function clamp(value, min, max) {
-    return Math.max(min, Math.min(max, value))
-}
-
-export const Settings = {
-    aimSensitivity: (() => {
-        const stored = Number.parseFloat(localStorage.getItem(AIM_SENSITIVITY_KEY))
-        if (Number.isFinite(stored)) {
-            return clamp(stored, 0.005, 0.2)
-        }
-        return DEFAULT_AIM_SENSITIVITY
-    })(),
-    setAimSensitivity(value) {
-        const nextValue = clamp(value, 0.005, 0.2)
-        this.aimSensitivity = nextValue
-        localStorage.setItem(AIM_SENSITIVITY_KEY, String(nextValue))
-        return nextValue
+export const WeaponConstants = {
+    DAMAGE: weaponMap(35, 5, 7, 65, 100, 75, 14, 3, 100),
+    FIRE_RATE: weaponMap(25, 5, 50, 45, 40, 85, 5, 1, 100),
+    AMMO_START: weaponMap(-1, 100, 10, 5, 20, 10, 30, 50, 10),
+    AMMO_PICKUP: weaponMap(-1, 50, 10, 5, 5, 10, 30, 50, 10),
+    PROJECTILE_SPEED: {
+        [WeaponId.ROCKET]: 6,
+        [WeaponId.PLASMA]: 7,
+        [WeaponId.BFG]: 7,
+        [WeaponId.GRENADE]: 5,
     },
+    NAMES: [
+        'Gauntlet',
+        'Machinegun',
+        'Shotgun',
+        'Grenade',
+        'Rocket',
+        'Railgun',
+        'Plasma',
+        'Shaft',
+        'BFG',
+    ],
 }
+
+export const Utils = { trunc: Math.trunc }
 
 export const Input = {
     keyUp: false,
@@ -134,73 +70,176 @@ export const Input = {
     weaponSwitch: -1,
 }
 
-const KEY_MAP = {
-    ArrowUp: 'keyUp',
-    ArrowDown: 'keyDown',
-    ArrowLeft: 'keyLeft',
-    ArrowRight: 'keyRight',
-    w: 'keyUp',
-    s: 'keyDown',
-    a: 'keyLeft',
-    d: 'keyRight',
-    W: 'keyUp',
-    S: 'keyDown',
-    A: 'keyLeft',
-    D: 'keyRight',
-}
+export const Settings = createSettings()
 
-function handleKey(e, pressed) {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+export const Console = createConsole()
 
-    const prop = KEY_MAP[e.key]
-    if (prop) {
-        e.preventDefault()
-        Input[prop] = pressed
-        return
-    }
+export const MapEditor = { show() {}, setContent() {} }
 
-    if (pressed && e.keyCode >= 49 && e.keyCode <= 57) {
-        Input.weaponSwitch = e.keyCode - 49
-        e.preventDefault()
+export const Sound = createSoundSystem()
+
+initInputHandlers()
+
+function weaponMap(gauntlet, machine, shotgun, grenade, rocket, rail, plasma, shaft, bfg) {
+    return {
+        [WeaponId.GAUNTLET]: gauntlet,
+        [WeaponId.MACHINE]: machine,
+        [WeaponId.SHOTGUN]: shotgun,
+        [WeaponId.GRENADE]: grenade,
+        [WeaponId.ROCKET]: rocket,
+        [WeaponId.RAIL]: rail,
+        [WeaponId.PLASMA]: plasma,
+        [WeaponId.SHAFT]: shaft,
+        [WeaponId.BFG]: bfg,
     }
 }
 
-document.addEventListener('keydown', (e) => handleKey(e, true))
-document.addEventListener('keyup', (e) => handleKey(e, false))
+function createSettings() {
+    const KEY = 'aimSensitivity'
+    const DEFAULT = 0.005
+    const MIN = 0.005
+    const MAX = 0.2
 
-document.addEventListener('mousemove', (e) => {
-    if (Input.pointerLocked) {
-        Input.mouseDeltaX += e.movementX
-        Input.mouseDeltaY += e.movementY
-        return
+    const clamp = (v) => Math.max(MIN, Math.min(MAX, v))
+
+    const stored = Number.parseFloat(localStorage.getItem(KEY))
+    const initial = Number.isFinite(stored) ? clamp(stored) : DEFAULT
+
+    return {
+        aimSensitivity: initial,
+        setAimSensitivity(value) {
+            this.aimSensitivity = clamp(value)
+            localStorage.setItem(KEY, String(this.aimSensitivity))
+            return this.aimSensitivity
+        },
     }
-    Input.mouseX = e.clientX
-    Input.mouseY = e.clientY
-})
+}
 
-document.addEventListener('mousedown', (e) => {
-    if (e.button === 0) Input.mouseDown = true
-})
+function initInputHandlers() {
+    const KEY_MAP = {
+        ArrowUp: 'keyUp',
+        ArrowDown: 'keyDown',
+        ArrowLeft: 'keyLeft',
+        ArrowRight: 'keyRight',
+        w: 'keyUp',
+        s: 'keyDown',
+        a: 'keyLeft',
+        d: 'keyRight',
+        W: 'keyUp',
+        S: 'keyDown',
+        A: 'keyLeft',
+        D: 'keyRight',
+    }
 
-document.addEventListener('mouseup', (e) => {
-    if (e.button === 0) Input.mouseDown = false
-})
+    const handleKey = (e, pressed) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
 
-document.getElementById('game')?.addEventListener('contextmenu', (e) => e.preventDefault())
+        const prop = KEY_MAP[e.key]
+        if (prop) {
+            e.preventDefault()
+            Input[prop] = pressed
+            return
+        }
 
-document.addEventListener('pointerlockchange', () => {
-    const canvas = document.querySelector('#game canvas')
-    Input.pointerLocked = document.pointerLockElement === canvas
-    Input.mouseDeltaX = 0
-    Input.mouseDeltaY = 0
-})
+        if (pressed && e.keyCode >= 49 && e.keyCode <= 57) {
+            Input.weaponSwitch = e.keyCode - 49
+            e.preventDefault()
+        }
+    }
 
-export const Console = (() => {
+    document.addEventListener('keydown', (e) => handleKey(e, true))
+    document.addEventListener('keyup', (e) => handleKey(e, false))
+
+    document.addEventListener('mousemove', (e) => {
+        if (Input.pointerLocked) {
+            Input.mouseDeltaX += e.movementX
+            Input.mouseDeltaY += e.movementY
+        } else {
+            Input.mouseX = e.clientX
+            Input.mouseY = e.clientY
+        }
+    })
+
+    document.addEventListener('mousedown', (e) => {
+        if (e.button === 0) Input.mouseDown = true
+    })
+    document.addEventListener('mouseup', (e) => {
+        if (e.button === 0) Input.mouseDown = false
+    })
+
+    document.getElementById('game')?.addEventListener('contextmenu', (e) => e.preventDefault())
+
+    document.addEventListener('pointerlockchange', () => {
+        const canvas = document.querySelector('#game canvas')
+        Input.pointerLocked = document.pointerLockElement === canvas
+        Input.mouseDeltaX = 0
+        Input.mouseDeltaY = 0
+    })
+}
+
+function createConsole() {
     const el = document.getElementById('console')
     const elContent = document.getElementById('console-content')
     const elInput = document.getElementById('console-input')
     let isOpen = false
-    let html = elContent.innerHTML
+    let html = elContent?.innerHTML ?? ''
+
+    const escapeHtml = (text) =>
+        text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+
+    const writeText = (text) => {
+        html += `<br>${escapeHtml(text)}`
+        if (html.length > 5000) html = html.slice(-5000)
+        if (elContent) {
+            elContent.innerHTML = html
+            elContent.scrollTop = elContent.scrollHeight
+        }
+    }
+
+    const toggle = () => {
+        isOpen = !isOpen
+        el?.classList.toggle('open', isOpen)
+        if (isOpen && elContent && elInput) {
+            elContent.scrollTop = elContent.scrollHeight
+            elInput.focus()
+        }
+    }
+
+    const commands = {
+        help: () => {
+            writeText('Available commands:')
+            writeText('  help - show this message')
+            writeText('  map <name> - load map')
+            writeText('  sensitivity [value] - get/set mouse aim sensitivity')
+            writeText('  clear - clear console')
+        },
+        map: (args) => {
+            if (args[0]) location.href = `?mapfile=${args[0]}`
+            else writeText('Usage: map <mapname>')
+        },
+        sensitivity: (args) => {
+            if (!args[0]) {
+                writeText(`Sensitivity: ${Settings.aimSensitivity}`)
+                return
+            }
+            const val = Number.parseFloat(args[0])
+            if (!Number.isFinite(val)) {
+                writeText('Usage: sensitivity <number>')
+                return
+            }
+            writeText(`Sensitivity set to ${Settings.setAimSensitivity(val)}`)
+        },
+        clear: () => {
+            html = ''
+            if (elContent) elContent.innerHTML = ''
+        },
+    }
+
+    const execute = (text) => {
+        const [cmd, ...args] = text.split(' ')
+        if (commands[cmd]) commands[cmd](args)
+        else writeText(`Unknown command: ${cmd}`)
+    }
 
     window.addEventListener(
         'keydown',
@@ -213,165 +252,91 @@ export const Console = (() => {
         { capture: true },
     )
 
-    elInput.addEventListener('keydown', (e) => {
+    elInput?.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter') return
         e.preventDefault()
         const text = elInput.value.trim()
         if (!text) return
         writeText(`> ${text}`)
-        executeCommand(text)
+        execute(text)
         elInput.value = ''
     })
 
-    function toggle() {
-        isOpen = !isOpen
-        el.classList.toggle('open', isOpen)
-        if (isOpen) {
-            elContent.scrollTop = elContent.scrollHeight
-            elInput.focus()
-        }
-    }
-
-    function executeCommand(text) {
-        const [cmd, ...args] = text.split(' ')
-        const commands = {
-            help() {
-                writeText('Available commands:')
-                writeText('  help - show this message')
-                writeText('  map <name> - load map')
-                writeText('  sensitivity [value] - get/set mouse aim sensitivity')
-                writeText('  clear - clear console')
-            },
-            map() {
-                if (args[0]) {
-                    location.href = `?mapfile=${args[0]}`
-                } else {
-                    writeText('Usage: map <mapname>')
-                }
-            },
-            sensitivity() {
-                if (!args[0]) {
-                    writeText(`Sensitivity: ${Settings.aimSensitivity}`)
-                    return
-                }
-                const nextValue = Number.parseFloat(args[0])
-                if (!Number.isFinite(nextValue)) {
-                    writeText('Usage: sensitivity <number>')
-                    return
-                }
-                const storedValue = Settings.setAimSensitivity(nextValue)
-                writeText(`Sensitivity set to ${storedValue}`)
-            },
-            clear() {
-                html = ''
-                elContent.innerHTML = ''
-            },
-        }
-        if (commands[cmd]) {
-            commands[cmd]()
-        } else {
-            writeText(`Unknown command: ${cmd}`)
-        }
-    }
-
-    function escapeHtml(text) {
-        return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
-    }
-
-    function writeText(text) {
-        html += `<br>${escapeHtml(text)}`
-        if (html.length > 5000) html = html.slice(-5000)
-        elContent.innerHTML = html
-        elContent.scrollTop = elContent.scrollHeight
-    }
-
     return { writeText }
-})()
-
-export const MapEditor = {
-    show() {},
-    setContent() {},
 }
 
-const DEFAULT_MODEL = 'sarge'
-const modelSoundCache = new Map()
+function createSoundSystem() {
+    const DEFAULT_MODEL = 'sarge'
+    const modelCache = new Map()
 
-function getModelSounds(model) {
-    const key = model || DEFAULT_MODEL
-    if (modelSoundCache.has(key)) return modelSoundCache.get(key)
+    const howl = (src, volume = 1) => new Howl({ src: [src], volume })
 
-    const basePath = `/assets/nfk/models/${key}`
-    const sounds = {
-        jump: new Howl({ src: [`${basePath}/jump1.wav`] }),
-        death: [
-            new Howl({ src: [`${basePath}/death1.wav`] }),
-            new Howl({ src: [`${basePath}/death2.wav`] }),
-            new Howl({ src: [`${basePath}/death3.wav`] }),
-        ],
-        pain: {
-            25: new Howl({ src: [`${basePath}/pain25_1.wav`] }),
-            50: new Howl({ src: [`${basePath}/pain50_1.wav`] }),
-            75: new Howl({ src: [`${basePath}/pain75_1.wav`] }),
-            100: new Howl({ src: [`${basePath}/pain100_1.wav`] }),
-        },
+    const weapons = {
+        machinegun: howl('/sounds/machinegun.wav', 0.5),
+        shotgun: howl('/sounds/shotgun.wav', 0.6),
+        grenade: howl('/sounds/grenade.wav', 0.6),
+        rocket: howl('/sounds/rocket.wav', 0.6),
+        railgun: howl('/sounds/railgun.wav', 0.6),
+        plasma: howl('/sounds/plasma.wav', 0.4),
+        shaft: howl('/sounds/shaft.wav', 0.3),
+        bfg: howl('/sounds/bfg.wav', 0.7),
+        rocketExplode: howl('/sounds/rocket_explode.wav', 0.7),
+        grenadeExplode: howl('/sounds/grenade_explode.wav', 0.7),
+        plasmaHit: howl('/sounds/plasma_hit.wav', 0.4),
     }
 
-    modelSoundCache.set(key, sounds)
-    return sounds
-}
+    const defaultJump = howl('/sounds/jump1.wav')
 
-function pickPainLevel(damage) {
-    if (damage >= 100) return 100
-    if (damage >= 75) return 75
-    if (damage >= 50) return 50
-    if (damage >= 25) return 25
-    return null
-}
+    const getModelSounds = (model) => {
+        const key = model || DEFAULT_MODEL
+        if (modelCache.has(key)) return modelCache.get(key)
 
-function playRandom(sounds) {
-    if (!sounds || sounds.length === 0) return
-    const pick = sounds[Math.floor(Math.random() * sounds.length)]
-    pick.play()
-}
-
-const jumpSound = new Howl({ src: ['/sounds/jump1.wav'] })
-const machinegunSound = new Howl({ src: ['/sounds/machinegun.wav'], volume: 0.5 })
-const shotgunSound = new Howl({ src: ['/sounds/shotgun.wav'], volume: 0.6 })
-const grenadeSound = new Howl({ src: ['/sounds/grenade.wav'], volume: 0.6 })
-const rocketSound = new Howl({ src: ['/sounds/rocket.wav'], volume: 0.6 })
-const railgunSound = new Howl({ src: ['/sounds/railgun.wav'], volume: 0.6 })
-const plasmaSound = new Howl({ src: ['/sounds/plasma.wav'], volume: 0.4 })
-const shaftSound = new Howl({ src: ['/sounds/shaft.wav'], volume: 0.3 })
-const bfgSound = new Howl({ src: ['/sounds/bfg.wav'], volume: 0.7 })
-const rocketExplodeSound = new Howl({ src: ['/sounds/rocket_explode.wav'], volume: 0.7 })
-const grenadeExplodeSound = new Howl({ src: ['/sounds/grenade_explode.wav'], volume: 0.7 })
-const plasmaHitSound = new Howl({ src: ['/sounds/plasma_hit.wav'], volume: 0.4 })
-
-export const Sound = {
-    jump: (model) => {
-        if (model) {
-            getModelSounds(model).jump.play()
-            return
+        const base = `/assets/nfk/models/${key}`
+        const sounds = {
+            jump: howl(`${base}/jump1.wav`),
+            death: [
+                howl(`${base}/death1.wav`),
+                howl(`${base}/death2.wav`),
+                howl(`${base}/death3.wav`),
+            ],
+            pain: {
+                25: howl(`${base}/pain25_1.wav`),
+                50: howl(`${base}/pain50_1.wav`),
+                75: howl(`${base}/pain75_1.wav`),
+                100: howl(`${base}/pain100_1.wav`),
+            },
         }
-        jumpSound.play()
-    },
-    death: (model) => {
-        playRandom(getModelSounds(model).death)
-    },
-    pain: (model, damage) => {
-        const level = pickPainLevel(damage)
-        if (!level) return
-        getModelSounds(model).pain[level].play()
-    },
-    machinegun: () => machinegunSound.play(),
-    shotgun: () => shotgunSound.play(),
-    grenade: () => grenadeSound.play(),
-    rocket: () => rocketSound.play(),
-    railgun: () => railgunSound.play(),
-    plasma: () => plasmaSound.play(),
-    shaft: () => shaftSound.play(),
-    bfg: () => bfgSound.play(),
-    rocketExplode: () => rocketExplodeSound.play(),
-    grenadeExplode: () => grenadeExplodeSound.play(),
-    plasmaHit: () => plasmaHitSound.play(),
+        modelCache.set(key, sounds)
+        return sounds
+    }
+
+    const pickPainLevel = (damage) => {
+        if (damage >= 100) return 100
+        if (damage >= 75) return 75
+        if (damage >= 50) return 50
+        if (damage >= 25) return 25
+        return null
+    }
+
+    const playRandom = (arr) => arr?.[Math.floor(Math.random() * arr.length)]?.play()
+
+    return {
+        jump: (model) => (model ? getModelSounds(model).jump : defaultJump).play(),
+        death: (model) => playRandom(getModelSounds(model).death),
+        pain: (model, damage) => {
+            const lvl = pickPainLevel(damage)
+            if (lvl) getModelSounds(model).pain[lvl].play()
+        },
+        machinegun: () => weapons.machinegun.play(),
+        shotgun: () => weapons.shotgun.play(),
+        grenade: () => weapons.grenade.play(),
+        rocket: () => weapons.rocket.play(),
+        railgun: () => weapons.railgun.play(),
+        plasma: () => weapons.plasma.play(),
+        shaft: () => weapons.shaft.play(),
+        bfg: () => weapons.bfg.play(),
+        rocketExplode: () => weapons.rocketExplode.play(),
+        grenadeExplode: () => weapons.grenadeExplode.play(),
+        plasmaHit: () => weapons.plasmaHit.play(),
+    }
 }
