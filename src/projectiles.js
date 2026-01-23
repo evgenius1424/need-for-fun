@@ -125,8 +125,8 @@ export const Projectiles = {
         const distance = Math.sqrt(dx * dx + dy * dy)
 
         let hitRadius = 20
-        if (proj.type === 'rocket' || proj.type === 'grenade' || proj.type === 'bfg') {
-            hitRadius = 60
+        if (proj.type === 'rocket' || proj.type === 'bfg') {
+            hitRadius = 28
         }
         if (proj.type === 'grenade') {
             hitRadius = 16
