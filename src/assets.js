@@ -310,7 +310,12 @@ export async function loadAssets() {
             textures.playerAnimations.walk.push(
                 new PIXI.Texture({
                     source: walkSheet.source,
-                    frame: new PIXI.Rectangle(i * WALK_FRAME_WIDTH, 0, WALK_FRAME_WIDTH, WALK_FRAME_HEIGHT),
+                    frame: new PIXI.Rectangle(
+                        i * WALK_FRAME_WIDTH,
+                        0,
+                        WALK_FRAME_WIDTH,
+                        WALK_FRAME_HEIGHT,
+                    ),
                 }),
             )
         }
@@ -321,7 +326,12 @@ export async function loadAssets() {
             textures.playerAnimations.crouch.push(
                 new PIXI.Texture({
                     source: crouchSheet.source,
-                    frame: new PIXI.Rectangle(i * CROUCH_FRAME_WIDTH, 0, CROUCH_FRAME_WIDTH, CROUCH_FRAME_HEIGHT),
+                    frame: new PIXI.Rectangle(
+                        i * CROUCH_FRAME_WIDTH,
+                        0,
+                        CROUCH_FRAME_WIDTH,
+                        CROUCH_FRAME_HEIGHT,
+                    ),
                 }),
             )
         }
@@ -332,7 +342,12 @@ export async function loadAssets() {
             textures.playerAnimations.die.push(
                 new PIXI.Texture({
                     source: dieSheet.source,
-                    frame: new PIXI.Rectangle(i * DIE_FRAME_WIDTH, 0, DIE_FRAME_WIDTH, DIE_FRAME_HEIGHT),
+                    frame: new PIXI.Rectangle(
+                        i * DIE_FRAME_WIDTH,
+                        0,
+                        DIE_FRAME_WIDTH,
+                        DIE_FRAME_HEIGHT,
+                    ),
                 }),
             )
         }

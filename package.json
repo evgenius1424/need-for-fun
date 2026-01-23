@@ -32,8 +32,5 @@
     "dependencies": {
         "howler": "^2.2.4",
         "pixi.js": "^8.15.0"
-    },
-    "volta": {
-        "node": "22.22.0"
     }
 }

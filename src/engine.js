@@ -2,7 +2,13 @@ import * as PIXI from 'pixi.js'
 import { Console, Constants, Sound, Utils, WeaponConstants, WeaponId } from './helpers'
 import { Map } from './map'
 import { Projectiles } from './projectiles'
-import { getTexture, getProjectileTexture, getWeaponIcon, getItemIcon, getPlayerAnimationFrames } from './assets'
+import {
+    getTexture,
+    getProjectileTexture,
+    getWeaponIcon,
+    getItemIcon,
+    getPlayerAnimationFrames,
+} from './assets'
 
 const { BRICK_WIDTH, BRICK_HEIGHT, PLAYER_MAX_VELOCITY_X } = Constants
 const { trunc } = Utils
