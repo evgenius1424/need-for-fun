@@ -27,11 +27,19 @@ const WEAPON_ITEM_MAP = {
 }
 
 const app = new PIXI.Application()
-await app.init({
-    width: innerWidth,
-    height: innerHeight,
-    background: 0x262626,
-})
+try {
+    await app.init({
+        width: innerWidth,
+        height: innerHeight,
+        background: 0x262626,
+        preference: 'webgl',
+        autoDensity: true,
+        resolution: Math.min(window.devicePixelRatio || 1, 2),
+    })
+} catch (error) {
+    Console.writeText(`renderer init failed: ${error?.message ?? error}`)
+    throw error
+}
 app.canvas.style.display = 'block'
 document.getElementById('game').appendChild(app.canvas)
 

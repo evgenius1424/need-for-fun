@@ -1,3 +1,4 @@
+import { Howler } from 'howler'
 import { Constants, GameConstants, Input, Settings, WeaponConstants, WeaponId } from './helpers'
 import { Map } from './map'
 import { Player } from './player'
@@ -48,6 +49,9 @@ let lastMoveDir = 0
 
 const gameRoot = document.getElementById('game')
 gameRoot?.addEventListener('click', () => {
+    if (Howler.ctx && Howler.ctx.state === 'suspended') {
+        Howler.ctx.resume()
+    }
     const canvas = gameRoot.querySelector('canvas')
     if (!canvas) return
     if (document.pointerLockElement !== canvas) {
