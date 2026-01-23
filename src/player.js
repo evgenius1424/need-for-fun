@@ -5,12 +5,23 @@ import { Weapons } from './weapons'
 const { trunc } = Utils
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 const { isBrick } = Map
+const { MAX_HEALTH, MAX_ARMOR, SELF_DAMAGE_REDUCTION, ARMOR_ABSORPTION, RESPAWN_TIME } =
+    GameConstants
+const { AMMO_START } = WeaponConstants
+
+const HALF_WIDTH = 9
+const HALF_HEIGHT = 24
+const CROUCH_HALF_HEIGHT = 8
+const GROUND_PROBE = 25
+const HEAD_PROBE = 25
+const CROUCH_HEAD_PROBE = 9
+const HALF_PI = Math.PI / 2
+const TWO_PI = Math.PI * 2
 
 let nextPlayerId = 0
 
 export class Player {
     id = nextPlayerId++
-
     model = 'sarge'
 
     x = 0
@@ -30,35 +41,21 @@ export class Player {
     cacheOnGround = false
     cacheBrickOnHead = false
     cacheBrickCrouchOnHead = false
-
     #lastCacheX = NaN
     #lastCacheY = NaN
 
-    // Combat properties
-    health = GameConstants.MAX_HEALTH
+    health = MAX_HEALTH
     armor = 0
     dead = false
     respawnTimer = 0
 
-    // Weapon system
     aimAngle = 0
     facingLeft = false
-    weapons = [true, true, true, true, true, true, true, true, true]
-    ammo = [
-        WeaponConstants.AMMO_START[WeaponId.GAUNTLET],
-        WeaponConstants.AMMO_START[WeaponId.MACHINE],
-        WeaponConstants.AMMO_START[WeaponId.SHOTGUN],
-        WeaponConstants.AMMO_START[WeaponId.GRENADE],
-        WeaponConstants.AMMO_START[WeaponId.ROCKET],
-        WeaponConstants.AMMO_START[WeaponId.RAIL],
-        WeaponConstants.AMMO_START[WeaponId.PLASMA],
-        WeaponConstants.AMMO_START[WeaponId.SHAFT],
-        WeaponConstants.AMMO_START[WeaponId.BFG],
-    ]
+    weapons = Array(9).fill(true)
+    ammo = createAmmoArray()
     currentWeapon = WeaponId.ROCKET
     fireCooldown = 0
 
-    // Powerups
     quadDamage = false
     quadTimer = 0
 
@@ -67,99 +64,46 @@ export class Player {
     }
 
     setX(newX) {
-        if (newX === this.x) return
-        this.x = newX
-        this.#updateCaches()
+        if (newX !== this.x) {
+            this.x = newX
+            this.#updateCaches()
+        }
     }
 
     setY(newY) {
-        if (newY === this.y) return
-        this.y = newY
-        this.#updateCaches()
+        if (newY !== this.y) {
+            this.y = newY
+            this.#updateCaches()
+        }
     }
 
     setXY(newX, newY) {
-        if (newX === this.x && newY === this.y) return
-        this.x = newX
-        this.y = newY
-        this.#updateCaches()
+        if (newX !== this.x || newY !== this.y) {
+            this.x = newX
+            this.y = newY
+            this.#updateCaches()
+        }
     }
 
     isOnGround() {
         return this.cacheOnGround
     }
-
     isBrickOnHead() {
         return this.cacheBrickOnHead
     }
-
     isBrickCrouchOnHead() {
         return this.cacheBrickCrouchOnHead
     }
 
-    #updateCaches() {
-        const cacheKeyX = trunc(this.x)
-        const cacheKeyY = trunc(this.y)
-        if (cacheKeyX === this.#lastCacheX && cacheKeyY === this.#lastCacheY) return
-        this.#lastCacheX = cacheKeyX
-        this.#lastCacheY = cacheKeyY
-
-        this.#updateCacheOnGround()
-        this.#updateCacheBrickOnHead()
-        this.#updateCacheBrickCrouchOnHead()
-    }
-
-    #updateCacheOnGround() {
-        const { x, y } = this
-        this.cacheOnGround =
-            (isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y + 25) / BRICK_HEIGHT)) &&
-                !isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y + 23) / BRICK_HEIGHT))) ||
-            (isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y + 25) / BRICK_HEIGHT)) &&
-                !isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y + 23) / BRICK_HEIGHT))) ||
-            (isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y + 24) / BRICK_HEIGHT)) &&
-                !isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y + 8) / BRICK_HEIGHT))) ||
-            (isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y + 24) / BRICK_HEIGHT)) &&
-                !isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y + 8) / BRICK_HEIGHT)))
-    }
-
-    #updateCacheBrickOnHead() {
-        const { x, y } = this
-        this.cacheBrickOnHead =
-            (isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y - 25) / BRICK_HEIGHT)) &&
-                !isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y - 23) / BRICK_HEIGHT))) ||
-            (isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y - 25) / BRICK_HEIGHT)) &&
-                !isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y - 23) / BRICK_HEIGHT))) ||
-            (isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y - 24) / BRICK_HEIGHT)) &&
-                !isBrick(trunc((x - 9) / BRICK_WIDTH), trunc((y - 8) / BRICK_HEIGHT))) ||
-            (isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y - 24) / BRICK_HEIGHT)) &&
-                !isBrick(trunc((x + 9) / BRICK_WIDTH), trunc((y - 8) / BRICK_HEIGHT)))
-    }
-
-    #updateCacheBrickCrouchOnHead() {
-        const { x, y } = this
-        this.cacheBrickCrouchOnHead =
-            (isBrick(trunc((x - 8) / BRICK_WIDTH), trunc((y - 9) / BRICK_HEIGHT)) &&
-                !isBrick(trunc((x - 8) / BRICK_WIDTH), trunc((y - 7) / BRICK_HEIGHT))) ||
-            (isBrick(trunc((x + 8) / BRICK_WIDTH), trunc((y - 9) / BRICK_HEIGHT)) &&
-                !isBrick(trunc((x + 8) / BRICK_WIDTH), trunc((y - 7) / BRICK_HEIGHT))) ||
-            isBrick(trunc((x - 8) / BRICK_WIDTH), trunc((y - 23) / BRICK_HEIGHT)) ||
-            isBrick(trunc((x + 8) / BRICK_WIDTH), trunc((y - 23) / BRICK_HEIGHT)) ||
-            isBrick(trunc((x - 8) / BRICK_WIDTH), trunc((y - 16) / BRICK_HEIGHT)) ||
-            isBrick(trunc((x + 8) / BRICK_WIDTH), trunc((y - 16) / BRICK_HEIGHT))
-    }
-
-    // Combat methods
     update() {
         if (this.fireCooldown > 0) this.fireCooldown--
 
-        if (this.dead && this.respawnTimer > 0) {
-            this.respawnTimer--
-            if (this.respawnTimer <= 0) this.respawn()
+        if (this.dead && --this.respawnTimer <= 0) {
+            this.respawn()
         }
 
-        if (this.quadDamage && this.quadTimer > 0) {
-            this.quadTimer--
-            if (this.quadTimer <= 0) this.quadDamage = false
+        if (this.quadDamage && --this.quadTimer <= 0) {
+            this.quadDamage = false
         }
     }
 
@@ -193,91 +137,147 @@ export class Player {
         }
     }
 
-    giveHealth(amount, maxHealth = GameConstants.MAX_HEALTH) {
-        this.health = Math.min(this.health + amount, maxHealth)
+    giveHealth(amount, max = MAX_HEALTH) {
+        this.health = Math.min(this.health + amount, max)
     }
 
     giveArmor(amount) {
-        this.armor = Math.min(this.armor + amount, GameConstants.MAX_ARMOR)
+        this.armor = Math.min(this.armor + amount, MAX_ARMOR)
     }
 
     takeDamage(damage, attackerId) {
         if (this.dead) return
 
-        let actualDamage = damage
-
-        if (attackerId === this.id) {
-            actualDamage *= GameConstants.SELF_DAMAGE_REDUCTION
-        }
+        let actual = attackerId === this.id ? damage * SELF_DAMAGE_REDUCTION : damage
 
         if (this.armor > 0) {
-            let armorDamage = Math.floor(actualDamage * GameConstants.ARMOR_ABSORPTION)
-            if (armorDamage > this.armor) armorDamage = this.armor
+            const armorDamage = Math.min(Math.floor(actual * ARMOR_ABSORPTION), this.armor)
             this.armor -= armorDamage
-            actualDamage -= armorDamage
+            actual -= armorDamage
         }
 
-        const roundedDamage = Math.floor(actualDamage)
-        this.health -= roundedDamage
+        const rounded = Math.floor(actual)
+        this.health -= rounded
 
         if (this.health <= 0) {
             this.die()
-        } else if (roundedDamage > 0) {
-            Sound.pain(this.model, roundedDamage)
+        } else if (rounded > 0) {
+            Sound.pain(this.model, rounded)
         }
     }
 
     die() {
         this.dead = true
-        this.respawnTimer = GameConstants.RESPAWN_TIME
+        this.respawnTimer = RESPAWN_TIME
         Sound.death(this.model)
     }
 
     respawn() {
         const spawn = Map.getRandomRespawn()
         if (spawn) {
-            this.setXY(spawn.col * BRICK_WIDTH + 10, spawn.row * BRICK_HEIGHT - 24)
+            this.setXY(spawn.col * BRICK_WIDTH + 10, spawn.row * BRICK_HEIGHT - HALF_HEIGHT)
         }
 
-        this.health = GameConstants.MAX_HEALTH
+        this.health = MAX_HEALTH
         this.armor = 0
         this.dead = false
         this.velocityX = 0
         this.velocityY = 0
-
-        this.weapons = [true, true, true, true, true, true, true, true, true]
-        this.ammo = [
-            WeaponConstants.AMMO_START[WeaponId.GAUNTLET],
-            WeaponConstants.AMMO_START[WeaponId.MACHINE],
-            WeaponConstants.AMMO_START[WeaponId.SHOTGUN],
-            WeaponConstants.AMMO_START[WeaponId.GRENADE],
-            WeaponConstants.AMMO_START[WeaponId.ROCKET],
-            WeaponConstants.AMMO_START[WeaponId.RAIL],
-            WeaponConstants.AMMO_START[WeaponId.PLASMA],
-            WeaponConstants.AMMO_START[WeaponId.SHAFT],
-            WeaponConstants.AMMO_START[WeaponId.BFG],
-        ]
+        this.weapons = Array(9).fill(true)
+        this.ammo = createAmmoArray()
         this.currentWeapon = WeaponId.ROCKET
-
         this.quadDamage = false
         this.quadTimer = 0
     }
 
-    updateAimAngle(deltaAngle, facingLeft) {
-        const halfRange = Math.PI / 2
-
+    updateAimAngle(delta, facingLeft) {
         if (facingLeft) {
-            let offset = this.aimAngle - Math.PI
-            while (offset > Math.PI) offset -= Math.PI * 2
-            while (offset < -Math.PI) offset += Math.PI * 2
-            offset = Math.max(-halfRange, Math.min(halfRange, offset + deltaAngle))
-            this.aimAngle = Math.PI + offset
+            const offset = clamp(normalizeAngle(this.aimAngle - Math.PI) + delta, -HALF_PI, HALF_PI)
+            this.aimAngle = normalizeAngle(Math.PI + offset)
         } else {
-            const nextAngle = this.aimAngle + deltaAngle
-            this.aimAngle = Math.max(-halfRange, Math.min(halfRange, nextAngle))
+            this.aimAngle = normalizeAngle(clamp(this.aimAngle + delta, -HALF_PI, HALF_PI))
         }
-
-        while (this.aimAngle > Math.PI) this.aimAngle -= Math.PI * 2
-        while (this.aimAngle < -Math.PI) this.aimAngle += Math.PI * 2
     }
+
+    #updateCaches() {
+        const cacheX = trunc(this.x)
+        const cacheY = trunc(this.y)
+        if (cacheX === this.#lastCacheX && cacheY === this.#lastCacheY) return
+        this.#lastCacheX = cacheX
+        this.#lastCacheY = cacheY
+
+        const { x, y } = this
+        const colL = trunc((x - HALF_WIDTH) / BRICK_WIDTH)
+        const colR = trunc((x + HALF_WIDTH) / BRICK_WIDTH)
+        const colLNarrow = trunc((x - CROUCH_HALF_HEIGHT) / BRICK_WIDTH)
+        const colRNarrow = trunc((x + CROUCH_HALF_HEIGHT) / BRICK_WIDTH)
+
+        this.cacheOnGround = this.#checkGround(colL, colR, y)
+        this.cacheBrickOnHead = this.#checkHead(colL, colR, y)
+        this.cacheBrickCrouchOnHead = this.#checkCrouchHead(colLNarrow, colRNarrow, y)
+    }
+
+    #checkGround(colL, colR, y) {
+        const rowProbe = trunc((y + GROUND_PROBE) / BRICK_HEIGHT)
+        const rowInside = trunc((y + HALF_HEIGHT - 1) / BRICK_HEIGHT)
+        const rowBody = trunc((y + CROUCH_HALF_HEIGHT) / BRICK_HEIGHT)
+
+        return (
+            (isBrick(colL, rowProbe) && !isBrick(colL, rowInside)) ||
+            (isBrick(colR, rowProbe) && !isBrick(colR, rowInside)) ||
+            (isBrick(colL, trunc((y + HALF_HEIGHT) / BRICK_HEIGHT)) && !isBrick(colL, rowBody)) ||
+            (isBrick(colR, trunc((y + HALF_HEIGHT) / BRICK_HEIGHT)) && !isBrick(colR, rowBody))
+        )
+    }
+
+    #checkHead(colL, colR, y) {
+        const rowProbe = trunc((y - HEAD_PROBE) / BRICK_HEIGHT)
+        const rowInside = trunc((y - HALF_HEIGHT + 1) / BRICK_HEIGHT)
+        const rowBody = trunc((y - CROUCH_HALF_HEIGHT) / BRICK_HEIGHT)
+
+        return (
+            (isBrick(colL, rowProbe) && !isBrick(colL, rowInside)) ||
+            (isBrick(colR, rowProbe) && !isBrick(colR, rowInside)) ||
+            (isBrick(colL, trunc((y - HALF_HEIGHT) / BRICK_HEIGHT)) && !isBrick(colL, rowBody)) ||
+            (isBrick(colR, trunc((y - HALF_HEIGHT) / BRICK_HEIGHT)) && !isBrick(colR, rowBody))
+        )
+    }
+
+    #checkCrouchHead(colL, colR, y) {
+        const rowProbe = trunc((y - CROUCH_HEAD_PROBE) / BRICK_HEIGHT)
+        const rowInside = trunc((y - 7) / BRICK_HEIGHT)
+
+        return (
+            (isBrick(colL, rowProbe) && !isBrick(colL, rowInside)) ||
+            (isBrick(colR, rowProbe) && !isBrick(colR, rowInside)) ||
+            isBrick(colL, trunc((y - 23) / BRICK_HEIGHT)) ||
+            isBrick(colR, trunc((y - 23) / BRICK_HEIGHT)) ||
+            isBrick(colL, trunc((y - 16) / BRICK_HEIGHT)) ||
+            isBrick(colR, trunc((y - 16) / BRICK_HEIGHT))
+        )
+    }
+}
+
+function createAmmoArray() {
+    return [
+        AMMO_START[WeaponId.GAUNTLET],
+        AMMO_START[WeaponId.MACHINE],
+        AMMO_START[WeaponId.SHOTGUN],
+        AMMO_START[WeaponId.GRENADE],
+        AMMO_START[WeaponId.ROCKET],
+        AMMO_START[WeaponId.RAIL],
+        AMMO_START[WeaponId.PLASMA],
+        AMMO_START[WeaponId.SHAFT],
+        AMMO_START[WeaponId.BFG],
+    ]
+}
+
+function normalizeAngle(angle) {
+    while (angle > Math.PI) angle -= TWO_PI
+    while (angle < -Math.PI) angle += TWO_PI
+    return angle
+}
+
+function clamp(val, min, max) {
+    return val < min ? min : val > max ? max : val
 }
