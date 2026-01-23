@@ -44,6 +44,7 @@ app.canvas.style.display = 'block'
 document.getElementById('game').appendChild(app.canvas)
 
 const { renderer, stage } = app
+stage.visible = false
 
 // World container (moves with camera)
 const worldContainer = new PIXI.Container()
@@ -409,6 +410,11 @@ export const Render = {
         weaponSprite.anchor.set(0.5, 0.5)
         weaponSprite.scale.set(WEAPON_IN_HAND_SCALE)
         worldContainer.addChild(weaponSprite)
+    },
+
+    setSceneReady(visible) {
+        stage.visible = visible
+        hudContainer.visible = visible
     },
 
     addRailShot(shot) {

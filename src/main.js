@@ -16,6 +16,7 @@ await Map.loadFromQuery()
 // Initialize sprites after assets and map are loaded
 Render.initSprites()
 Render.renderMap()
+Render.setSceneReady(true)
 
 const localPlayer = new Player()
 const respawn = Map.getRandomRespawn()
