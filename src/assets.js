@@ -442,12 +442,3 @@ export function getItemIcon(itemId) {
 export function getPlayerAnimationFrames(animationType) {
     return textures.playerAnimations?.[animationType] || []
 }
-
-export const Assets = {
-    loadAssets,
-    getTexture,
-    getProjectileTexture,
-    getWeaponIcon,
-    getItemIcon,
-    getPlayerAnimationFrames,
-}

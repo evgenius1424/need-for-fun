@@ -643,13 +643,13 @@ function playerPhysics(player) {
         if (player.isOnGround() && (player.isBrickCrouchOnHead() || player.velocityY > 0)) {
             player.velocityY = 0
             player.setY(
-                trunc(Math.round(player.y) / BRICK_HEIGHT) * BRICK_HEIGHT + BRICK_HEIGHT / 2
+                trunc(Math.round(player.y) / BRICK_HEIGHT) * BRICK_HEIGHT + BRICK_HEIGHT / 2,
             )
         } else if (player.isBrickCrouchOnHead() && player.velocityY < 0) {
             player.velocityY = 0
             player.doublejumpCountdown = 3
             player.setY(
-                trunc(Math.round(player.y) / BRICK_HEIGHT) * BRICK_HEIGHT + BRICK_HEIGHT / 2
+                trunc(Math.round(player.y) / BRICK_HEIGHT) * BRICK_HEIGHT + BRICK_HEIGHT / 2,
             )
         }
     }

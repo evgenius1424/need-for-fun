@@ -134,8 +134,6 @@ export const Input = {
     weaponSwitch: -1,
 }
 
-export const Keyboard = Input
-
 const KEY_MAP = {
     ArrowUp: 'keyUp',
     ArrowDown: 'keyDown',

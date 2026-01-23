@@ -45,8 +45,7 @@ function parseMapText(mapText) {
             const char = line[col] ?? ' '
             const itemType = itemTokens[char]
             // '0' = neutral brick, '1' = red brick, '2' = blue brick
-            const isBrickTile = char === '0' || char === '1' || char === '2'
-            bricks[row][col] = isBrickTile
+            bricks[row][col] = char === '0' || char === '1' || char === '2'
 
             // Assign team color based on tile type
             if (char === '1') {

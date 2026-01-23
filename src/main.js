@@ -151,7 +151,10 @@ function gameLoop(timestamp) {
         if (Input.mouseDeltaY !== 0) {
             const cappedDelta = Math.max(-12, Math.min(12, Input.mouseDeltaY))
             const aimDelta =
-                cappedDelta * Settings.aimSensitivity * AIM_INPUT_SCALE * (localPlayer.facingLeft ? -1 : 1)
+                cappedDelta *
+                Settings.aimSensitivity *
+                AIM_INPUT_SCALE *
+                (localPlayer.facingLeft ? -1 : 1)
             localPlayer.updateAimAngle(aimDelta, localPlayer.facingLeft)
             Input.mouseDeltaY = 0
         }
@@ -160,7 +163,10 @@ function gameLoop(timestamp) {
         lastMouseY = Input.mouseY
         if (mouseDeltaY !== 0) {
             const aimDelta =
-                mouseDeltaY * Settings.aimSensitivity * AIM_INPUT_SCALE * (localPlayer.facingLeft ? -1 : 1)
+                mouseDeltaY *
+                Settings.aimSensitivity *
+                AIM_INPUT_SCALE *
+                (localPlayer.facingLeft ? -1 : 1)
             localPlayer.updateAimAngle(aimDelta, localPlayer.facingLeft)
         }
     }
