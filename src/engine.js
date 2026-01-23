@@ -314,6 +314,24 @@ function renderExplosions() {
 
 function renderAimLine(player) {
     aimLineGraphics.clear()
+    if (!player || player.dead) return
+
+    const originX = player.x
+    const originY = player.crouch ? player.y + 8 : player.y
+    const aimDistance = BRICK_WIDTH * 2.6
+    const crossHalf = Math.max(2, BRICK_WIDTH * 0.1)
+    const x = originX + Math.cos(player.aimAngle) * aimDistance
+    const y = originY + Math.sin(player.aimAngle) * aimDistance
+
+    aimLineGraphics
+        .moveTo(x - crossHalf, y)
+        .lineTo(x + crossHalf, y)
+        .stroke({ width: 1, color: 0xffffff, alpha: 0.7 })
+
+    aimLineGraphics
+        .moveTo(x, y - crossHalf)
+        .lineTo(x, y + crossHalf)
+        .stroke({ width: 1, color: 0xffffff, alpha: 0.7 })
 }
 
 function renderRailShots() {
