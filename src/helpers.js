@@ -128,6 +128,7 @@ export const Input = {
     mouseX: 0,
     mouseY: 0,
     mouseDeltaX: 0,
+    mouseDeltaY: 0,
     mouseDown: false,
     pointerLocked: false,
     weaponSwitch: -1,
@@ -172,6 +173,7 @@ document.addEventListener('keyup', (e) => handleKey(e, false))
 document.addEventListener('mousemove', (e) => {
     if (Input.pointerLocked) {
         Input.mouseDeltaX += e.movementX
+        Input.mouseDeltaY += e.movementY
         return
     }
     Input.mouseX = e.clientX
@@ -192,6 +194,7 @@ document.addEventListener('pointerlockchange', () => {
     const canvas = document.querySelector('#game canvas')
     Input.pointerLocked = document.pointerLockElement === canvas
     Input.mouseDeltaX = 0
+    Input.mouseDeltaY = 0
 })
 
 export const Console = (() => {

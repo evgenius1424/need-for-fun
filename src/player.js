@@ -41,6 +41,7 @@ export class Player {
 
     // Weapon system
     aimAngle = 0
+    facingLeft = false
     weapons = [true, true, true, true, true, true, true, true, true]
     ammo = [
         WeaponConstants.AMMO_START[WeaponId.GAUNTLET],
@@ -261,8 +262,20 @@ export class Player {
         this.quadTimer = 0
     }
 
-    updateAimAngle(deltaAngle) {
-        this.aimAngle += deltaAngle
+    updateAimAngle(deltaAngle, facingLeft) {
+        const halfRange = Math.PI / 2
+
+        if (facingLeft) {
+            let offset = this.aimAngle - Math.PI
+            while (offset > Math.PI) offset -= Math.PI * 2
+            while (offset < -Math.PI) offset += Math.PI * 2
+            offset = Math.max(-halfRange, Math.min(halfRange, offset + deltaAngle))
+            this.aimAngle = Math.PI + offset
+        } else {
+            const nextAngle = this.aimAngle + deltaAngle
+            this.aimAngle = Math.max(-halfRange, Math.min(halfRange, nextAngle))
+        }
+
         while (this.aimAngle > Math.PI) this.aimAngle -= Math.PI * 2
         while (this.aimAngle < -Math.PI) this.aimAngle += Math.PI * 2
     }

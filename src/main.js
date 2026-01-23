@@ -43,7 +43,7 @@ Projectiles.onExplosion((x, y, type, proj) => {
     }
 })
 
-let lastMouseX = Input.mouseX
+let lastMouseY = Input.mouseY
 let lastMoveDir = 0
 
 const gameRoot = document.getElementById('game')
@@ -144,18 +144,20 @@ function gameLoop(timestamp) {
         Input.weaponSwitch = -1
     }
 
-    // Aim rotation based on mouse movement
+    // Aim rotation based on vertical mouse movement
     if (Input.pointerLocked) {
-        if (Input.mouseDeltaX !== 0) {
-            const cappedDelta = Math.max(-12, Math.min(12, Input.mouseDeltaX))
-            localPlayer.updateAimAngle(cappedDelta * Settings.aimSensitivity)
-            Input.mouseDeltaX = 0
+        if (Input.mouseDeltaY !== 0) {
+            const cappedDelta = Math.max(-12, Math.min(12, Input.mouseDeltaY))
+            const aimDelta = cappedDelta * Settings.aimSensitivity * (localPlayer.facingLeft ? -1 : 1)
+            localPlayer.updateAimAngle(aimDelta, localPlayer.facingLeft)
+            Input.mouseDeltaY = 0
         }
     } else {
-        const mouseDeltaX = Input.mouseX - lastMouseX
-        lastMouseX = Input.mouseX
-        if (mouseDeltaX !== 0) {
-            localPlayer.updateAimAngle(mouseDeltaX * Settings.aimSensitivity)
+        const mouseDeltaY = Input.mouseY - lastMouseY
+        lastMouseY = Input.mouseY
+        if (mouseDeltaY !== 0) {
+            const aimDelta = mouseDeltaY * Settings.aimSensitivity * (localPlayer.facingLeft ? -1 : 1)
+            localPlayer.updateAimAngle(aimDelta, localPlayer.facingLeft)
         }
     }
 
@@ -165,8 +167,10 @@ function gameLoop(timestamp) {
         localPlayer.aimAngle = Math.PI - localPlayer.aimAngle
         while (localPlayer.aimAngle > Math.PI) localPlayer.aimAngle -= Math.PI * 2
         while (localPlayer.aimAngle < -Math.PI) localPlayer.aimAngle += Math.PI * 2
+        localPlayer.facingLeft = moveDir < 0
         lastMoveDir = moveDir
     } else if (moveDir !== 0) {
+        localPlayer.facingLeft = moveDir < 0
         lastMoveDir = moveDir
     }
 

@@ -545,15 +545,15 @@ export const Render = {
                 playerSprite.y = player.y
             }
 
-            // Flip based on facing direction (based on aim angle)
-            const facingLeft = Math.abs(player.aimAngle) > Math.PI / 2
+            // Flip based on facing direction (keys-only)
+            const facingLeft = player.facingLeft
             playerSprite.scale.x = (facingLeft ? -1 : 1) * PLAYER_BASE_SCALE_X
         }
 
         if (!player.dead && weaponSprite) {
             const weaponIcon = getWeaponIcon(player.currentWeapon)
             if (weaponIcon) {
-                const facingLeft = Math.abs(player.aimAngle) > Math.PI / 2
+                const facingLeft = player.facingLeft
                 weaponSprite.texture = weaponIcon
                 weaponSprite.x = player.x
                 weaponSprite.y = player.crouch ? player.y + 8 : player.y
