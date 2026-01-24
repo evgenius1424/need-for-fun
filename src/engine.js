@@ -16,7 +16,7 @@ const { isBrick } = Map
 
 const PLAYER_SCALE_X = BRICK_WIDTH / 48
 const PLAYER_SCALE_Y = 1
-const WEAPON_SCALE = 0.9
+const WEAPON_SCALE = 0.85
 const BG_TILE_SCALE = 0.7
 const FRAME_MS = 16
 
@@ -64,6 +64,7 @@ const aimLine = new PIXI.Graphics()
 const railLines = new PIXI.Graphics()
 const shaftLines = new PIXI.Graphics()
 const bulletImpacts = new PIXI.Graphics()
+const gauntletSparks = new PIXI.Graphics()
 
 world.addChild(tiles)
 world.addChild(smokeLayer)
@@ -74,6 +75,7 @@ world.addChild(aimLine)
 world.addChild(railLines)
 world.addChild(shaftLines)
 world.addChild(bulletImpacts)
+world.addChild(gauntletSparks)
 
 const projectilePool = []
 const smokePool = []
@@ -84,6 +86,7 @@ const smokePuffs = []
 const railShots = []
 const shaftShots = []
 const bulletHits = []
+const gauntletHits = []
 
 let playerSprite = null
 let playerCenter = null
@@ -182,6 +185,18 @@ export const Render = {
         })
     },
 
+    addGauntletSpark(hitX, hitY, options = {}) {
+        gauntletHits.push({
+            x: hitX,
+            y: hitY,
+            age: 0,
+            maxAge: options.maxAge ?? 6,
+            radius: options.radius ?? 5,
+            color: options.color ?? 0x6ff2ff,
+            alpha: options.alpha ?? 0.9,
+        })
+    },
+
     renderMap() {
         tiles.removeChildren()
         items.removeChildren()
@@ -235,6 +250,7 @@ export const Render = {
         renderRailShots()
         renderShaftShots()
         renderBulletImpacts()
+        renderGauntletSparks()
         renderAimLine(player)
         updateHUD(player)
         app.render()
@@ -453,7 +469,7 @@ function updateWeaponSprite(player) {
 
     weaponSprite.texture = icon
     weaponSprite.x = player.x
-    weaponSprite.y = player.crouch ? player.y + 8 : player.y
+    weaponSprite.y = player.crouch ? player.y + 4 : player.y
     weaponSprite.rotation = player.aimAngle
     weaponSprite.scale.x = WEAPON_SCALE
     weaponSprite.scale.y = (player.facingLeft ? -1 : 1) * WEAPON_SCALE
@@ -694,12 +710,43 @@ function renderBulletImpacts() {
     }
 }
 
+function renderGauntletSparks() {
+    gauntletSparks.clear()
+
+    for (let i = gauntletHits.length - 1; i >= 0; i--) {
+        const hit = gauntletHits[i]
+        if (++hit.age > hit.maxAge) {
+            gauntletHits.splice(i, 1)
+            continue
+        }
+        const alpha = (1 - hit.age / hit.maxAge) * hit.alpha
+        const jitter = hit.radius * 0.55
+
+        for (let j = 0; j < 8; j++) {
+            const angle = Math.random() * Math.PI * 2
+            const dist = hit.radius * (0.4 + Math.random() * 0.7)
+            const x1 = hit.x + Math.cos(angle) * dist
+            const y1 = hit.y + Math.sin(angle) * dist
+            const x2 = x1 + (Math.random() - 0.5) * jitter
+            const y2 = y1 + (Math.random() - 0.5) * jitter
+            gauntletSparks
+                .moveTo(hit.x, hit.y)
+                .lineTo(x1, y1)
+                .stroke({ width: 2, color: hit.color, alpha: alpha * 0.7 })
+            gauntletSparks
+                .moveTo(x1, y1)
+                .lineTo(x2, y2)
+                .stroke({ width: 1, color: 0xffffff, alpha })
+        }
+    }
+}
+
 function renderAimLine(player) {
     aimLine.clear()
     if (!player || player.dead) return
 
     const originX = player.x
-    const originY = player.crouch ? player.y + 8 : player.y
+    const originY = player.crouch ? player.y + 4 : player.y
     const dist = BRICK_WIDTH * 2.6
     const half = Math.max(2, BRICK_WIDTH * 0.1)
     const x = originX + Math.cos(player.aimAngle) * dist

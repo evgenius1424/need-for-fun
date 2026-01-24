@@ -52,18 +52,20 @@ export const Weapons = {
 function fireGauntlet(player) {
     const { cos, sin } = Math
     const angle = player.aimAngle
+    const { x, y } = getWeaponOrigin(player)
     return {
         type: 'gauntlet',
         damage: DAMAGE[WeaponId.GAUNTLET],
-        hitX: player.x + cos(angle) * GAUNTLET_RANGE,
-        hitY: player.y + sin(angle) * GAUNTLET_RANGE,
+        hitX: x + cos(angle) * GAUNTLET_RANGE,
+        hitY: y + sin(angle) * GAUNTLET_RANGE,
         angle,
     }
 }
 
 function fireShotgun(player) {
     Sound.shotgun()
-    const { x, y, aimAngle } = player
+    const { aimAngle } = player
+    const { x, y } = getWeaponOrigin(player)
     const pellets = []
 
     for (let i = 0; i < SHOTGUN_PELLETS; i++) {
@@ -79,7 +81,8 @@ function fireShotgun(player) {
 
 function fireProjectile(player, weaponId, cfg) {
     cfg.sound()
-    const { x, y, aimAngle, id } = player
+    const { aimAngle, id } = player
+    const { x, y } = getWeaponOrigin(player)
     const speed = PROJECTILE_SPEED[weaponId]
     const cos = Math.cos(aimAngle)
     const sin = Math.sin(aimAngle)
@@ -106,7 +109,8 @@ function fireProjectile(player, weaponId, cfg) {
 
 function fireHitscan(player, weaponId, cfg) {
     cfg.sound()
-    const { x, y, aimAngle } = player
+    const { aimAngle } = player
+    const { x, y } = getWeaponOrigin(player)
     return {
         type: cfg.type,
         trace: rayTrace(x, y, aimAngle, HITSCAN_RANGE[weaponId]),
@@ -114,6 +118,11 @@ function fireHitscan(player, weaponId, cfg) {
         startX: x,
         startY: y,
     }
+}
+
+function getWeaponOrigin(player) {
+    const crouchLift = 4
+    return { x: player.x, y: player.crouch ? player.y + crouchLift : player.y }
 }
 
 function rayTrace(startX, startY, angle, maxDistance) {

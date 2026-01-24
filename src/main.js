@@ -15,6 +15,8 @@ const EXPLOSION_RADIUS = 90
 const PICKUP_RADIUS = 16
 const MAX_AIM_DELTA = 12
 const HITSCAN_PLAYER_RADIUS = 14
+const GAUNTLET_PLAYER_RADIUS = 22
+const GAUNTLET_SPARK_OFFSET = BRICK_WIDTH * 0.55
 
 const ITEM_DEFS = {
     health5: { kind: 'health', amount: 5, max: MAX_HEALTH, respawn: 300 },
@@ -198,6 +200,11 @@ function processFiring(player) {
             applyHitscanDamage(player, { ...shot, damage: pellet.damage }, otherPlayers)
         }
     }
+    if (result?.type === 'gauntlet') {
+        const { x, y } = getWeaponTip(player, GAUNTLET_SPARK_OFFSET)
+        Render.addGauntletSpark(x, y)
+        applyMeleeDamage(player, result, otherPlayers)
+    }
 }
 
 function processProjectileHits(player) {
@@ -275,6 +282,38 @@ function applyHitscanDamage(attacker, shot, targets) {
     hit.target.takeDamage(shot.damage * multiplier, attacker.id)
 }
 
+function applyMeleeDamage(attacker, hit, targets) {
+    if (targets.length === 0) return
+
+    const target = findMeleeTarget(attacker, hit, targets)
+    if (!target) return
+
+    const multiplier = attacker.quadDamage ? QUAD_MULTIPLIER : 1
+    target.takeDamage(hit.damage * multiplier, attacker.id)
+}
+
+function findMeleeTarget(attacker, hit, targets) {
+    let closest = null
+    let closestDistSq = Infinity
+
+    for (const target of targets) {
+        if (!target || target.dead || target === attacker) continue
+
+        const dx = target.x - hit.hitX
+        const dy = target.y - hit.hitY
+        const distSq = dx * dx + dy * dy
+
+        if (distSq > GAUNTLET_PLAYER_RADIUS * GAUNTLET_PLAYER_RADIUS) continue
+
+        if (distSq < closestDistSq) {
+            closest = target
+            closestDistSq = distSq
+        }
+    }
+
+    return closest
+}
+
 function findHitscanTarget(attacker, shot, targets) {
     const startX = shot.startX
     const startY = shot.startY
@@ -309,6 +348,12 @@ function findHitscanTarget(attacker, shot, targets) {
 
     if (!closest) return null
     return { target: closest }
+}
+
+function getWeaponTip(player, offset) {
+    const x = player.x + Math.cos(player.aimAngle) * offset
+    const y = (player.crouch ? player.y + 4 : player.y) + Math.sin(player.aimAngle) * offset
+    return { x, y }
 }
 
 function weaponIdFromType(type) {
