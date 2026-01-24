@@ -33,6 +33,9 @@ const PROJECTILE_COLORS = {
     bfg: 0x00ff00,
 }
 
+const ROCKET_SMOKE_INTERVAL = 4
+const SMOKE_MAX_AGE = 32
+
 const WEAPON_ITEM_MAP = {
     weapon_machine: WeaponId.MACHINE,
     weapon_shotgun: WeaponId.SHOTGUN,
@@ -52,6 +55,7 @@ stage.visible = false
 
 let bgSprite = null
 const tiles = new PIXI.Container()
+const smokeLayer = new PIXI.Container()
 const items = new PIXI.Container()
 const projectiles = new PIXI.Container()
 const explosionsLayer = new PIXI.Container()
@@ -59,6 +63,7 @@ const aimLine = new PIXI.Graphics()
 const railLines = new PIXI.Graphics()
 
 world.addChild(tiles)
+world.addChild(smokeLayer)
 world.addChild(projectiles)
 world.addChild(items)
 world.addChild(explosionsLayer)
@@ -66,9 +71,11 @@ world.addChild(aimLine)
 world.addChild(railLines)
 
 const projectilePool = []
+const smokePool = []
 const explosionPool = []
 const itemSprites = []
 const explosions = []
+const smokePuffs = []
 const railShots = []
 
 let playerSprite = null
@@ -192,6 +199,7 @@ export const Render = {
         updatePlayerSprite(player)
         updateWeaponSprite(player)
         updateItemSprites()
+        renderSmoke()
         renderProjectiles()
         renderExplosions()
         renderRailShots()
@@ -453,11 +461,62 @@ function poolGet(pool, container, createFn) {
     return sprite
 }
 
+function addSmokePuff(proj) {
+    const speed = Math.hypot(proj.velocityX, proj.velocityY)
+    const nx = speed > 0.01 ? proj.velocityX / speed : 1
+    const ny = speed > 0.01 ? proj.velocityY / speed : 0
+    const backOffset = 10 + Math.random() * 4
+    const spread = 3
+    const gray = 215 + Math.floor(Math.random() * 35)
+
+    smokePuffs.push({
+        x: proj.x - nx * backOffset + (Math.random() - 0.5) * spread,
+        y: proj.y - ny * backOffset + (Math.random() - 0.5) * spread,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: -0.15 - Math.random() * 0.25,
+        age: 0,
+        maxAge: SMOKE_MAX_AGE + Math.floor(Math.random() * 10),
+        baseScale: 0.4 + Math.random() * 0.4,
+        tint: (gray << 16) + (gray << 8) + gray,
+    })
+}
+
+function renderSmoke() {
+    for (const s of smokePool) s.visible = false
+
+    for (let i = smokePuffs.length - 1; i >= 0; i--) {
+        const puff = smokePuffs[i]
+        puff.age++
+        if (puff.age > puff.maxAge) {
+            smokePuffs.splice(i, 1)
+            continue
+        }
+
+        puff.x += puff.vx
+        puff.y += puff.vy
+
+        const progress = puff.age / puff.maxAge
+        const sprite = poolGet(smokePool, smokeLayer, () => {
+            const s = new PIXI.Sprite(getTexture('smoke'))
+            s.anchor.set(0.5)
+            return s
+        })
+        sprite.x = puff.x
+        sprite.y = puff.y
+        sprite.scale.set(puff.baseScale * (1 + progress * 1.4))
+        sprite.alpha = (1 - progress) * 0.6
+        sprite.tint = puff.tint
+    }
+}
+
 function renderProjectiles() {
     for (const s of projectilePool) s.visible = false
 
     for (const proj of Projectiles.getAll()) {
         if (!proj.active) continue
+        if (proj.type === 'rocket' && proj.age % ROCKET_SMOKE_INTERVAL === 0) {
+            addSmokePuff(proj)
+        }
         const sprite = poolGet(projectilePool, projectiles, () => {
             const s = new PIXI.Sprite(getProjectileTexture(proj.type))
             s.anchor.set(0.5)

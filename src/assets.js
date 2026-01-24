@@ -36,6 +36,7 @@ const textures = {}
 export async function loadAssets() {
     textures.brick = genBrickTexture()
     textures.explosion = genExplosionTexture()
+    textures.smoke = genSmokeTexture()
     textures.background = await loadWithFallback(
         '/assets/nfk/backgrounds/bg_1.jpg',
         genBackgroundTexture,
@@ -239,7 +240,7 @@ function genProjectileTexture(type) {
     const generators = {
         rocket() {
             const { canvas, ctx } = createCanvas(16, 8)
-            ctx.fillStyle = '#ff6600'
+            ctx.fillStyle = '#9aa3ad'
             ctx.beginPath()
             ctx.moveTo(16, 4)
             ctx.lineTo(4, 0)
@@ -248,11 +249,15 @@ function genProjectileTexture(type) {
             ctx.lineTo(4, 8)
             ctx.closePath()
             ctx.fill()
-            ctx.fillStyle = '#ffff00'
-            ctx.fillRect(0, 2, 3, 4)
-            ctx.fillStyle = '#ffffff'
-            ctx.globalAlpha = 0.5
-            ctx.fillRect(12, 3, 3, 2)
+            ctx.fillStyle = '#6f7781'
+            ctx.fillRect(4, 1, 8, 6)
+            ctx.fillStyle = '#cfd5db'
+            ctx.fillRect(5, 2, 7, 2)
+            ctx.fillStyle = '#5a616b'
+            ctx.fillRect(2, 1, 2, 6)
+            ctx.fillStyle = '#dfe4ea'
+            ctx.globalAlpha = 0.7
+            ctx.fillRect(12, 2, 3, 2)
             return canvas
         },
         plasma() {
@@ -300,6 +305,17 @@ function genProjectileTexture(type) {
     ctx.beginPath()
     ctx.arc(4, 4, 3, 0, Math.PI * 2)
     ctx.fill()
+    return PIXI.Texture.from(canvas)
+}
+
+function genSmokeTexture() {
+    const { canvas, ctx } = createCanvas(24, 24)
+    const g = ctx.createRadialGradient(12, 12, 0, 12, 12, 12)
+    g.addColorStop(0, 'rgba(255,255,255,0.8)')
+    g.addColorStop(0.6, 'rgba(220,220,220,0.5)')
+    g.addColorStop(1, 'rgba(200,200,200,0)')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, 24, 24)
     return PIXI.Texture.from(canvas)
 }
 
