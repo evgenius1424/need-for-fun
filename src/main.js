@@ -14,6 +14,7 @@ const AIM_INPUT_SCALE = 0.5
 const EXPLOSION_RADIUS = 90
 const PICKUP_RADIUS = 16
 const MAX_AIM_DELTA = 12
+const HITSCAN_PLAYER_RADIUS = 14
 
 const ITEM_DEFS = {
     health5: { kind: 'health', amount: 5, max: MAX_HEALTH, respawn: 300 },
@@ -39,6 +40,7 @@ Render.renderMap()
 Render.setSceneReady(true)
 
 const localPlayer = new Player()
+const otherPlayers = []
 const state = { lastMouseY: Input.mouseY, lastMoveDir: 0 }
 
 spawnPlayer(localPlayer)
@@ -164,6 +166,10 @@ function processFiring(player) {
     if (result?.type === 'rail') {
         Render.addRailShot(result)
     }
+    if (result?.type === 'shaft') {
+        Render.addShaftShot(result)
+        applyHitscanDamage(player, result, otherPlayers)
+    }
 }
 
 function processProjectileHits(player) {
@@ -229,6 +235,52 @@ function applyItemEffect(player, item) {
             player.giveWeapon(def.weaponId, AMMO_PICKUP[def.weaponId] ?? 0)
             break
     }
+}
+
+function applyHitscanDamage(attacker, shot, targets) {
+    if (!shot?.trace || targets.length === 0) return
+
+    const hit = findHitscanTarget(attacker, shot, targets)
+    if (!hit) return
+
+    const multiplier = attacker.quadDamage ? QUAD_MULTIPLIER : 1
+    hit.target.takeDamage(shot.damage * multiplier, attacker.id)
+}
+
+function findHitscanTarget(attacker, shot, targets) {
+    const startX = shot.startX
+    const startY = shot.startY
+    const endX = shot.trace.x
+    const endY = shot.trace.y
+    const dx = endX - startX
+    const dy = endY - startY
+    const lenSq = dx * dx + dy * dy || 1
+
+    let closest = null
+    let closestT = Infinity
+
+    for (const target of targets) {
+        if (!target || target.dead || target === attacker) continue
+
+        const t = ((target.x - startX) * dx + (target.y - startY) * dy) / lenSq
+        if (t < 0 || t > 1) continue
+
+        const hitX = startX + dx * t
+        const hitY = startY + dy * t
+        const distX = target.x - hitX
+        const distY = target.y - hitY
+        const distSq = distX * distX + distY * distY
+
+        if (distSq > HITSCAN_PLAYER_RADIUS * HITSCAN_PLAYER_RADIUS) continue
+
+        if (t < closestT) {
+            closest = target
+            closestT = t
+        }
+    }
+
+    if (!closest) return null
+    return { target: closest }
 }
 
 function weaponIdFromType(type) {

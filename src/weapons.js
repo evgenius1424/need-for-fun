@@ -5,7 +5,12 @@ import { Projectiles } from './projectiles'
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 const { DAMAGE, PROJECTILE_SPEED, FIRE_RATE } = WeaponConstants
 
-const HITSCAN_RANGE = { [WeaponId.MACHINE]: 1000, [WeaponId.RAIL]: 2000, [WeaponId.SHAFT]: 400 }
+const SHAFT_RANGE = BRICK_WIDTH * 3
+const HITSCAN_RANGE = {
+    [WeaponId.MACHINE]: 1000,
+    [WeaponId.RAIL]: 2000,
+    [WeaponId.SHAFT]: SHAFT_RANGE,
+}
 const SHOTGUN_RANGE = 800
 const SHOTGUN_PELLETS = 11
 const SHOTGUN_SPREAD = 0.15

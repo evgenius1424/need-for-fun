@@ -62,6 +62,7 @@ const projectiles = new PIXI.Container()
 const explosionsLayer = new PIXI.Container()
 const aimLine = new PIXI.Graphics()
 const railLines = new PIXI.Graphics()
+const shaftLines = new PIXI.Graphics()
 
 world.addChild(tiles)
 world.addChild(smokeLayer)
@@ -70,6 +71,7 @@ world.addChild(items)
 world.addChild(explosionsLayer)
 world.addChild(aimLine)
 world.addChild(railLines)
+world.addChild(shaftLines)
 
 const projectilePool = []
 const smokePool = []
@@ -78,6 +80,7 @@ const itemSprites = []
 const explosions = []
 const smokePuffs = []
 const railShots = []
+const shaftShots = []
 
 let playerSprite = null
 let playerCenter = null
@@ -153,6 +156,17 @@ export const Render = {
         })
     },
 
+    addShaftShot(shot) {
+        shaftShots.push({
+            x1: shot.startX,
+            y1: shot.startY,
+            x2: shot.trace.x,
+            y2: shot.trace.y,
+            age: 0,
+            maxAge: 6,
+        })
+    },
+
     renderMap() {
         tiles.removeChildren()
         items.removeChildren()
@@ -204,6 +218,7 @@ export const Render = {
         renderProjectiles()
         renderExplosions()
         renderRailShots()
+        renderShaftShots()
         renderAimLine(player)
         updateHUD(player)
         app.render()
@@ -612,6 +627,38 @@ function renderRailShots() {
             .lineTo(shot.x2, shot.y2)
             .stroke({ width: 2, color: 0xffffff, alpha })
         railLines.circle(shot.x2, shot.y2, 6).fill({ color: 0x9ff0ff, alpha: alpha * 0.6 })
+    }
+}
+
+function renderShaftShots() {
+    shaftLines.clear()
+
+    for (let i = shaftShots.length - 1; i >= 0; i--) {
+        const shot = shaftShots[i]
+        if (++shot.age > shot.maxAge) {
+            shaftShots.splice(i, 1)
+            continue
+        }
+        const alpha = 1 - shot.age / shot.maxAge
+        const dx = shot.x2 - shot.x1
+        const dy = shot.y2 - shot.y1
+        const len = Math.hypot(dx, dy) || 1
+        const jitter = (Math.random() - 0.5) * 2.5
+        const nx = (-dy / len) * jitter
+        const ny = (dx / len) * jitter
+
+        shaftLines
+            .moveTo(shot.x1, shot.y1)
+            .lineTo(shot.x2, shot.y2)
+            .stroke({ width: 8, color: 0x2b6cff, alpha: alpha * 0.25 })
+        shaftLines
+            .moveTo(shot.x1 + nx, shot.y1 + ny)
+            .lineTo(shot.x2 + nx, shot.y2 + ny)
+            .stroke({ width: 4, color: 0x45c8ff, alpha: alpha * 0.65 })
+        shaftLines
+            .moveTo(shot.x1, shot.y1)
+            .lineTo(shot.x2, shot.y2)
+            .stroke({ width: 2, color: 0xe8fbff, alpha })
     }
 }
 
