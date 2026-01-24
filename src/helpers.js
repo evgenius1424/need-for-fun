@@ -68,6 +68,7 @@ export const Input = {
     mouseDown: false,
     pointerLocked: false,
     weaponSwitch: -1,
+    weaponScroll: 0,
 }
 
 export const Settings = createSettings()
@@ -167,7 +168,16 @@ function initInputHandlers() {
         if (e.button === 0) Input.mouseDown = false
     })
 
-    document.getElementById('game')?.addEventListener('contextmenu', (e) => e.preventDefault())
+    const gameRoot = document.getElementById('game')
+    gameRoot?.addEventListener('contextmenu', (e) => e.preventDefault())
+    gameRoot?.addEventListener(
+        'wheel',
+        (e) => {
+            Input.weaponScroll += e.deltaY
+            e.preventDefault()
+        },
+        { passive: false },
+    )
 
     document.addEventListener('pointerlockchange', () => {
         const canvas = document.querySelector('#game canvas')

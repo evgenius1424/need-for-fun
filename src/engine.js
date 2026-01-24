@@ -63,6 +63,7 @@ const explosionsLayer = new PIXI.Container()
 const aimLine = new PIXI.Graphics()
 const railLines = new PIXI.Graphics()
 const shaftLines = new PIXI.Graphics()
+const bulletImpacts = new PIXI.Graphics()
 
 world.addChild(tiles)
 world.addChild(smokeLayer)
@@ -72,6 +73,7 @@ world.addChild(explosionsLayer)
 world.addChild(aimLine)
 world.addChild(railLines)
 world.addChild(shaftLines)
+world.addChild(bulletImpacts)
 
 const projectilePool = []
 const smokePool = []
@@ -81,6 +83,7 @@ const explosions = []
 const smokePuffs = []
 const railShots = []
 const shaftShots = []
+const bulletHits = []
 
 let playerSprite = null
 let playerCenter = null
@@ -167,6 +170,18 @@ export const Render = {
         })
     },
 
+    addBulletImpact(hitX, hitY, options = {}) {
+        bulletHits.push({
+            x: hitX,
+            y: hitY,
+            age: 0,
+            maxAge: options.maxAge ?? 12,
+            radius: options.radius ?? 2.5,
+            color: options.color ?? 0xffd24a,
+            alpha: options.alpha ?? 0.9,
+        })
+    },
+
     renderMap() {
         tiles.removeChildren()
         items.removeChildren()
@@ -219,6 +234,7 @@ export const Render = {
         renderExplosions()
         renderRailShots()
         renderShaftShots()
+        renderBulletImpacts()
         renderAimLine(player)
         updateHUD(player)
         app.render()
@@ -659,6 +675,22 @@ function renderShaftShots() {
             .moveTo(shot.x1, shot.y1)
             .lineTo(shot.x2, shot.y2)
             .stroke({ width: 2, color: 0xe8fbff, alpha })
+    }
+}
+
+function renderBulletImpacts() {
+    bulletImpacts.clear()
+
+    for (let i = bulletHits.length - 1; i >= 0; i--) {
+        const hit = bulletHits[i]
+        if (++hit.age > hit.maxAge) {
+            bulletHits.splice(i, 1)
+            continue
+        }
+        const alpha = (1 - hit.age / hit.maxAge) * hit.alpha
+        const outer = hit.radius * 2
+        bulletImpacts.circle(hit.x, hit.y, outer).fill({ color: 0xc08900, alpha: alpha * 0.4 })
+        bulletImpacts.circle(hit.x, hit.y, hit.radius).fill({ color: hit.color, alpha })
     }
 }
 

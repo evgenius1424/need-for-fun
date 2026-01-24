@@ -91,6 +91,7 @@ function setupExplosionHandler(player) {
 
 function gameLoop(timestamp, player) {
     processMovementInput(player)
+    processWeaponScroll(player)
     processWeaponSwitch(player)
     processAimInput(player)
     processFiring(player)
@@ -120,6 +121,22 @@ function processWeaponSwitch(player) {
     if (Input.weaponSwitch < 0) return
     player.switchWeapon(Input.weaponSwitch)
     Input.weaponSwitch = -1
+}
+
+function processWeaponScroll(player) {
+    if (Input.weaponScroll === 0) return
+
+    const direction = Input.weaponScroll < 0 ? -1 : 1
+    Input.weaponScroll = 0
+
+    const total = player.weapons.length
+    for (let step = 1; step <= total; step++) {
+        const next = (player.currentWeapon + direction * step + total) % total
+        if (player.weapons[next]) {
+            player.switchWeapon(next)
+            break
+        }
+    }
 }
 
 function processAimInput(player) {
@@ -169,6 +186,17 @@ function processFiring(player) {
     if (result?.type === 'shaft') {
         Render.addShaftShot(result)
         applyHitscanDamage(player, result, otherPlayers)
+    }
+    if (result?.type === 'hitscan') {
+        Render.addBulletImpact(result.trace.x, result.trace.y, { radius: 2.5 })
+        applyHitscanDamage(player, result, otherPlayers)
+    }
+    if (result?.type === 'shotgun') {
+        for (const pellet of result.pellets) {
+            const shot = { startX: result.startX, startY: result.startY, trace: pellet.trace }
+            Render.addBulletImpact(shot.trace.x, shot.trace.y, { radius: 2 })
+            applyHitscanDamage(player, { ...shot, damage: pellet.damage }, otherPlayers)
+        }
     }
 }
 
