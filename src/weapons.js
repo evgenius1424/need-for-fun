@@ -79,12 +79,20 @@ function fireProjectile(player, weaponId, cfg) {
     const cos = Math.cos(aimAngle)
     const sin = Math.sin(aimAngle)
 
+    let velocityX = cos * speed
+    let velocityY = sin * speed - cfg.loft
+    if (cfg.type === 'grenade') {
+        const slow = 0.8
+        velocityX *= slow
+        velocityY = velocityY * slow + 0.9
+    }
+
     Projectiles.create(
         cfg.type,
         x + cos * cfg.offset,
         y + sin * cfg.offset,
-        cos * speed,
-        sin * speed - cfg.loft,
+        velocityX,
+        velocityY,
         id,
     )
 

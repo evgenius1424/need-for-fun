@@ -34,6 +34,7 @@ const PROJECTILE_COLORS = {
 }
 
 const ROCKET_SMOKE_INTERVAL = 4
+const GRENADE_SMOKE_INTERVAL = 6
 const SMOKE_MAX_AGE = 32
 
 const WEAPON_ITEM_MAP = {
@@ -461,22 +462,37 @@ function poolGet(pool, container, createFn) {
     return sprite
 }
 
-function addSmokePuff(proj) {
+function addSmokePuff(
+    proj,
+    {
+        grayMin = 215,
+        grayMax = 250,
+        upMin = -0.15,
+        upMax = -0.4,
+        baseScaleMin = 0.4,
+        baseScaleMax = 0.8,
+        maxAge = SMOKE_MAX_AGE,
+        backOffsetMin = 10,
+        backOffsetMax = 14,
+        alpha = 0.6,
+    } = {},
+) {
     const speed = Math.hypot(proj.velocityX, proj.velocityY)
     const nx = speed > 0.01 ? proj.velocityX / speed : 1
     const ny = speed > 0.01 ? proj.velocityY / speed : 0
-    const backOffset = 10 + Math.random() * 4
+    const backOffset = backOffsetMin + Math.random() * (backOffsetMax - backOffsetMin)
     const spread = 3
-    const gray = 215 + Math.floor(Math.random() * 35)
+    const gray = grayMin + Math.floor(Math.random() * (grayMax - grayMin))
 
     smokePuffs.push({
         x: proj.x - nx * backOffset + (Math.random() - 0.5) * spread,
         y: proj.y - ny * backOffset + (Math.random() - 0.5) * spread,
         vx: (Math.random() - 0.5) * 0.4,
-        vy: -0.15 - Math.random() * 0.25,
+        vy: upMin + Math.random() * (upMax - upMin),
         age: 0,
-        maxAge: SMOKE_MAX_AGE + Math.floor(Math.random() * 10),
-        baseScale: 0.4 + Math.random() * 0.4,
+        maxAge: maxAge + Math.floor(Math.random() * 10),
+        baseScale: baseScaleMin + Math.random() * (baseScaleMax - baseScaleMin),
+        alpha,
         tint: (gray << 16) + (gray << 8) + gray,
     })
 }
@@ -504,7 +520,7 @@ function renderSmoke() {
         sprite.x = puff.x
         sprite.y = puff.y
         sprite.scale.set(puff.baseScale * (1 + progress * 1.4))
-        sprite.alpha = (1 - progress) * 0.6
+        sprite.alpha = (1 - progress) * puff.alpha
         sprite.tint = puff.tint
     }
 }
@@ -516,6 +532,20 @@ function renderProjectiles() {
         if (!proj.active) continue
         if (proj.type === 'rocket' && proj.age % ROCKET_SMOKE_INTERVAL === 0) {
             addSmokePuff(proj)
+        }
+        if (proj.type === 'grenade' && proj.age % GRENADE_SMOKE_INTERVAL === 0) {
+            addSmokePuff(proj, {
+                grayMin: 180,
+                grayMax: 220,
+                upMin: -0.05,
+                upMax: -0.2,
+                baseScaleMin: 0.3,
+                baseScaleMax: 0.55,
+                maxAge: 28,
+                backOffsetMin: 6,
+                backOffsetMax: 10,
+                alpha: 0.5,
+            })
         }
         const sprite = poolGet(projectilePool, projectiles, () => {
             const s = new PIXI.Sprite(getProjectileTexture(proj.type))

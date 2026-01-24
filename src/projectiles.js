@@ -5,7 +5,7 @@ const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
 const GRAVITY = 0.18
 const BOUNCE_DECAY = 0.75
-const GRENADE_FUSE = 180
+const GRENADE_FUSE = 120
 const GRENADE_MIN_VELOCITY = 0.5
 const BOUNDS_MARGIN = 100
 const SELF_HIT_GRACE = 8
