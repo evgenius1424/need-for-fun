@@ -1,13 +1,14 @@
 import * as PIXI from 'pixi.js'
 import { Constants, WeaponId } from './helpers'
+import {
+    DEFAULT_MODEL,
+    DEFAULT_SKIN,
+    getAnimationConfig,
+    getAnimationFile,
+    getModelSkinKey,
+} from './models'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
-
-const ANIM_CONFIG = {
-    walk: { frames: 18, width: 45, height: 48, file: 'wb.png' },
-    crouch: { frames: 10, width: 50, height: 40, file: 'cb.png' },
-    die: { frames: 30, width: 45, height: 48, file: 'db.png' },
-}
 
 const WEAPON_PATHS = {
     [WeaponId.GAUNTLET]: '/assets/nfk/weapons/gauntlet.png',
@@ -48,8 +49,9 @@ export async function loadAssets() {
         bfg: genProjectileTexture('bfg'),
     }
 
-    await loadPlayerAnimations()
-    textures.player = textures.playerAnimations.walk[0] || genPlayerTexture()
+    textures.modelAnimations = {}
+    await loadModelAnimations(DEFAULT_MODEL, DEFAULT_SKIN)
+    textures.player = getModelAnimationFrames(DEFAULT_MODEL, DEFAULT_SKIN, 'walk')[0] || genPlayerTexture()
 
     textures.weaponIcons = await loadIconMap(WEAPON_PATHS)
     textures.itemIcons = await loadIconMap(ITEM_PATHS)
@@ -62,7 +64,27 @@ export const getProjectileTexture = (type) =>
     textures.projectiles?.[type] ?? textures.projectiles?.rocket
 export const getWeaponIcon = (id) => textures.weaponIcons?.[id] ?? null
 export const getItemIcon = (id) => textures.itemIcons?.[id] ?? null
-export const getPlayerAnimationFrames = (type) => textures.playerAnimations?.[type] ?? []
+
+export function getModelAnimationFrames(modelId, skinId, type) {
+    const key = getModelSkinKey(modelId, skinId)
+    return textures.modelAnimations?.[key]?.[type] ?? []
+}
+
+const pendingLoads = new Map()
+
+export async function ensureModelLoaded(modelId, skinId) {
+    const key = getModelSkinKey(modelId, skinId)
+    if (textures.modelAnimations[key]) return
+
+    if (pendingLoads.has(key)) {
+        return pendingLoads.get(key)
+    }
+
+    const promise = loadModelAnimations(modelId, skinId)
+    pendingLoads.set(key, promise)
+    await promise
+    pendingLoads.delete(key)
+}
 
 async function loadWithFallback(path, fallbackFn) {
     try {
@@ -86,14 +108,17 @@ async function loadIconMap(paths) {
     return icons
 }
 
-async function loadPlayerAnimations() {
-    textures.playerAnimations = { walk: [], crouch: [], die: [] }
+async function loadModelAnimations(modelId, skinId) {
+    const key = getModelSkinKey(modelId, skinId)
+    const animations = { walk: [], crouch: [], die: [] }
+    const animConfig = getAnimationConfig(modelId)
 
     try {
-        for (const [name, cfg] of Object.entries(ANIM_CONFIG)) {
-            const sheet = await PIXI.Assets.load(`/assets/nfk/models/sarge/${cfg.file}`)
+        for (const [animType, cfg] of Object.entries(animConfig)) {
+            const filePath = getAnimationFile(modelId, animType, skinId)
+            const sheet = await PIXI.Assets.load(filePath)
             for (let i = 0; i < cfg.frames; i++) {
-                textures.playerAnimations[name].push(
+                animations[animType].push(
                     new PIXI.Texture({
                         source: sheet.source,
                         frame: new PIXI.Rectangle(i * cfg.width, 0, cfg.width, cfg.height),
@@ -103,10 +128,12 @@ async function loadPlayerAnimations() {
         }
     } catch {
         const fallback = genPlayerTexture()
-        textures.playerAnimations.walk = [fallback]
-        textures.playerAnimations.crouch = [fallback]
-        textures.playerAnimations.die = [fallback]
+        animations.walk = [fallback]
+        animations.crouch = [fallback]
+        animations.die = [fallback]
     }
+
+    textures.modelAnimations[key] = animations
 }
 
 function createCanvas(w, h) {

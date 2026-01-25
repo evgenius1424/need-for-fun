@@ -1,5 +1,6 @@
 import { Constants, GameConstants, Sound, Utils, WeaponConstants, WeaponId } from './helpers'
 import { Map } from './map'
+import { DEFAULT_MODEL, DEFAULT_SKIN } from './models'
 import { Weapons } from './weapons'
 
 const { trunc } = Utils
@@ -22,7 +23,8 @@ let nextPlayerId = 0
 
 export class Player {
     id = nextPlayerId++
-    model = 'sarge'
+    model = DEFAULT_MODEL
+    skin = DEFAULT_SKIN
 
     x = 0
     y = 0
@@ -62,6 +64,7 @@ export class Player {
 
     constructor(options = {}) {
         if (options.model) this.model = options.model
+        if (options.skin) this.skin = options.skin
     }
 
     setX(newX) {

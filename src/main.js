@@ -4,8 +4,9 @@ import { Map } from './map'
 import { Player } from './player'
 import { Physics, Render } from './engine'
 import { Projectiles } from './projectiles'
-import { loadAssets } from './assets'
+import { loadAssets, ensureModelLoaded } from './assets'
 import { BotManager } from './botManager'
+import { SkinId } from './models'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 const { DAMAGE, AMMO_PICKUP } = WeaponConstants
@@ -38,11 +39,15 @@ const PROJECTILE_WEAPONS = new Set(['rocket', 'grenade', 'plasma', 'bfg'])
 await loadAssets()
 await Map.loadFromQuery()
 
-Render.initSprites()
+const localPlayer = new Player()
+
+// Load bot skin (red) for enemies
+await ensureModelLoaded(localPlayer.model, SkinId.RED)
+
+Render.initSprites(localPlayer)
 Render.renderMap()
 Render.setSceneReady(true)
 
-const localPlayer = new Player()
 const state = { lastMouseY: Input.mouseY, lastMoveDir: 0 }
 
 BotManager.init(localPlayer)

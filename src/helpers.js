@@ -1,4 +1,5 @@
 import { Howl } from 'howler'
+import { DEFAULT_MODEL, getSoundPaths } from './models'
 
 export const WeaponId = {
     GAUNTLET: 0,
@@ -276,7 +277,6 @@ function createConsole() {
 }
 
 function createSoundSystem() {
-    const DEFAULT_MODEL = 'sarge'
     const modelCache = new Map()
 
     const howl = (src, volume = 1) => new Howl({ src: [src], volume })
@@ -301,19 +301,15 @@ function createSoundSystem() {
         const key = model || DEFAULT_MODEL
         if (modelCache.has(key)) return modelCache.get(key)
 
-        const base = `/assets/nfk/models/${key}`
+        const paths = getSoundPaths(key)
         const sounds = {
-            jump: howl(`${base}/jump1.wav`),
-            death: [
-                howl(`${base}/death1.wav`),
-                howl(`${base}/death2.wav`),
-                howl(`${base}/death3.wav`),
-            ],
+            jump: howl(paths.jump),
+            death: paths.death.map((p) => howl(p)),
             pain: {
-                25: howl(`${base}/pain25_1.wav`),
-                50: howl(`${base}/pain50_1.wav`),
-                75: howl(`${base}/pain75_1.wav`),
-                100: howl(`${base}/pain100_1.wav`),
+                25: howl(paths.pain[25]),
+                50: howl(paths.pain[50]),
+                75: howl(paths.pain[75]),
+                100: howl(paths.pain[100]),
             },
         }
         modelCache.set(key, sounds)

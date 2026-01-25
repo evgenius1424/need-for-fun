@@ -1,6 +1,7 @@
 import { Player } from './player'
 import { Map } from './map'
 import { Constants, WeaponId } from './helpers'
+import { DEFAULT_MODEL, SkinId } from './models'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
@@ -56,8 +57,8 @@ export class Bot {
     botFireCooldown = 0
     jumpCooldown = 0
 
-    constructor(difficulty = 'medium') {
-        this.player = new Player({ model: 'sarge' })
+    constructor(difficulty = 'medium', skin = SkinId.RED) {
+        this.player = new Player({ model: DEFAULT_MODEL, skin })
         this.name = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]
         this.difficulty = difficulty
         this.config = DIFFICULTY[difficulty] || DIFFICULTY.medium

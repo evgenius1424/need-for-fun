@@ -7,8 +7,10 @@ import {
     getProjectileTexture,
     getWeaponIcon,
     getItemIcon,
-    getPlayerAnimationFrames,
+    getModelAnimationFrames,
+    ensureModelLoaded,
 } from './assets'
+import { DEFAULT_MODEL, DEFAULT_SKIN } from './models'
 
 const { BRICK_WIDTH, BRICK_HEIGHT, PLAYER_MAX_VELOCITY_X } = Constants
 const { trunc } = Utils
@@ -97,14 +99,13 @@ let animTimer = 0
 
 const botSprites = []
 
-function createBotSprite() {
-    const walkFrames = getPlayerAnimationFrames('walk')
+function createBotSprite(model, skin) {
+    const walkFrames = getModelAnimationFrames(model, skin, 'walk')
     if (walkFrames.length === 0) return null
 
     const sprite = new PIXI.Sprite(walkFrames[0])
     sprite.anchor.set(0.5)
     sprite.scale.set(PLAYER_SCALE_X, PLAYER_SCALE_Y)
-    sprite.tint = 0xff6666 // Red tint for bots
     world.addChild(sprite)
 
     const weapon = new PIXI.Sprite()
@@ -118,14 +119,32 @@ function createBotSprite() {
         anim: 'walk',
         frame: 0,
         timer: 0,
+        model,
+        skin,
     }
 }
 
-function ensureBotSprites(count) {
-    while (botSprites.length < count) {
-        const botData = createBotSprite()
-        if (botData) botSprites.push(botData)
+function ensureBotSprite(bot) {
+    const { player } = bot
+    const existingIndex = botSprites.findIndex((bs) => bs.botId === player.id)
+
+    if (existingIndex !== -1) {
+        const existing = botSprites[existingIndex]
+        if (existing.model === player.model && existing.skin === player.skin) {
+            return existing
+        }
+        // Model/skin changed - destroy old sprites and remove from array
+        existing.sprite.destroy()
+        existing.weapon.destroy()
+        botSprites.splice(existingIndex, 1)
     }
+
+    const botData = createBotSprite(player.model, player.skin)
+    if (botData) {
+        botData.botId = player.id
+        botSprites.push(botData)
+    }
+    return botData
 }
 
 const hud = createHUD()
@@ -149,7 +168,7 @@ Projectiles.onExplosion((x, y, type) => {
 addEventListener('resize', recalcCamera)
 
 export const Render = {
-    initSprites() {
+    initSprites(player) {
         const bgTex = getTexture('background')
         if (bgTex) {
             bgSprite = new PIXI.TilingSprite({
@@ -161,11 +180,15 @@ export const Render = {
             world.addChildAt(bgSprite, 0)
         }
 
-        const walkFrames = getPlayerAnimationFrames('walk')
+        const model = player?.model ?? DEFAULT_MODEL
+        const skin = player?.skin ?? DEFAULT_SKIN
+        const walkFrames = getModelAnimationFrames(model, skin, 'walk')
         if (walkFrames.length > 0) {
             playerSprite = new PIXI.Sprite(walkFrames[0])
             playerSprite.anchor.set(0.5)
             playerSprite.scale.set(PLAYER_SCALE_X, PLAYER_SCALE_Y)
+            playerSprite.model = model
+            playerSprite.skin = skin
             world.addChild(playerSprite)
 
             playerCenter = new PIXI.Graphics()
@@ -292,6 +315,16 @@ export const Render = {
 
     setPlayerColor(color) {
         if (playerSprite) playerSprite.tint = color
+    },
+
+    cleanupBotSprite(playerId) {
+        const index = botSprites.findIndex((bs) => bs.botId === playerId)
+        if (index !== -1) {
+            const botData = botSprites[index]
+            botData.sprite.destroy()
+            botData.weapon.destroy()
+            botSprites.splice(index, 1)
+        }
     },
 }
 
@@ -475,7 +508,7 @@ function updatePlayerSprite(player) {
         animTimer = 0
     }
 
-    const frames = getPlayerAnimationFrames(currentAnim)
+    const frames = getModelAnimationFrames(player.model, player.skin, currentAnim)
     const cfg = ANIMATION[currentAnim]
     const isMoving = player.keyLeft !== player.keyRight || player.velocityX !== 0
 
@@ -533,17 +566,17 @@ function updateWeaponSprite(player) {
 }
 
 function updateBotSprites(bots) {
-    ensureBotSprites(bots.length)
+    // Hide all existing bot sprites first
+    for (const botData of botSprites) {
+        botData.sprite.visible = false
+        botData.weapon.visible = false
+    }
 
-    for (let i = 0; i < botSprites.length; i++) {
-        const botData = botSprites[i]
-        const bot = bots[i]
+    for (const bot of bots) {
+        if (!bot) continue
 
-        if (!bot) {
-            botData.sprite.visible = false
-            botData.weapon.visible = false
-            continue
-        }
+        const botData = ensureBotSprite(bot)
+        if (!botData) continue
 
         const player = bot.player
 
@@ -555,7 +588,7 @@ function updateBotSprites(bots) {
             botData.timer = 0
         }
 
-        const frames = getPlayerAnimationFrames(botData.anim)
+        const frames = getModelAnimationFrames(player.model, player.skin, botData.anim)
         const cfg = ANIMATION[botData.anim]
         const isMoving = player.keyLeft !== player.keyRight || player.velocityX !== 0
 

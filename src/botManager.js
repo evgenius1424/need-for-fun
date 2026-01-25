@@ -1,6 +1,7 @@
 import { Bot } from './bot'
 import { Map } from './map'
 import { Constants } from './helpers'
+import { Render } from './engine'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 const MIN_SPAWN_DISTANCE = 100 // Minimum distance from other players
@@ -88,6 +89,8 @@ class BotManagerClass {
     }
 
     removeBot(bot) {
+        Render.cleanupBotSprite(bot.player.id)
+
         const botIndex = this.bots.indexOf(bot)
         if (botIndex !== -1) {
             this.bots.splice(botIndex, 1)
