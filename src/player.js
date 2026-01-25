@@ -48,6 +48,7 @@ export class Player {
     armor = 0
     dead = false
     respawnTimer = 0
+    spawnProtection = 0
 
     aimAngle = 0
     facingLeft = false
@@ -97,14 +98,24 @@ export class Player {
 
     update() {
         if (this.fireCooldown > 0) this.fireCooldown--
+        if (this.spawnProtection > 0) this.spawnProtection--
 
-        if (this.dead && --this.respawnTimer <= 0) {
-            this.respawn()
+        if (this.dead && this.respawnTimer > 0) {
+            this.respawnTimer--
         }
 
         if (this.quadDamage && --this.quadTimer <= 0) {
             this.quadDamage = false
         }
+    }
+
+    // Check and handle respawn for local player
+    checkRespawn() {
+        if (this.dead && this.respawnTimer <= 0) {
+            this.respawn()
+            return true
+        }
+        return false
     }
 
     canFire() {
@@ -146,7 +157,7 @@ export class Player {
     }
 
     takeDamage(damage, attackerId) {
-        if (this.dead) return
+        if (this.dead || this.spawnProtection > 0) return
 
         let actual = attackerId === this.id ? damage * SELF_DAMAGE_REDUCTION : damage
 
@@ -188,6 +199,7 @@ export class Player {
         this.currentWeapon = WeaponId.ROCKET
         this.quadDamage = false
         this.quadTimer = 0
+        this.spawnProtection = 120 // ~2 seconds of spawn protection
     }
 
     updateAimAngle(delta, facingLeft) {

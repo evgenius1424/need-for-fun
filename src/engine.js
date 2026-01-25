@@ -95,6 +95,39 @@ let currentAnim = 'walk'
 let animFrame = 0
 let animTimer = 0
 
+const botSprites = []
+
+function createBotSprite() {
+    const walkFrames = getPlayerAnimationFrames('walk')
+    if (walkFrames.length === 0) return null
+
+    const sprite = new PIXI.Sprite(walkFrames[0])
+    sprite.anchor.set(0.5)
+    sprite.scale.set(PLAYER_SCALE_X, PLAYER_SCALE_Y)
+    sprite.tint = 0xff6666 // Red tint for bots
+    world.addChild(sprite)
+
+    const weapon = new PIXI.Sprite()
+    weapon.anchor.set(0.5)
+    weapon.scale.set(WEAPON_SCALE)
+    world.addChild(weapon)
+
+    return {
+        sprite,
+        weapon,
+        anim: 'walk',
+        frame: 0,
+        timer: 0,
+    }
+}
+
+function ensureBotSprites(count) {
+    while (botSprites.length < count) {
+        const botData = createBotSprite()
+        if (botData) botSprites.push(botData)
+    }
+}
+
 const hud = createHUD()
 stage.addChild(hud.container)
 
@@ -239,10 +272,11 @@ export const Render = {
         recalcCamera()
     },
 
-    renderGame(player) {
+    renderGame(player, bots = []) {
         updateCamera(player)
         updatePlayerSprite(player)
         updateWeaponSprite(player)
+        updateBotSprites(bots)
         updateItemSprites()
         renderSmoke()
         renderProjectiles()
@@ -271,6 +305,28 @@ const physics = {
 }
 
 export const Physics = {
+    // Update all players with synchronized physics frames
+    updateAllPlayers(players, timestamp) {
+        if (physics.time === 0) physics.time = timestamp - FRAME_MS
+
+        const delta = timestamp - physics.time
+        let frames = trunc(delta / FRAME_MS)
+        if (frames === 0) return false
+
+        physics.time += frames * FRAME_MS
+
+        // Apply same number of physics frames to ALL players
+        while (frames-- > 0) {
+            for (const player of players) {
+                if (!player.dead) {
+                    playerMove(player)
+                }
+            }
+        }
+        return true
+    },
+
+    // Legacy single player update (kept for compatibility)
     updateGame(player, timestamp) {
         if (physics.time === 0) physics.time = timestamp - FRAME_MS
 
@@ -474,6 +530,81 @@ function updateWeaponSprite(player) {
     weaponSprite.scale.x = WEAPON_SCALE
     weaponSprite.scale.y = (player.facingLeft ? -1 : 1) * WEAPON_SCALE
     weaponSprite.visible = true
+}
+
+function updateBotSprites(bots) {
+    ensureBotSprites(bots.length)
+
+    for (let i = 0; i < botSprites.length; i++) {
+        const botData = botSprites[i]
+        const bot = bots[i]
+
+        if (!bot) {
+            botData.sprite.visible = false
+            botData.weapon.visible = false
+            continue
+        }
+
+        const player = bot.player
+
+        // Update animation
+        const targetAnim = player.dead ? 'die' : player.crouch ? 'crouch' : 'walk'
+        if (targetAnim !== botData.anim) {
+            botData.anim = targetAnim
+            botData.frame = 0
+            botData.timer = 0
+        }
+
+        const frames = getPlayerAnimationFrames(botData.anim)
+        const cfg = ANIMATION[botData.anim]
+        const isMoving = player.keyLeft !== player.keyRight || player.velocityX !== 0
+
+        if (frames.length > 1 && ++botData.timer >= cfg.refresh) {
+            botData.timer = 0
+            if (cfg.loop) {
+                if (isMoving || botData.anim === 'crouch') {
+                    botData.frame = (botData.frame + 1) % frames.length
+                }
+            } else if (botData.frame < frames.length - 1) {
+                botData.frame++
+            }
+        }
+
+        if (frames[botData.frame]) {
+            botData.sprite.texture = frames[botData.frame]
+        }
+
+        // Update sprite position
+        botData.sprite.x = player.x
+        botData.sprite.visible = true
+        botData.sprite.scale.x = (player.facingLeft ? -1 : 1) * PLAYER_SCALE_X
+
+        if (player.crouch) {
+            botData.sprite.scale.y = PLAYER_SCALE_Y * 0.83
+            botData.sprite.y = player.y + 8
+        } else {
+            botData.sprite.scale.y = PLAYER_SCALE_Y
+            botData.sprite.y = player.y
+        }
+
+        // Update weapon sprite
+        if (player.dead) {
+            botData.weapon.visible = false
+        } else {
+            const icon = getWeaponIcon(player.currentWeapon)
+            if (icon) {
+                botData.weapon.texture = icon
+                botData.weapon.x = player.x
+                botData.weapon.y = player.crouch ? player.y + 8 : player.y
+                botData.weapon.rotation = player.aimAngle
+                botData.weapon.scale.x = WEAPON_SCALE
+                botData.weapon.scale.y = (player.facingLeft ? -1 : 1) * WEAPON_SCALE
+                botData.weapon.visible = true
+            } else {
+                botData.weapon.visible = false
+            }
+        }
+    }
 }
 
 function updateItemSprites() {

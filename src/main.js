@@ -5,6 +5,7 @@ import { Player } from './player'
 import { Physics, Render } from './engine'
 import { Projectiles } from './projectiles'
 import { loadAssets } from './assets'
+import { BotManager } from './botManager'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 const { DAMAGE, AMMO_PICKUP } = WeaponConstants
@@ -42,17 +43,22 @@ Render.renderMap()
 Render.setSceneReady(true)
 
 const localPlayer = new Player()
-const otherPlayers = []
 const state = { lastMouseY: Input.mouseY, lastMoveDir: 0 }
 
+BotManager.init(localPlayer)
 spawnPlayer(localPlayer)
 setupPointerLock()
-setupExplosionHandler(localPlayer)
+setupExplosionHandlers()
+
+// Spawn 1 bot for testing
+BotManager.spawnBot('easy')
+
 requestAnimationFrame((ts) => gameLoop(ts, localPlayer))
 
 function spawnPlayer(player) {
     const { col, row } = Map.getRandomRespawn()
     player.setXY(col * BRICK_WIDTH + 10, row * BRICK_HEIGHT - 24)
+    player.spawnProtection = 120 // ~2 seconds of spawn protection
 }
 
 function setupPointerLock() {
@@ -66,50 +72,107 @@ function setupPointerLock() {
     })
 }
 
-function setupExplosionHandler(player) {
+function setupExplosionHandlers() {
     Projectiles.onExplosion((x, y, type, proj) => {
         if (type !== 'rocket') return
 
-        const dx = player.x - x
-        const dy = player.y - y
-        const distance = Math.hypot(dx, dy)
+        for (const player of BotManager.getAllPlayers()) {
+            if (player.dead) continue
 
-        if (distance >= EXPLOSION_RADIUS) return
+            const dx = player.x - x
+            const dy = player.y - y
+            const distance = Math.hypot(dx, dy)
 
-        const falloff = 1 - distance / EXPLOSION_RADIUS
-        const damage = DAMAGE[WeaponId.ROCKET] * falloff
+            if (distance >= EXPLOSION_RADIUS) continue
 
-        if (damage > 0) {
-            player.takeDamage(damage, proj?.ownerId ?? player.id)
-        }
+            const falloff = 1 - distance / EXPLOSION_RADIUS
+            const damage = DAMAGE[WeaponId.ROCKET] * falloff
 
-        if (distance > 0) {
-            const knockback = (4 * falloff) / distance
-            player.velocityX += dx * knockback
-            player.velocityY += dy * knockback
+            if (damage > 0) {
+                player.takeDamage(damage, proj?.ownerId ?? player.id)
+            }
+
+            if (distance > 0) {
+                const knockback = (4 * falloff) / distance
+                player.velocityX += dx * knockback
+                player.velocityY += dy * knockback
+            }
         }
     })
 }
 
 function gameLoop(timestamp, player) {
+    // Process local player input
     processMovementInput(player)
     processWeaponScroll(player)
     processWeaponSwitch(player)
     processAimInput(player)
     processFiring(player)
 
-    player.update()
+    // Update bots AI
+    BotManager.update()
 
-    if (!player.dead) {
-        Physics.updateGame(player, timestamp)
+    // Process bot firing
+    for (const bot of BotManager.getBots()) {
+        const result = bot.applyFiring()
+        if (result) {
+            processBotFireResult(bot.player, result)
+        }
     }
 
-    Projectiles.update()
-    processProjectileHits(player)
-    processItemPickups(player)
+    // Update all players
+    player.update()
+    player.checkRespawn() // Handle local player respawn
+    for (const bot of BotManager.getBots()) {
+        bot.player.update()
+    }
 
-    Render.renderGame(player)
+    // Update physics for all players (synchronized)
+    Physics.updateAllPlayers(BotManager.getAllPlayers(), timestamp)
+
+    Projectiles.update()
+
+    // Process hits for all players
+    for (const p of BotManager.getAllPlayers()) {
+        processProjectileHits(p)
+    }
+
+    // Process item pickups for all players
+    for (const p of BotManager.getAllPlayers()) {
+        processItemPickups(p)
+    }
+
+    Render.renderGame(player, BotManager.getBots())
     requestAnimationFrame((ts) => gameLoop(ts, player))
+}
+
+function processBotFireResult(botPlayer, result) {
+    const otherPlayers = BotManager.getOtherPlayers(botPlayer)
+
+    if (result?.type === 'rail') {
+        Render.addRailShot(result)
+        applyHitscanDamage(botPlayer, result, otherPlayers)
+    }
+    if (result?.type === 'shaft') {
+        Render.addShaftShot(result)
+        applyHitscanDamage(botPlayer, result, otherPlayers)
+    }
+    if (result?.type === 'hitscan') {
+        Render.addBulletImpact(result.trace.x, result.trace.y, { radius: 2.5 })
+        applyHitscanDamage(botPlayer, result, otherPlayers)
+    }
+    if (result?.type === 'shotgun') {
+        for (const pellet of result.pellets) {
+            const shot = { startX: result.startX, startY: result.startY, trace: pellet.trace }
+            Render.addBulletImpact(shot.trace.x, shot.trace.y, { radius: 2 })
+            applyHitscanDamage(botPlayer, { ...shot, damage: pellet.damage }, otherPlayers)
+        }
+    }
+    if (result?.type === 'gauntlet') {
+        const { x, y } = getWeaponTip(botPlayer, GAUNTLET_SPARK_OFFSET)
+        Render.addGauntletSpark(x, y)
+        applyMeleeDamage(botPlayer, result, otherPlayers)
+    }
 }
 
 function processMovementInput(player) {
@@ -181,9 +244,11 @@ function updateFacingDirection(player) {
 function processFiring(player) {
     if (!Input.mouseDown || player.dead) return
 
+    const otherPlayers = BotManager.getOtherPlayers(player)
     const result = player.fire()
     if (result?.type === 'rail') {
         Render.addRailShot(result)
+        applyHitscanDamage(player, result, otherPlayers)
     }
     if (result?.type === 'shaft') {
         Render.addShaftShot(result)
