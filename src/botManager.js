@@ -35,44 +35,84 @@ class BotManagerClass {
         const rows = Map.getRows()
         const candidates = []
 
-        // Collect all valid spawn points
+        const isActualBrick = (col, row) =>
+            col >= 0 && col < cols && row >= 0 && row < rows && Map.isBrick(col, row)
+
+        const isActualEmpty = (col, row) =>
+            col >= 0 && col < cols && row >= 0 && row < rows && !Map.isBrick(col, row)
+
+        const isValidSpawn = (col, row) =>
+            isActualEmpty(col, row) && isActualEmpty(col, row + 1) && isActualBrick(col, row + 2)
+
+        // Collect all valid spawn points with distance check
         for (let col = 1; col < cols - 1; col++) {
-            for (let row = 1; row < rows - 2; row++) {
-                const empty1 = !Map.isBrick(col, row)
-                const empty2 = !Map.isBrick(col, row + 1)
-                const ground = Map.isBrick(col, row + 2)
+            for (let row = 0; row < rows - 2; row++) {
+                if (!isValidSpawn(col, row)) continue
 
-                if (empty1 && empty2 && ground) {
-                    const x = col * BRICK_WIDTH + BRICK_WIDTH / 2
-                    const y = (row + 1) * BRICK_HEIGHT
+                const x = col * BRICK_WIDTH + BRICK_WIDTH / 2
+                const y = (row + 1) * BRICK_HEIGHT
 
-                    // Check distance from all players
-                    let minDist = Infinity
-                    for (const player of this.allPlayers) {
-                        if (player.dead) continue
-                        const dist = Math.hypot(player.x - x, player.y - y)
-                        minDist = Math.min(minDist, dist)
-                    }
+                let minDist = Infinity
+                for (const player of this.allPlayers) {
+                    if (player.dead) continue
+                    const dist = Math.hypot(player.x - x, player.y - y)
+                    minDist = Math.min(minDist, dist)
+                }
 
-                    if (minDist >= MIN_SPAWN_DISTANCE) {
-                        candidates.push({ x, y, dist: minDist })
-                    }
+                if (minDist >= MIN_SPAWN_DISTANCE) {
+                    candidates.push({ x, y, dist: minDist })
                 }
             }
         }
 
-        // Pick random from safest spawns
         if (candidates.length > 0) {
             candidates.sort((a, b) => b.dist - a.dist)
             const topCandidates = candidates.slice(0, Math.min(5, candidates.length))
             return topCandidates[Math.floor(Math.random() * topCandidates.length)]
         }
 
-        // Fallback
+        // Fallback: any valid spawn ignoring distance
+        for (let col = 1; col < cols - 1; col++) {
+            for (let row = 0; row < rows - 2; row++) {
+                if (isValidSpawn(col, row)) {
+                    return {
+                        x: col * BRICK_WIDTH + BRICK_WIDTH / 2,
+                        y: (row + 1) * BRICK_HEIGHT,
+                    }
+                }
+            }
+        }
+
+        // Map respawn point fallback
         const spawn = Map.getRandomRespawn()
-        return spawn
-            ? { x: spawn.col * BRICK_WIDTH + 10, y: spawn.row * BRICK_HEIGHT - 24 }
-            : { x: 100, y: 100 }
+        if (spawn && spawn.row + 2 < rows && isValidSpawn(spawn.col, spawn.row)) {
+            return {
+                x: spawn.col * BRICK_WIDTH + BRICK_WIDTH / 2,
+                y: (spawn.row + 1) * BRICK_HEIGHT,
+            }
+        }
+
+        // Absolute fallback: find ANY ground, even at edges
+        for (let col = 0; col < cols; col++) {
+            for (let row = 0; row < rows - 2; row++) {
+                if (isValidSpawn(col, row)) {
+                    return {
+                        x: col * BRICK_WIDTH + BRICK_WIDTH / 2,
+                        y: (row + 1) * BRICK_HEIGHT,
+                    }
+                }
+            }
+        }
+
+        // Absolute fallback: spawn near the local player (guaranteed to have ground)
+        const localPlayer = this.allPlayers[0]
+        if (localPlayer) {
+            console.warn('No valid spawn - using player position')
+            return { x: localPlayer.x, y: localPlayer.y }
+        }
+
+        console.warn('No valid spawn point found!')
+        return { x: BRICK_WIDTH * 2, y: BRICK_HEIGHT * 2 }
     }
 
     handleBotRespawn(bot) {

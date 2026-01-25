@@ -5,7 +5,7 @@ import { Weapons } from './weapons'
 
 const { trunc } = Utils
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
-const { isBrick } = Map
+const { isBrick, getRows } = Map
 const { MAX_HEALTH, MAX_ARMOR, SELF_DAMAGE_REDUCTION, ARMOR_ABSORPTION, RESPAWN_TIME } =
     GameConstants
 const { AMMO_START } = WeaponConstants
@@ -234,6 +234,10 @@ export class Player {
 
     #checkGround(colL, colR, y) {
         const rowProbe = trunc((y + GROUND_PROBE) / BRICK_HEIGHT)
+
+        // Treat map bottom boundary as ground
+        if (rowProbe >= getRows()) return true
+
         const rowInside = trunc((y + HALF_HEIGHT - 1) / BRICK_HEIGHT)
         const rowBody = trunc((y + CROUCH_HALF_HEIGHT) / BRICK_HEIGHT)
 
@@ -247,6 +251,10 @@ export class Player {
 
     #checkHead(colL, colR, y) {
         const rowProbe = trunc((y - HEAD_PROBE) / BRICK_HEIGHT)
+
+        // Treat map top boundary as ceiling
+        if (rowProbe < 0) return true
+
         const rowInside = trunc((y - HALF_HEIGHT + 1) / BRICK_HEIGHT)
         const rowBody = trunc((y - CROUCH_HALF_HEIGHT) / BRICK_HEIGHT)
 
