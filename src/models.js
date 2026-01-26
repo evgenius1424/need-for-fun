@@ -1,5 +1,3 @@
-// Centralized model configuration registry
-
 export const ModelId = {
     SARGE: 'sarge',
 }
@@ -74,4 +72,3 @@ export function getSoundPaths(modelId) {
         },
     }
 }
-

@@ -4,46 +4,56 @@ import { Constants, WeaponId } from './helpers'
 import { DEFAULT_MODEL, SkinId } from './models'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
+const HALF_PI = Math.PI / 2
+const TWO_PI = Math.PI * 2
 
 const BOT_NAMES = ['Bandit', 'Striker', 'Hunter', 'Titan', 'Gladiator', 'Viper', 'Shadow', 'Blaze']
 
 const DIFFICULTY = {
     easy: {
-        aimSpread: Math.PI / 6,      // ~30 degrees (applied only when firing)
-        aimSpeed: 0.05,               // how fast aim tracks target
-        reactionTime: 20,             // frames (~333ms at 60fps)
-        fireDelay: 90,                // minimum frames between shots (~1.5s)
+        aimSpread: Math.PI / 6,
+        aimSpeed: 0.05,
+        reactionTime: 20,
+        fireDelay: 90,
         jumpChance: 0.03,
     },
     medium: {
-        aimSpread: Math.PI / 12,     // ~15 degrees
+        aimSpread: Math.PI / 12,
         aimSpeed: 0.1,
-        reactionTime: 12,             // frames (~200ms)
-        fireDelay: 60,                // minimum frames between shots (~1s)
+        reactionTime: 12,
+        fireDelay: 60,
         jumpChance: 0.04,
     },
     hard: {
-        aimSpread: Math.PI / 24,     // ~7.5 degrees
+        aimSpread: Math.PI / 24,
         aimSpeed: 0.15,
-        reactionTime: 6,              // frames (~100ms)
-        fireDelay: 40,                // minimum frames between shots (~666ms)
+        reactionTime: 6,
+        fireDelay: 40,
         jumpChance: 0.05,
     },
 }
 
-const HALF_PI = Math.PI / 2
-const TWO_PI = Math.PI * 2
+const WEAPON_PREFERENCES = [
+    { maxDist: 50, weapons: [WeaponId.GAUNTLET, WeaponId.SHOTGUN, WeaponId.MACHINE] },
+    {
+        maxDist: 150,
+        weapons: [WeaponId.SHOTGUN, WeaponId.ROCKET, WeaponId.PLASMA, WeaponId.MACHINE],
+    },
+    { maxDist: 300, weapons: [WeaponId.ROCKET, WeaponId.RAIL, WeaponId.PLASMA, WeaponId.MACHINE] },
+    { maxDist: Infinity, weapons: [WeaponId.RAIL, WeaponId.ROCKET, WeaponId.MACHINE] },
+]
 
-function normalizeAngle(angle) {
-    while (angle > Math.PI) angle -= TWO_PI
-    while (angle < -Math.PI) angle += TWO_PI
-    return angle
-}
+const CHASE_THRESHOLD = 30
+const FIRE_RANGE = 500
+const LOS_STEP_SIZE = 8
+const STUCK_JUMP_THRESHOLD = 30
+const STUCK_REVERSE_THRESHOLD = 60
+const JUMP_COOLDOWN_FRAMES = 10
+const WEAPON_SWITCH_CHANCE = 0.01
 
 export class Bot {
     player
     name
-    difficulty
     config
 
     target = null
@@ -60,91 +70,66 @@ export class Bot {
     constructor(difficulty = 'medium', skin = SkinId.RED) {
         this.player = new Player({ model: DEFAULT_MODEL, skin })
         this.name = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]
-        this.difficulty = difficulty
-        this.config = DIFFICULTY[difficulty] || DIFFICULTY.medium
+        this.config = DIFFICULTY[difficulty] ?? DIFFICULTY.medium
     }
 
     update(allPlayers) {
-        const { player, config } = this
-
-        if (player.dead) {
+        if (this.player.dead) {
             this.clearInputs()
             return
         }
 
-        // Think timer - make decisions at intervals based on difficulty
         if (--this.thinkTimer <= 0) {
-            this.thinkTimer = config.reactionTime + Math.floor(Math.random() * 5)
+            this.thinkTimer = this.config.reactionTime + randInt(5)
             this.think(allPlayers)
         }
 
-        // Check if stuck
         this.checkStuck()
-
-        // Apply movement
         this.applyMovement()
-
-        // Apply aiming
         this.applyAiming()
-
-        // Note: firing is handled in main.js to process visual effects
-
-        // Weapon switching
         this.considerWeaponSwitch()
     }
 
+    applyFiring() {
+        if (this.botFireCooldown > 0) this.botFireCooldown--
+        if (!this.wantsToFire) return null
+        if (this.player.fireCooldown > 0 || this.botFireCooldown > 0) return null
+
+        this.botFireCooldown = this.config.fireDelay + randInt(20)
+
+        const originalAngle = this.player.aimAngle
+        this.player.aimAngle += (Math.random() - 0.5) * this.config.aimSpread
+        const result = this.player.fire()
+        this.player.aimAngle = originalAngle
+
+        return result
+    }
+
     think(allPlayers) {
-        // Find closest target
         this.target = this.findTarget(allPlayers)
 
         if (!this.target) {
-            // No target - wander randomly
-            this.moveDirection = Math.random() < 0.5 ? -1 : 1
-            this.wantsToJump = Math.random() < this.config.jumpChance * 2
-            this.wantsToFire = false
+            this.wander()
             return
         }
 
-        const { player } = this
-        const dx = this.target.x - player.x
-        const dy = this.target.y - player.y
+        const dx = this.target.x - this.player.x
+        const dy = this.target.y - this.player.y
         const distance = Math.hypot(dx, dy)
 
-        // Movement decision - chase target
-        if (Math.abs(dx) > 30) {
-            this.moveDirection = dx > 0 ? 1 : -1
-        } else {
-            // Close enough horizontally, strafe randomly
-            this.moveDirection = Math.random() < 0.5 ? (Math.random() < 0.5 ? -1 : 1) : 0
-        }
-
-        // Jump decision - more aggressive jumping
-        const shouldJump =
-            // Target is above us
-            dy < -BRICK_HEIGHT / 2 ||
-            // Obstacle ahead
-            this.isBlockedAhead() ||
-            // Stuck for a while
-            this.stuckTimer > 10 ||
-            // Random jump for unpredictability
-            Math.random() < this.config.jumpChance
-
-        this.wantsToJump = shouldJump
-
-        // Fire decision - fire if we have line of sight
-        this.wantsToFire = distance < 500 && this.hasLineOfSight(this.target)
+        this.decideMovement(dx)
+        this.decideJump(dy)
+        this.wantsToFire = distance < FIRE_RANGE && this.hasLineOfSight(this.target)
     }
 
     findTarget(allPlayers) {
-        const { player } = this
         let closest = null
         let closestDist = Infinity
 
         for (const other of allPlayers) {
-            if (!other || other === player || other.dead) continue
-            if (other.spawnProtection > 0) continue // Skip spawn-protected
+            if (!this.isValidTarget(other)) continue
 
-            const dist = Math.hypot(other.x - player.x, other.y - player.y)
+            const dist = Math.hypot(other.x - this.player.x, other.y - this.player.y)
             if (dist < closestDist) {
                 closestDist = dist
                 closest = other
@@ -155,165 +140,121 @@ export class Bot {
     }
 
     hasLineOfSight(target) {
-        const { player } = this
-        const dx = target.x - player.x
-        const dy = target.y - player.y
+        const dx = target.x - this.player.x
+        const dy = target.y - this.player.y
         const dist = Math.hypot(dx, dy)
         if (dist < 10) return true
 
-        // Use smaller step size for accuracy
-        const stepSize = 8
-        const steps = Math.ceil(dist / stepSize)
+        const steps = Math.ceil(dist / LOS_STEP_SIZE)
         const stepX = dx / steps
         const stepY = dy / steps
 
         for (let i = 1; i < steps; i++) {
-            const checkX = player.x + stepX * i
-            const checkY = player.y + stepY * i
-            const col = Math.floor(checkX / BRICK_WIDTH)
-            const row = Math.floor(checkY / BRICK_HEIGHT)
-
-            if (Map.isBrick(col, row)) {
-                return false
-            }
+            const col = Math.floor((this.player.x + stepX * i) / BRICK_WIDTH)
+            const row = Math.floor((this.player.y + stepY * i) / BRICK_HEIGHT)
+            if (Map.isBrick(col, row)) return false
         }
 
         return true
     }
 
-    isBlockedAhead() {
-        const { player, moveDirection } = this
-        if (moveDirection === 0) return false
-
-        const checkX = player.x + moveDirection * BRICK_WIDTH
-        const col = Math.floor(checkX / BRICK_WIDTH)
-        const row = Math.floor(player.y / BRICK_HEIGHT)
-
-        return Map.isBrick(col, row)
-    }
-
     checkStuck() {
-        const { player } = this
-        const moved = Math.abs(player.x - this.lastX) > 1 || Math.abs(player.y - this.lastY) > 1
+        const moved =
+            Math.abs(this.player.x - this.lastX) > 1 || Math.abs(this.player.y - this.lastY) > 1
 
-        if (!moved && !player.dead) {
+        if (!moved && !this.player.dead) {
             this.stuckTimer++
-            if (this.stuckTimer > 30) {
-                // Stuck for too long - try jumping or reversing
+            if (this.stuckTimer > STUCK_JUMP_THRESHOLD) {
                 this.wantsToJump = true
-                if (this.stuckTimer > 60) {
-                    this.moveDirection = -this.moveDirection || 1
-                    this.stuckTimer = 0
-                }
+            }
+            if (this.stuckTimer > STUCK_REVERSE_THRESHOLD) {
+                this.moveDirection = -this.moveDirection || 1
+                this.stuckTimer = 0
             }
         } else {
             this.stuckTimer = 0
         }
 
-        this.lastX = player.x
-        this.lastY = player.y
+        this.lastX = this.player.x
+        this.lastY = this.player.y
     }
 
     applyMovement() {
-        const { player, moveDirection, wantsToJump } = this
+        this.player.keyLeft = this.moveDirection < 0
+        this.player.keyRight = this.moveDirection > 0
+        this.player.keyDown = false
 
-        player.keyLeft = moveDirection < 0
-        player.keyRight = moveDirection > 0
-        player.keyDown = false
-
-        // Pulse jump input instead of holding continuously
         if (this.jumpCooldown > 0) {
             this.jumpCooldown--
-            player.keyUp = false
-        } else if (wantsToJump && player.isOnGround()) {
-            player.keyUp = true
-            this.jumpCooldown = 10 // Don't try jumping again for 10 frames
+            this.player.keyUp = false
+        } else if (this.wantsToJump && this.player.isOnGround()) {
+            this.player.keyUp = true
+            this.jumpCooldown = JUMP_COOLDOWN_FRAMES
         } else {
-            player.keyUp = wantsToJump && !player.isOnGround() // Hold in air for double jump
+            this.player.keyUp = this.wantsToJump && !this.player.isOnGround()
         }
     }
 
     applyAiming() {
-        const { player, target, config } = this
+        if (!this.target) return
 
-        if (!target) return
-
-        const dx = target.x - player.x
-        const dy = target.y - player.y
-
-        // Calculate angle to target (no spread here - spread applied only when firing)
-        let goalAngle = Math.atan2(dy, dx)
-
-        // Determine facing direction
+        const dx = this.target.x - this.player.x
+        const dy = this.target.y - this.player.y
         const facingLeft = dx < 0
-        player.facingLeft = facingLeft
 
-        // Clamp goal angle to valid range based on facing direction
-        if (facingLeft) {
-            // Facing left: angle should be around PI
-            if (goalAngle > 0 && goalAngle < HALF_PI) {
-                goalAngle = HALF_PI
-            } else if (goalAngle < 0 && goalAngle > -HALF_PI) {
-                goalAngle = -HALF_PI
-            }
-        } else {
-            // Facing right: angle should be around 0 (between -PI/2 and PI/2)
-            goalAngle = Math.max(-HALF_PI, Math.min(HALF_PI, goalAngle))
-        }
-
-        // Smooth aim interpolation - don't snap instantly
-        const diff = normalizeAngle(goalAngle - player.aimAngle)
-        player.aimAngle = normalizeAngle(player.aimAngle + diff * config.aimSpeed)
-    }
-
-    applyFiring() {
-        const { player, wantsToFire, config } = this
-
-        // Decrease bot's own fire cooldown
-        if (this.botFireCooldown > 0) this.botFireCooldown--
-
-        if (!wantsToFire) return null
-
-        // Check both weapon cooldown and bot's fire delay
-        if (player.fireCooldown <= 0 && this.botFireCooldown <= 0) {
-            this.botFireCooldown = config.fireDelay + Math.floor(Math.random() * 20)
-
-            // Apply spread ONLY when firing, then restore
-            const originalAngle = player.aimAngle
-            player.aimAngle += (Math.random() - 0.5) * config.aimSpread
-            const result = player.fire()
-            player.aimAngle = originalAngle
-
-            return result
-        }
-
-        return null
+        this.player.facingLeft = facingLeft
+        const goalAngle = this.clampAimAngle(Math.atan2(dy, dx), facingLeft)
+        const diff = normalizeAngle(goalAngle - this.player.aimAngle)
+        this.player.aimAngle = normalizeAngle(this.player.aimAngle + diff * this.config.aimSpeed)
     }
 
     considerWeaponSwitch() {
-        const { player, target } = this
+        if (Math.random() > WEAPON_SWITCH_CHANCE) return
 
-        // Don't switch too often
-        if (Math.random() > 0.01) return
+        const distance = this.target
+            ? Math.hypot(this.target.x - this.player.x, this.target.y - this.player.y)
+            : 200
 
-        const distance = target ? Math.hypot(target.x - player.x, target.y - player.y) : 200
-
-        // Prefer weapons based on distance
-        const preferences =
-            distance < 50
-                ? [WeaponId.GAUNTLET, WeaponId.SHOTGUN, WeaponId.MACHINE]
-                : distance < 150
-                  ? [WeaponId.SHOTGUN, WeaponId.ROCKET, WeaponId.PLASMA, WeaponId.MACHINE]
-                  : distance < 300
-                    ? [WeaponId.ROCKET, WeaponId.RAIL, WeaponId.PLASMA, WeaponId.MACHINE]
-                    : [WeaponId.RAIL, WeaponId.ROCKET, WeaponId.MACHINE]
-
-        for (const weaponId of preferences) {
-            if (player.weapons[weaponId] && this.hasAmmo(weaponId)) {
-                player.switchWeapon(weaponId)
+        const prefs = WEAPON_PREFERENCES.find((p) => distance < p.maxDist)
+        for (const weaponId of prefs.weapons) {
+            if (this.player.weapons[weaponId] && this.hasAmmo(weaponId)) {
+                this.player.switchWeapon(weaponId)
                 return
             }
         }
+    }
+
+    wander() {
+        this.moveDirection = Math.random() < 0.5 ? -1 : 1
+        this.wantsToJump = Math.random() < this.config.jumpChance * 2
+        this.wantsToFire = false
+    }
+
+    decideMovement(dx) {
+        if (Math.abs(dx) > CHASE_THRESHOLD) {
+            this.moveDirection = dx > 0 ? 1 : -1
+        } else {
+            this.moveDirection = Math.random() < 0.5 ? (Math.random() < 0.5 ? -1 : 1) : 0
+        }
+    }
+
+    decideJump(dy) {
+        this.wantsToJump =
+            dy < -BRICK_HEIGHT / 2 ||
+            this.isBlockedAhead() ||
+            this.stuckTimer > 10 ||
+            Math.random() < this.config.jumpChance
+    }
+
+    isBlockedAhead() {
+        if (this.moveDirection === 0) return false
+        const col = Math.floor((this.player.x + this.moveDirection * BRICK_WIDTH) / BRICK_WIDTH)
+        const row = Math.floor(this.player.y / BRICK_HEIGHT)
+        return Map.isBrick(col, row)
+    }
+
+    isValidTarget(other) {
+        return other && other !== this.player && !other.dead && other.spawnProtection <= 0
     }
 
     hasAmmo(weaponId) {
@@ -321,11 +262,33 @@ export class Bot {
         return ammo === -1 || ammo > 0
     }
 
-    clearInputs() {
-        const { player } = this
-        player.keyUp = false
-        player.keyDown = false
-        player.keyLeft = false
-        player.keyRight = false
+    clampAimAngle(angle, facingLeft) {
+        if (facingLeft) {
+            if (angle > 0 && angle < HALF_PI) return HALF_PI
+            if (angle < 0 && angle > -HALF_PI) return -HALF_PI
+            return angle
+        }
+        return clamp(angle, -HALF_PI, HALF_PI)
     }
+
+    clearInputs() {
+        this.player.keyUp = false
+        this.player.keyDown = false
+        this.player.keyLeft = false
+        this.player.keyRight = false
+    }
+}
+
+function normalizeAngle(angle) {
+    while (angle > Math.PI) angle -= TWO_PI
+    while (angle < -Math.PI) angle += TWO_PI
+    return angle
+}
+
+function clamp(val, min, max) {
+    return val < min ? min : val > max ? max : val
+}
+
+function randInt(max) {
+    return Math.floor(Math.random() * max)
 }
