@@ -1,5 +1,13 @@
 import { Howler } from 'howler'
-import { Constants, GameConstants, Input, Settings, Sound, WeaponConstants, WeaponId } from './helpers'
+import {
+    Constants,
+    GameConstants,
+    Input,
+    Settings,
+    Sound,
+    WeaponConstants,
+    WeaponId,
+} from './helpers'
 import { Map } from './map'
 import { Player } from './player'
 import { Physics } from './engine/core/physics'
@@ -66,8 +74,10 @@ function spawnPlayer(player) {
     player.setXY(col * BRICK_WIDTH + 10, row * BRICK_HEIGHT - 24)
     player.prevX = player.x
     player.prevY = player.y
-    player.prevAimAngle = player.aimAngle
-    player.spawnProtection = 120 // ~2 seconds of spawn protection
+    player.aimAngle = 0
+    player.prevAimAngle = 0
+    player.facingLeft = false
+    player.spawnProtection = 120
 }
 
 function setupPointerLock() {
@@ -247,12 +257,14 @@ function updateFacingDirection(player) {
     const moveDir = Input.keyLeft ? -1 : Input.keyRight ? 1 : 0
     if (moveDir === 0) return
 
-    if (moveDir !== state.lastMoveDir) {
+    const newFacingLeft = moveDir < 0
+
+    if (newFacingLeft !== player.facingLeft) {
         player.aimAngle = normalizeAngle(Math.PI - player.aimAngle)
+        player.prevAimAngle = player.aimAngle // Skip interpolation on flip
     }
 
-    player.facingLeft = moveDir < 0
-    state.lastMoveDir = moveDir
+    player.facingLeft = newFacingLeft
 }
 
 function processFiring(player) {
