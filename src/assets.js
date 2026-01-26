@@ -11,25 +11,25 @@ import {
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
 const WEAPON_PATHS = {
-    [WeaponId.GAUNTLET]: '/assets/nfk/weapons/gauntlet.png',
-    [WeaponId.MACHINE]: '/assets/nfk/weapons/machinegun.png',
-    [WeaponId.SHOTGUN]: '/assets/nfk/weapons/shotgun.png',
-    [WeaponId.GRENADE]: '/assets/nfk/weapons/grenade.png',
-    [WeaponId.ROCKET]: '/assets/nfk/weapons/rocket.png',
-    [WeaponId.RAIL]: '/assets/nfk/weapons/railgun.png',
-    [WeaponId.PLASMA]: '/assets/nfk/weapons/plasma.png',
-    [WeaponId.SHAFT]: '/assets/nfk/weapons/shaft.png',
-    [WeaponId.BFG]: '/assets/nfk/weapons/bfg.png',
+    [WeaponId.GAUNTLET]: '/assets/weapons/gauntlet.png',
+    [WeaponId.MACHINE]: '/assets/weapons/machinegun.png',
+    [WeaponId.SHOTGUN]: '/assets/weapons/shotgun.png',
+    [WeaponId.GRENADE]: '/assets/weapons/grenade.png',
+    [WeaponId.ROCKET]: '/assets/weapons/rocket.png',
+    [WeaponId.RAIL]: '/assets/weapons/railgun.png',
+    [WeaponId.PLASMA]: '/assets/weapons/plasma.png',
+    [WeaponId.SHAFT]: '/assets/weapons/shaft.png',
+    [WeaponId.BFG]: '/assets/weapons/bfg.png',
 }
 
 const ITEM_PATHS = {
-    health5: '/assets/nfk/items/health5.png',
-    health25: '/assets/nfk/items/health25.png',
-    health50: '/assets/nfk/items/health50.png',
-    health100: '/assets/nfk/items/health100.png',
-    armor50: '/assets/nfk/items/armor50.png',
-    armor100: '/assets/nfk/items/armor100.png',
-    quad: '/assets/nfk/items/quad.png',
+    health5: '/assets/items/health5.png',
+    health25: '/assets/items/health25.png',
+    health50: '/assets/items/health50.png',
+    health100: '/assets/items/health100.png',
+    armor50: '/assets/items/armor50.png',
+    armor100: '/assets/items/armor100.png',
+    quad: '/assets/items/quad.png',
 }
 
 const textures = {}
@@ -39,7 +39,7 @@ export async function loadAssets() {
     textures.explosion = genExplosionTexture()
     textures.smoke = genSmokeTexture()
     textures.background = await loadWithFallback(
-        '/assets/nfk/backgrounds/bg_1.jpg',
+        '/assets/backgrounds/bg_1.jpg',
         genBackgroundTexture,
     )
     textures.projectiles = {
@@ -51,7 +51,8 @@ export async function loadAssets() {
 
     textures.modelAnimations = {}
     await loadModelAnimations(DEFAULT_MODEL, DEFAULT_SKIN)
-    textures.player = getModelAnimationFrames(DEFAULT_MODEL, DEFAULT_SKIN, 'walk')[0] || genPlayerTexture()
+    textures.player =
+        getModelAnimationFrames(DEFAULT_MODEL, DEFAULT_SKIN, 'walk')[0] || genPlayerTexture()
 
     textures.weaponIcons = await loadIconMap(WEAPON_PATHS)
     textures.itemIcons = await loadIconMap(ITEM_PATHS)

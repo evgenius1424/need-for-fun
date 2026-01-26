@@ -14,7 +14,7 @@ export const SkinId = {
 const MODEL_CONFIGS = {
     [ModelId.SARGE]: {
         name: 'Sarge',
-        basePath: '/assets/nfk/models/sarge',
+        basePath: '/assets/models/sarge',
         animations: {
             walk: { frames: 18, width: 45, height: 48 },
             crouch: { frames: 10, width: 50, height: 40 },
