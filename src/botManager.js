@@ -24,6 +24,9 @@ class BotManagerClass {
         if (spawn) {
             bot.player.setXY(spawn.x, spawn.y)
         }
+        bot.player.prevX = bot.player.x
+        bot.player.prevY = bot.player.y
+        bot.player.prevAimAngle = bot.player.aimAngle
         bot.player.spawnProtection = 120 // ~2 seconds of spawn protection
 
         console.log(`Bot spawned: ${bot.name} (${difficulty})`)
@@ -118,6 +121,9 @@ class BotManagerClass {
     handleBotRespawn(bot) {
         const spawn = this.findSafeSpawn()
         bot.player.setXY(spawn.x, spawn.y)
+        bot.player.prevX = bot.player.x
+        bot.player.prevY = bot.player.y
+        bot.player.prevAimAngle = bot.player.aimAngle
         bot.player.velocityX = 0
         bot.player.velocityY = 0
         bot.player.spawnProtection = 120

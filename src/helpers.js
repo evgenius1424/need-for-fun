@@ -278,26 +278,36 @@ function createConsole() {
 
 function createSoundSystem() {
     const modelCache = new Map()
+    let unlocked = false
+    let weapons = null
+    let defaultJump = null
 
     const howl = (src, volume = 1) => new Howl({ src: [src], volume })
 
-    const weapons = {
-        machinegun: howl('/sounds/machinegun.wav', 0.5),
-        shotgun: howl('/sounds/shotgun.wav', 0.6),
-        grenade: howl('/sounds/grenade.wav', 0.6),
-        rocket: howl('/sounds/rocket.wav', 0.6),
-        railgun: howl('/sounds/railgun.wav', 0.6),
-        plasma: howl('/sounds/plasma.wav', 0.4),
-        shaft: howl('/sounds/shaft.wav', 0.3),
-        bfg: howl('/sounds/bfg.wav', 0.7),
-        rocketExplode: howl('/sounds/rocket_explode.wav', 0.7),
-        grenadeExplode: howl('/sounds/grenade_explode.wav', 0.7),
-        plasmaHit: howl('/sounds/plasma_hit.wav', 0.4),
+    const isUnlocked = () => unlocked
+
+    const init = () => {
+        if (unlocked) return
+        weapons = {
+            machinegun: howl('/sounds/machinegun.wav', 0.5),
+            shotgun: howl('/sounds/shotgun.wav', 0.6),
+            grenade: howl('/sounds/grenade.wav', 0.6),
+            rocket: howl('/sounds/rocket.wav', 0.6),
+            railgun: howl('/sounds/railgun.wav', 0.6),
+            plasma: howl('/sounds/plasma.wav', 0.4),
+            shaft: howl('/sounds/shaft.wav', 0.3),
+            bfg: howl('/sounds/bfg.wav', 0.7),
+            rocketExplode: howl('/sounds/rocket_explode.wav', 0.7),
+            grenadeExplode: howl('/sounds/grenade_explode.wav', 0.7),
+            plasmaHit: howl('/sounds/plasma_hit.wav', 0.4),
+        }
+
+        defaultJump = howl('/sounds/jump1.wav')
+        unlocked = true
     }
 
-    const defaultJump = howl('/sounds/jump1.wav')
-
     const getModelSounds = (model) => {
+        if (!isUnlocked()) return null
         const key = model || DEFAULT_MODEL
         if (modelCache.has(key)) return modelCache.get(key)
 
@@ -327,22 +337,32 @@ function createSoundSystem() {
     const playRandom = (arr) => arr?.[Math.floor(Math.random() * arr.length)]?.play()
 
     return {
-        jump: (model) => (model ? getModelSounds(model).jump : defaultJump).play(),
-        death: (model) => playRandom(getModelSounds(model).death),
-        pain: (model, damage) => {
-            const lvl = pickPainLevel(damage)
-            if (lvl) getModelSounds(model).pain[lvl].play()
+        unlock: () => init(),
+        jump: (model) => {
+            if (!isUnlocked()) return
+            const sounds = model ? getModelSounds(model) : { jump: defaultJump }
+            sounds?.jump?.play()
         },
-        machinegun: () => weapons.machinegun.play(),
-        shotgun: () => weapons.shotgun.play(),
-        grenade: () => weapons.grenade.play(),
-        rocket: () => weapons.rocket.play(),
-        railgun: () => weapons.railgun.play(),
-        plasma: () => weapons.plasma.play(),
-        shaft: () => weapons.shaft.play(),
-        bfg: () => weapons.bfg.play(),
-        rocketExplode: () => weapons.rocketExplode.play(),
-        grenadeExplode: () => weapons.grenadeExplode.play(),
-        plasmaHit: () => weapons.plasmaHit.play(),
+        death: (model) => {
+            if (!isUnlocked()) return
+            const sounds = getModelSounds(model)
+            if (sounds) playRandom(sounds.death)
+        },
+        pain: (model, damage) => {
+            if (!isUnlocked()) return
+            const lvl = pickPainLevel(damage)
+            if (lvl) getModelSounds(model)?.pain?.[lvl]?.play()
+        },
+        machinegun: () => isUnlocked() && weapons?.machinegun.play(),
+        shotgun: () => isUnlocked() && weapons?.shotgun.play(),
+        grenade: () => isUnlocked() && weapons?.grenade.play(),
+        rocket: () => isUnlocked() && weapons?.rocket.play(),
+        railgun: () => isUnlocked() && weapons?.railgun.play(),
+        plasma: () => isUnlocked() && weapons?.plasma.play(),
+        shaft: () => isUnlocked() && weapons?.shaft.play(),
+        bfg: () => isUnlocked() && weapons?.bfg.play(),
+        rocketExplode: () => isUnlocked() && weapons?.rocketExplode.play(),
+        grenadeExplode: () => isUnlocked() && weapons?.grenadeExplode.play(),
+        plasmaHit: () => isUnlocked() && weapons?.plasmaHit.play(),
     }
 }

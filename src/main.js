@@ -1,5 +1,5 @@
 import { Howler } from 'howler'
-import { Constants, GameConstants, Input, Settings, WeaponConstants, WeaponId } from './helpers'
+import { Constants, GameConstants, Input, Settings, Sound, WeaponConstants, WeaponId } from './helpers'
 import { Map } from './map'
 import { Player } from './player'
 import { Physics, Render } from './engine'
@@ -63,12 +63,16 @@ requestAnimationFrame((ts) => gameLoop(ts, localPlayer))
 function spawnPlayer(player) {
     const { col, row } = Map.getRandomRespawn()
     player.setXY(col * BRICK_WIDTH + 10, row * BRICK_HEIGHT - 24)
+    player.prevX = player.x
+    player.prevY = player.y
+    player.prevAimAngle = player.aimAngle
     player.spawnProtection = 120 // ~2 seconds of spawn protection
 }
 
 function setupPointerLock() {
     const gameRoot = document.getElementById('game')
     gameRoot?.addEventListener('click', () => {
+        Sound.unlock()
         Howler.ctx?.state === 'suspended' && Howler.ctx.resume()
         const canvas = gameRoot.querySelector('canvas')
         if (canvas && document.pointerLockElement !== canvas) {
@@ -107,6 +111,10 @@ function setupExplosionHandlers() {
 }
 
 function gameLoop(timestamp, player) {
+    for (const p of BotManager.getAllPlayers()) {
+        p.prevAimAngle = p.aimAngle
+    }
+
     // Process local player input
     processMovementInput(player)
     processWeaponScroll(player)

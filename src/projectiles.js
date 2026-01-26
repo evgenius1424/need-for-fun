@@ -29,6 +29,8 @@ export const Projectiles = {
             type,
             x,
             y,
+            prevX: x,
+            prevY: y,
             velocityX,
             velocityY,
             ownerId,
@@ -53,6 +55,8 @@ export const Projectiles = {
                 continue
             }
 
+            proj.prevX = proj.x
+            proj.prevY = proj.y
             proj.age++
 
             if (proj.type === 'grenade') {

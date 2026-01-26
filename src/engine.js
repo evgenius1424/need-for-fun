@@ -21,6 +21,7 @@ const PLAYER_SCALE_Y = 1
 const WEAPON_SCALE = 0.85
 const BG_TILE_SCALE = 0.7
 const FRAME_MS = 16
+const MAX_TICKS_PER_FRAME = 5
 
 const ANIMATION = {
     walk: { refresh: 2, loop: true },
@@ -330,6 +331,7 @@ export const Render = {
 
 const physics = {
     time: 0,
+    alpha: 1,
     lastKeyUp: false,
     lastWasJump: false,
     speedJumpDir: 0,
@@ -344,18 +346,27 @@ export const Physics = {
 
         const delta = timestamp - physics.time
         let frames = trunc(delta / FRAME_MS)
-        if (frames === 0) return false
+        if (frames === 0) {
+            physics.alpha = delta / FRAME_MS
+            return false
+        }
+
+        if (frames > MAX_TICKS_PER_FRAME) {
+            frames = MAX_TICKS_PER_FRAME
+            physics.time = timestamp - frames * FRAME_MS
+        }
 
         physics.time += frames * FRAME_MS
 
         // Apply same number of physics frames to ALL players
         while (frames-- > 0) {
             for (const player of players) {
-                if (!player.dead) {
-                    playerMove(player)
-                }
+                player.prevX = player.x
+                player.prevY = player.y
+                if (!player.dead) playerMove(player)
             }
         }
+        physics.alpha = (timestamp - physics.time) / FRAME_MS
         return true
     },
 
@@ -365,11 +376,28 @@ export const Physics = {
 
         const delta = timestamp - physics.time
         let frames = trunc(delta / FRAME_MS)
-        if (frames === 0) return false
+        if (frames === 0) {
+            physics.alpha = delta / FRAME_MS
+            return false
+        }
+
+        if (frames > MAX_TICKS_PER_FRAME) {
+            frames = MAX_TICKS_PER_FRAME
+            physics.time = timestamp - frames * FRAME_MS
+        }
 
         physics.time += frames * FRAME_MS
-        while (frames-- > 0) playerMove(player)
+        while (frames-- > 0) {
+            player.prevX = player.x
+            player.prevY = player.y
+            playerMove(player)
+        }
+        physics.alpha = (timestamp - physics.time) / FRAME_MS
         return true
+    },
+
+    getAlpha() {
+        return physics.alpha
     },
 }
 
@@ -479,14 +507,15 @@ function recalcCamera() {
 }
 
 function updateCamera(player) {
+    const { x: renderX, y: renderY } = getRenderPosition(player)
     if (camera.float) {
-        world.x = camera.halfW - player.x
-        world.y = camera.halfH - player.y
+        world.x = camera.halfW - renderX
+        world.y = camera.halfH - renderY
         if (bgSprite) {
-            bgSprite.tilePosition.x = -player.x * 0.3
-            bgSprite.tilePosition.y = -player.y * 0.3
-            bgSprite.x = player.x - camera.halfW
-            bgSprite.y = player.y - camera.halfH
+            bgSprite.tilePosition.x = -renderX * 0.3
+            bgSprite.tilePosition.y = -renderY * 0.3
+            bgSprite.x = renderX - camera.halfW
+            bgSprite.y = renderY - camera.halfH
         }
     } else {
         world.x = camera.dx
@@ -496,6 +525,25 @@ function updateCamera(player) {
             bgSprite.y = -camera.dy
         }
     }
+}
+
+function getRenderPosition(player) {
+    const prevX = Number.isFinite(player.prevX) ? player.prevX : player.x
+    const prevY = Number.isFinite(player.prevY) ? player.prevY : player.y
+    const prevAim = Number.isFinite(player.prevAimAngle) ? player.prevAimAngle : player.aimAngle
+    const alpha = Math.min(1, Math.max(0, physics.alpha))
+    return {
+        x: prevX + (player.x - prevX) * alpha,
+        y: prevY + (player.y - prevY) * alpha,
+        aimAngle: lerpAngle(prevAim, player.aimAngle, alpha),
+    }
+}
+
+function lerpAngle(a, b, t) {
+    let diff = b - a
+    while (diff > Math.PI) diff -= Math.PI * 2
+    while (diff < -Math.PI) diff += Math.PI * 2
+    return a + diff * t
 }
 
 function updatePlayerSprite(player) {
@@ -523,22 +571,23 @@ function updatePlayerSprite(player) {
 
     if (frames[animFrame]) playerSprite.texture = frames[animFrame]
 
-    playerSprite.x = player.x
+    const { x: renderX, y: renderY } = getRenderPosition(player)
+    playerSprite.x = renderX
     playerSprite.visible = true
     playerSprite.scale.x = (player.facingLeft ? -1 : 1) * PLAYER_SCALE_X
 
     if (player.crouch) {
         playerSprite.scale.y = PLAYER_SCALE_Y * 0.83
-        playerSprite.y = player.y + 8
+        playerSprite.y = renderY + 8
     } else {
         playerSprite.scale.y = PLAYER_SCALE_Y
-        playerSprite.y = player.y
+        playerSprite.y = renderY
     }
 
     if (playerCenter) {
         playerCenter.visible = !player.dead
-        playerCenter.x = player.x
-        playerCenter.y = player.y
+        playerCenter.x = renderX
+        playerCenter.y = renderY
     }
 }
 
@@ -556,10 +605,11 @@ function updateWeaponSprite(player) {
         return
     }
 
+    const { x: renderX, y: renderY, aimAngle } = getRenderPosition(player)
     weaponSprite.texture = icon
-    weaponSprite.x = player.x
-    weaponSprite.y = player.crouch ? player.y + 4 : player.y
-    weaponSprite.rotation = player.aimAngle
+    weaponSprite.x = renderX
+    weaponSprite.y = player.crouch ? renderY + 4 : renderY
+    weaponSprite.rotation = aimAngle
     weaponSprite.scale.x = WEAPON_SCALE
     weaponSprite.scale.y = (player.facingLeft ? -1 : 1) * WEAPON_SCALE
     weaponSprite.visible = true
@@ -607,17 +657,18 @@ function updateBotSprites(bots) {
             botData.sprite.texture = frames[botData.frame]
         }
 
+        const { x: renderX, y: renderY, aimAngle } = getRenderPosition(player)
         // Update sprite position
-        botData.sprite.x = player.x
+        botData.sprite.x = renderX
         botData.sprite.visible = true
         botData.sprite.scale.x = (player.facingLeft ? -1 : 1) * PLAYER_SCALE_X
 
         if (player.crouch) {
             botData.sprite.scale.y = PLAYER_SCALE_Y * 0.83
-            botData.sprite.y = player.y + 8
+            botData.sprite.y = renderY + 8
         } else {
             botData.sprite.scale.y = PLAYER_SCALE_Y
-            botData.sprite.y = player.y
+            botData.sprite.y = renderY
         }
 
         // Update weapon sprite
@@ -627,9 +678,9 @@ function updateBotSprites(bots) {
             const icon = getWeaponIcon(player.currentWeapon)
             if (icon) {
                 botData.weapon.texture = icon
-                botData.weapon.x = player.x
-                botData.weapon.y = player.crouch ? player.y + 8 : player.y
-                botData.weapon.rotation = player.aimAngle
+                botData.weapon.x = renderX
+                botData.weapon.y = player.crouch ? renderY + 8 : renderY
+                botData.weapon.rotation = aimAngle
                 botData.weapon.scale.x = WEAPON_SCALE
                 botData.weapon.scale.y = (player.facingLeft ? -1 : 1) * WEAPON_SCALE
                 botData.weapon.visible = true
@@ -739,6 +790,7 @@ function renderSmoke() {
 function renderProjectiles() {
     for (const s of projectilePool) s.visible = false
 
+    const alpha = Math.min(1, Math.max(0, physics.alpha))
     for (const proj of Projectiles.getAll()) {
         if (!proj.active) continue
         if (proj.type === 'rocket' && proj.age % ROCKET_SMOKE_INTERVAL === 0) {
@@ -764,8 +816,10 @@ function renderProjectiles() {
             return s
         })
         sprite.texture = getProjectileTexture(proj.type)
-        sprite.x = proj.x
-        sprite.y = proj.y
+        const prevX = Number.isFinite(proj.prevX) ? proj.prevX : proj.x
+        const prevY = Number.isFinite(proj.prevY) ? proj.prevY : proj.y
+        sprite.x = prevX + (proj.x - prevX) * alpha
+        sprite.y = prevY + (proj.y - prevY) * alpha
         sprite.rotation = Math.atan2(proj.velocityY, proj.velocityX)
         sprite.tint = PROJECTILE_COLORS[proj.type] ?? 0xffffff
     }
@@ -909,12 +963,13 @@ function renderAimLine(player) {
     aimLine.clear()
     if (!player || player.dead) return
 
-    const originX = player.x
-    const originY = player.crouch ? player.y + 4 : player.y
+    const { x: renderX, y: renderY, aimAngle } = getRenderPosition(player)
+    const originX = renderX
+    const originY = player.crouch ? renderY + 4 : renderY
     const dist = BRICK_WIDTH * 2.6
     const half = Math.max(2, BRICK_WIDTH * 0.1)
-    const x = originX + Math.cos(player.aimAngle) * dist
-    const y = originY + Math.sin(player.aimAngle) * dist
+    const x = originX + Math.cos(aimAngle) * dist
+    const y = originY + Math.sin(aimAngle) * dist
 
     aimLine
         .moveTo(x - half, y)

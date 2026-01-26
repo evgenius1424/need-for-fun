@@ -28,6 +28,8 @@ export class Player {
 
     x = 0
     y = 0
+    prevX = 0
+    prevY = 0
     velocityX = 0
     velocityY = 0
 
@@ -53,6 +55,7 @@ export class Player {
     spawnProtection = 0
 
     aimAngle = 0
+    prevAimAngle = 0
     facingLeft = false
     weapons = Array(9).fill(true)
     ammo = createAmmoArray()
@@ -191,6 +194,9 @@ export class Player {
         if (spawn) {
             this.setXY(spawn.col * BRICK_WIDTH + 10, spawn.row * BRICK_HEIGHT - HALF_HEIGHT)
         }
+        this.prevX = this.x
+        this.prevY = this.y
+        this.prevAimAngle = this.aimAngle
 
         this.health = MAX_HEALTH
         this.armor = 0
