@@ -31,18 +31,25 @@ export async function initRenderer() {
     try {
         Console.writeText('boot: calling app.init')
         console.log('boot: calling app.init')
-        await nextApp.init({
+        const initPromise = nextApp.init({
             width: innerWidth,
             height: innerHeight,
             background: 0x262626,
+            preferWebGLVersion: 2,
             preference: 'webgl',
+            powerPreference: 'default',
             autoDensity: true,
             resolution: Math.min(devicePixelRatio || 1, 2),
         })
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('PIXI init timeout after 5s')), 5000)
+        })
+        await Promise.race([initPromise, timeoutPromise])
         Console.writeText('boot: app.init completed')
         console.log('boot: app.init completed')
     } catch (err) {
         Console.writeText(`renderer init failed: ${err?.message ?? err}`)
+        console.error('renderer init failed:', err)
         throw err
     }
 
