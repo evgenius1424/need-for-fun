@@ -1,6 +1,7 @@
 import { Howler } from 'howler'
 import {
     Constants,
+    Console,
     GameConstants,
     Input,
     Settings,
@@ -45,8 +46,11 @@ const ITEM_DEFS = {
 
 const PROJECTILE_WEAPONS = new Set(['rocket', 'grenade', 'plasma', 'bfg'])
 
+Console.writeText('boot: main start')
 await loadAssets()
+Console.writeText('boot: assets ok')
 await Map.loadFromQuery()
+Console.writeText('boot: map ok')
 
 const localPlayer = new Player()
 
@@ -54,8 +58,11 @@ const localPlayer = new Player()
 await ensureModelLoaded(localPlayer.model, SkinId.RED)
 
 Render.initSprites(localPlayer)
+Console.writeText('boot: sprites ok')
 Render.renderMap()
+Console.writeText('boot: map render ok')
 Render.setSceneReady(true)
+Console.writeText('boot: scene ready')
 
 const state = { lastMouseY: Input.mouseY, lastMoveDir: 0 }
 
