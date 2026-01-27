@@ -24,27 +24,6 @@ export function recalcCamera() {
     rendererRef.resize(innerWidth - 20, innerHeight)
     const mapW = Map.getCols() * BRICK_WIDTH
     const mapH = Map.getRows() * BRICK_HEIGHT
-    if (mapW <= 0 || mapH <= 0) {
-        camera.float = false
-        camera.scale = 1
-        camera.dx = 0
-        camera.dy = 0
-        worldRef.scale.set(camera.scale)
-
-        const bgSprite = getBackgroundSprite()
-        if (bgSprite) {
-            bgSprite.width = innerWidth
-            bgSprite.height = innerHeight
-        }
-
-        hudRef.health.y = innerHeight - 50
-        hudRef.armor.y = innerHeight - 80
-        hudRef.weapon.x = innerWidth - 40
-        hudRef.weapon.y = innerHeight - 50
-        hudRef.ammo.x = innerWidth - 40
-        hudRef.ammo.y = innerHeight - 80
-        return
-    }
     camera.float = mapH > innerHeight || mapW > innerWidth - 20
 
     if (camera.float) {

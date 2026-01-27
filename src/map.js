@@ -50,10 +50,6 @@ export const Map = {
 
     getRandomRespawn() {
         const { respawns } = state
-        if (!respawns.length) {
-            Console.writeText('no respawn points loaded')
-            return { row: 0, col: 0 }
-        }
         return respawns[(Math.random() * respawns.length) | 0]
     },
 }
@@ -65,20 +61,15 @@ function loadFromUrl(mapText) {
 }
 
 async function loadFromFile(mapFile) {
-    try {
-        const response = await fetch(`/maps/${mapFile}.txt`)
+    const response = await fetch(`/maps/${mapFile}.txt`)
 
-        if (!response.ok) {
-            Console.writeText(`failed to load map: ${mapFile}`)
-            return null
-        }
-
-        Console.writeText(`map loaded: ${mapFile}`)
-        return response.text()
-    } catch (err) {
-        Console.writeText(`map load error: ${err?.message ?? err}`)
+    if (!response.ok) {
+        Console.writeText(`failed to load map: ${mapFile}`)
         return null
     }
+
+    Console.writeText(`map loaded: ${mapFile}`)
+    return response.text()
 }
 
 function parseMapText(mapText) {
