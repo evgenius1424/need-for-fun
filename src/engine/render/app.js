@@ -31,7 +31,6 @@ world.addChild(bulletImpacts)
 world.addChild(gauntletSparks)
 
 async function initApp() {
-    Console.writeText('boot: renderer init start')
     const app = new PIXI.Application()
     try {
         await app.init({
@@ -48,6 +47,5 @@ async function initApp() {
     }
     app.canvas.style.display = 'block'
     document.getElementById('game').appendChild(app.canvas)
-    Console.writeText('boot: renderer init ok')
     return app
 }
