@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js'
 import { getTexture } from '../../assets'
-import { getApp, getRenderer, getStage, world } from './app'
+import { app, renderer, stage, world } from './app'
 import { BG_TILE_SCALE } from './constants'
 import { createHUD, updateHUD } from './hud'
 import {
@@ -30,7 +30,10 @@ import { initCamera, recalcCamera, updateCamera } from '../core/camera'
 
 let bgSprite = null
 const hud = createHUD()
-let renderReady = false
+
+stage.addChild(hud.container)
+initCamera({ renderer, world, hud, getBackgroundSprite: () => bgSprite })
+addEventListener('resize', recalcCamera)
 
 export const Render = {
     initSprites,
@@ -46,24 +49,17 @@ export const Render = {
 }
 
 function initSprites(player) {
-    ensureRenderInit()
     bgSprite = createBackground()
     if (bgSprite) world.addChildAt(bgSprite, 0)
     initPlayerSprites(player)
 }
 
 function setSceneReady(visible) {
-    ensureRenderInit()
-    const stage = getStage()
-    if (!stage) return
     stage.visible = visible
     hud.container.visible = visible
 }
 
 function renderGame(player, bots = []) {
-    ensureRenderInit()
-    const app = getApp()
-    if (!app) return
     updateCamera(player)
     renderPlayers(player, bots)
     renderEffects(player)
@@ -100,16 +96,4 @@ function renderEffects(player) {
     renderBulletImpacts()
     renderGauntletSparks()
     renderAimLine(player)
-}
-
-function ensureRenderInit() {
-    if (renderReady) return
-    const renderer = getRenderer()
-    const stage = getStage()
-    if (!renderer || !stage) return
-
-    stage.addChild(hud.container)
-    initCamera({ renderer, world, hud, getBackgroundSprite: () => bgSprite })
-    addEventListener('resize', recalcCamera)
-    renderReady = true
 }

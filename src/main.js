@@ -13,7 +13,6 @@ import { Map } from './map'
 import { Player } from './player'
 import { Physics } from './engine/core/physics'
 import { Render } from './engine/render'
-import { initRenderer } from './engine/render/app'
 import { Projectiles } from './projectiles'
 import { loadAssets, ensureModelLoaded } from './assets'
 import { BotManager } from './botManager'
@@ -48,7 +47,6 @@ const ITEM_DEFS = {
 const PROJECTILE_WEAPONS = new Set(['rocket', 'grenade', 'plasma', 'bfg'])
 
 Console.writeText('boot: main start')
-await initRenderer()
 await loadAssets()
 Console.writeText('boot: assets ok')
 await Map.loadFromQuery()
