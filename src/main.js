@@ -19,6 +19,8 @@ import { loadAssets, ensureModelLoaded } from './assets'
 import { BotManager } from './botManager'
 import { SkinId } from './models'
 
+console.log('=== MAIN.JS TOP ===')
+
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 const { DAMAGE, AMMO_PICKUP } = WeaponConstants
 const { MAX_HEALTH, MEGA_HEALTH, QUAD_MULTIPLIER, QUAD_DURATION } = GameConstants

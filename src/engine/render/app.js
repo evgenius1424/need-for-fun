@@ -1,6 +1,8 @@
 import * as PIXI from 'pixi.js'
 import { Console } from '../../helpers'
 
+console.log('=== APP.JS MODULE LOADED ===')
+
 let app = null
 let renderer = null
 let stage = null
@@ -22,8 +24,10 @@ export async function initRenderer() {
     if (app) return app
 
     Console.writeText('boot: renderer init start')
+    Console.writeText('boot: creating PIXI.Application')
     const nextApp = new PIXI.Application()
     try {
+        Console.writeText('boot: calling app.init')
         await nextApp.init({
             width: innerWidth,
             height: innerHeight,
@@ -32,13 +36,17 @@ export async function initRenderer() {
             autoDensity: true,
             resolution: Math.min(devicePixelRatio || 1, 2),
         })
+        Console.writeText('boot: app.init completed')
     } catch (err) {
         Console.writeText(`renderer init failed: ${err?.message ?? err}`)
         throw err
     }
 
+    Console.writeText('boot: appending canvas')
     nextApp.canvas.style.display = 'block'
-    document.getElementById('game')?.appendChild(nextApp.canvas)
+    const gameEl = document.getElementById('game')
+    Console.writeText(`boot: game element exists: ${!!gameEl}`)
+    gameEl?.appendChild(nextApp.canvas)
 
     app = nextApp
     renderer = nextApp.renderer
