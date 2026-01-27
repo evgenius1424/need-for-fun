@@ -24,10 +24,13 @@ export async function initRenderer() {
     if (app) return app
 
     Console.writeText('boot: renderer init start')
+    console.log('boot: renderer init start')
     Console.writeText('boot: creating PIXI.Application')
+    console.log('boot: creating PIXI.Application')
     const nextApp = new PIXI.Application()
     try {
         Console.writeText('boot: calling app.init')
+        console.log('boot: calling app.init')
         await nextApp.init({
             width: innerWidth,
             height: innerHeight,
@@ -37,15 +40,18 @@ export async function initRenderer() {
             resolution: Math.min(devicePixelRatio || 1, 2),
         })
         Console.writeText('boot: app.init completed')
+        console.log('boot: app.init completed')
     } catch (err) {
         Console.writeText(`renderer init failed: ${err?.message ?? err}`)
         throw err
     }
 
     Console.writeText('boot: appending canvas')
+    console.log('boot: appending canvas')
     nextApp.canvas.style.display = 'block'
     const gameEl = document.getElementById('game')
     Console.writeText(`boot: game element exists: ${!!gameEl}`)
+    console.log(`boot: game element exists: ${!!gameEl}`)
     gameEl?.appendChild(nextApp.canvas)
 
     app = nextApp
@@ -66,6 +72,7 @@ export async function initRenderer() {
     stage.visible = false
 
     Console.writeText('boot: renderer init ok')
+    console.log('boot: renderer init ok')
     return app
 }
 
