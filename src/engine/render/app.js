@@ -23,38 +23,81 @@ export const gauntletSparks = new PIXI.Graphics()
 export async function initRenderer() {
     if (app) return app
 
+    Console.writeText('boot: renderer init start')
     console.log('boot: renderer init start')
+    Console.writeText('boot: creating PIXI.Application')
+    console.log('boot: creating PIXI.Application')
     const nextApp = new PIXI.Application()
-
     try {
-        console.log('boot: about to check webgpu support')
-        console.log('boot: PIXI.isWebGPUSupported exists:', typeof PIXI.isWebGPUSupported)
-
-        // Skip PIXI's check, use native detection
-        const hasWebGPU = !!navigator.gpu
-        console.log('boot: hasWebGPU:', hasWebGPU)
-
+        Console.writeText('boot: calling app.init')
+        console.log('boot: calling app.init')
         const canvas = document.createElement('canvas')
-        console.log('boot: canvas created')
+        const webgpuSupported = await PIXI.isWebGPUSupported({
+            powerPreference: 'high-performance',
+        })
+        Console.writeText(`boot: webgpu supported: ${webgpuSupported}`)
+        console.log('boot: webgpu supported', webgpuSupported)
 
-        console.log('boot: calling nextApp.init')
-        await nextApp.init({
+        let initOptions = {
             width: innerWidth,
             height: innerHeight,
             background: 0x262626,
-            preference: hasWebGPU ? 'webgpu' : 'webgl',
             autoDensity: true,
             resolution: Math.min(devicePixelRatio || 1, 2),
             canvas,
+        }
+
+        if (webgpuSupported) {
+            initOptions = {
+                ...initOptions,
+                preference: 'webgpu',
+                powerPreference: 'high-performance',
+            }
+        } else {
+            const contextOptions = {
+                alpha: false,
+                antialias: true,
+                premultipliedAlpha: true,
+                stencil: true,
+                preserveDrawingBuffer: false,
+                powerPreference: 'default',
+            }
+            const gl2 = canvas.getContext('webgl2', contextOptions)
+            const gl = gl2 || canvas.getContext('webgl', contextOptions)
+            Console.writeText(`boot: webgl context: ${gl ? 'ok' : 'null'}`)
+            console.log('boot: webgl context', gl)
+            if (!gl) {
+                throw new Error('WebGL context creation failed')
+            }
+            initOptions = {
+                ...initOptions,
+                preferWebGLVersion: 2,
+                preference: 'webgl',
+                powerPreference: 'default',
+                context: gl,
+            }
+        }
+
+        const initPromise = nextApp.init(initOptions)
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('PIXI init timeout after 5s')), 5000)
         })
-        console.log('boot: nextApp.init completed')
+        await Promise.race([initPromise, timeoutPromise])
+        Console.writeText('boot: app.init completed')
+        console.log('boot: app.init completed')
     } catch (err) {
-        console.error('boot: init failed:', err)
+        Console.writeText(`renderer init failed: ${err?.message ?? err}`)
+        console.error('renderer init failed:', err)
         throw err
     }
 
+    Console.writeText('boot: appending canvas')
+    console.log('boot: appending canvas')
     nextApp.canvas.style.display = 'block'
-    document.getElementById('game')?.appendChild(nextApp.canvas)
+    const gameEl = document.getElementById('game')
+    Console.writeText(`boot: game element exists: ${!!gameEl}`)
+    console.log(`boot: game element exists: ${!!gameEl}`)
+    gameEl?.appendChild(nextApp.canvas)
 
     app = nextApp
     renderer = nextApp.renderer
@@ -73,9 +116,11 @@ export async function initRenderer() {
     world.addChild(gauntletSparks)
     stage.visible = false
 
+    Console.writeText('boot: renderer init ok')
     console.log('boot: renderer init ok')
     return app
 }
+
 export const getApp = () => app
 export const getRenderer = () => renderer
 export const getStage = () => stage
