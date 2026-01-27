@@ -71,11 +71,7 @@ function createBackground() {
     const texture = getTexture('background')
     if (!texture) return null
 
-    const sprite = new PIXI.TilingSprite({
-        texture,
-        width: innerWidth,
-        height: innerHeight,
-    })
+    const sprite = new PIXI.TilingSprite(texture, innerWidth, innerHeight)
     sprite.tileScale.set(BG_TILE_SCALE)
     return sprite
 }

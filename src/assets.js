@@ -120,10 +120,10 @@ async function loadModelAnimations(modelId, skinId) {
             const sheet = await PIXI.Assets.load(filePath)
             for (let i = 0; i < cfg.frames; i++) {
                 animations[animType].push(
-                    new PIXI.Texture({
-                        source: sheet.source,
-                        frame: new PIXI.Rectangle(i * cfg.width, 0, cfg.width, cfg.height),
-                    }),
+                    new PIXI.Texture(
+                        sheet.baseTexture,
+                        new PIXI.Rectangle(i * cfg.width, 0, cfg.width, cfg.height),
+                    ),
                 )
             }
         }
