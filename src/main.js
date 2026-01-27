@@ -49,22 +49,12 @@ const ITEM_DEFS = {
 
 const PROJECTILE_WEAPONS = new Set(['rocket', 'grenade', 'plasma', 'bfg'])
 
-try {
-    Console.writeText('boot: main start')
-    console.log('boot: main start')
-    await initRenderer()
-    console.log('boot: after initRenderer')
-    await loadAssets()
-    Console.writeText('boot: assets ok')
-    console.log('boot: assets ok')
-    await Map.loadFromQuery()
-    Console.writeText('boot: map ok')
-    console.log('boot: map ok')
-} catch (err) {
-    Console.writeText(`boot: main error: ${err?.message ?? err}`)
-    console.error('boot: main error', err)
-    throw err
-}
+Console.writeText('boot: main start')
+await initRenderer()
+await loadAssets()
+Console.writeText('boot: assets ok')
+await Map.loadFromQuery()
+Console.writeText('boot: map ok')
 
 const localPlayer = new Player()
 
