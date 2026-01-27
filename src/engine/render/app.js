@@ -31,22 +31,6 @@ export async function initRenderer() {
     try {
         Console.writeText('boot: calling app.init')
         console.log('boot: calling app.init')
-        const canvas = document.createElement('canvas')
-        const contextOptions = {
-            alpha: false,
-            antialias: true,
-            premultipliedAlpha: true,
-            stencil: true,
-            preserveDrawingBuffer: false,
-            powerPreference: 'default',
-        }
-        const gl2 = canvas.getContext('webgl2', contextOptions)
-        const gl = gl2 || canvas.getContext('webgl', contextOptions)
-        Console.writeText(`boot: webgl context: ${gl ? 'ok' : 'null'}`)
-        console.log('boot: webgl context', gl)
-        if (!gl) {
-            throw new Error('WebGL context creation failed')
-        }
         const initPromise = nextApp.init({
             width: innerWidth,
             height: innerHeight,
@@ -56,8 +40,6 @@ export async function initRenderer() {
             powerPreference: 'default',
             autoDensity: true,
             resolution: Math.min(devicePixelRatio || 1, 2),
-            canvas,
-            context: gl,
         })
         const timeoutPromise = new Promise((_, reject) => {
             setTimeout(() => reject(new Error('PIXI init timeout after 5s')), 5000)
