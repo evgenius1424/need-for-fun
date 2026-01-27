@@ -1,12 +1,11 @@
 import * as PIXI from 'pixi.js'
 import { Console } from '../../helpers'
 
-export const app = await initApp()
-export const { renderer, stage } = app
+let app = null
+let renderer = null
+let stage = null
 
 export const world = new PIXI.Container()
-stage.addChild(world)
-stage.visible = false
 
 export const tiles = new PIXI.Container()
 export const smokeLayer = new PIXI.Container()
@@ -19,22 +18,13 @@ export const shaftLines = new PIXI.Graphics()
 export const bulletImpacts = new PIXI.Graphics()
 export const gauntletSparks = new PIXI.Graphics()
 
-world.addChild(tiles)
-world.addChild(smokeLayer)
-world.addChild(projectiles)
-world.addChild(items)
-world.addChild(explosionsLayer)
-world.addChild(aimLine)
-world.addChild(railLines)
-world.addChild(shaftLines)
-world.addChild(bulletImpacts)
-world.addChild(gauntletSparks)
+export async function initRenderer() {
+    if (app) return app
 
-async function initApp() {
     Console.writeText('boot: renderer init start')
-    const app = new PIXI.Application()
+    const nextApp = new PIXI.Application()
     try {
-        await app.init({
+        await nextApp.init({
             width: innerWidth,
             height: innerHeight,
             background: 0x262626,
@@ -46,8 +36,31 @@ async function initApp() {
         Console.writeText(`renderer init failed: ${err?.message ?? err}`)
         throw err
     }
-    app.canvas.style.display = 'block'
-    document.getElementById('game').appendChild(app.canvas)
+
+    nextApp.canvas.style.display = 'block'
+    document.getElementById('game')?.appendChild(nextApp.canvas)
+
+    app = nextApp
+    renderer = nextApp.renderer
+    stage = nextApp.stage
+
+    stage.addChild(world)
+    world.addChild(tiles)
+    world.addChild(smokeLayer)
+    world.addChild(projectiles)
+    world.addChild(items)
+    world.addChild(explosionsLayer)
+    world.addChild(aimLine)
+    world.addChild(railLines)
+    world.addChild(shaftLines)
+    world.addChild(bulletImpacts)
+    world.addChild(gauntletSparks)
+    stage.visible = false
+
     Console.writeText('boot: renderer init ok')
     return app
 }
+
+export const getApp = () => app
+export const getRenderer = () => renderer
+export const getStage = () => stage

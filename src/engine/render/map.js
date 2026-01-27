@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js'
 import { Constants } from '../../helpers'
 import { Map } from '../../map'
 import { getItemIcon, getTexture, getWeaponIcon } from '../../assets'
-import { app, items, tiles } from './app'
+import { getApp, items, tiles } from './app'
 import { WEAPON_ITEM_MAP } from './constants'
 import { recalcCamera } from '../core/camera'
 
@@ -49,7 +49,8 @@ export function renderMap() {
         items.addChild(sprite)
     }
 
-    app.render()
+    const app = getApp()
+    app?.render()
     recalcCamera()
 }
 
