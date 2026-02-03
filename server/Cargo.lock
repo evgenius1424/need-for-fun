@@ -393,6 +393,7 @@ name = "nff-server"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "bytes",
  "futures-util",
  "rand",
  "serde",

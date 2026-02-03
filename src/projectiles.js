@@ -142,7 +142,7 @@ export const Projectiles = {
     spawnFromServer(event) {
         if (!event) return
         const id = event.id
-        const type = event.type ?? event.kind
+        const type = event.kind ?? event.projectileType ?? event.projectile_type
         if (id == null || !type) return
 
         let existing = null

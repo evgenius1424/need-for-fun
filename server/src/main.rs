@@ -9,6 +9,7 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
 use futures_util::{SinkExt, StreamExt};
+use bytes::Bytes;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info};
 
@@ -18,9 +19,13 @@ mod protocol;
 mod room;
 mod game;
 mod constants;
+mod binary;
 
 use crate::map::GameMap;
-use crate::protocol::{ClientMsg, PlayerInfo, ServerMsg};
+use crate::binary::{
+    decode_client_message, encode_player_joined, encode_player_left, encode_welcome,
+};
+use crate::protocol::ClientMsg;
 use crate::room::{PlayerInput, RoomHandle};
 
 struct AppState {
@@ -60,11 +65,11 @@ async fn ws_handler(State(state): State<Arc<AppState>>, ws: WebSocketUpgrade) ->
 
 async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
     let (mut sender, mut receiver) = socket.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+    let (tx, mut rx) = mpsc::unbounded_channel::<Bytes>();
 
     let send_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
-            if sender.send(Message::Text(msg)).await.is_err() {
+            if sender.send(Message::Binary(msg.to_vec())).await.is_err() {
                 break;
             }
         }
@@ -76,62 +81,23 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
 
     while let Some(Ok(msg)) = receiver.next().await {
         match msg {
-            Message::Text(text) => match serde_json::from_str::<ClientMsg>(&text) {
-                Ok(ClientMsg::Hello { username: name }) => {
-                    username = name;
-                    let _ = tx.send(
-                        serde_json::to_string(&ServerMsg::Welcome { player_id })
-                            .unwrap_or_default(),
-                    );
-                }
-                Ok(ClientMsg::JoinRoom { room_id, map }) => {
-                    let room_id = room_id.unwrap_or_else(|| "room-1".to_string());
-                    let map_name = map.unwrap_or_else(|| "dm2".to_string());
-                    let handle = get_or_create_room(&state, &room_id, &map_name).await;
-                    let room_state = handle.add_player(player_id, username.clone(), tx.clone()).await;
-                    let _ = tx.send(serde_json::to_string(&room_state).unwrap_or_default());
-
-                    let joined = ServerMsg::PlayerJoined {
-                        player: PlayerInfo {
-                            id: player_id,
-                            username: username.clone(),
-                            model: None,
-                            skin: None,
-                            state: None,
-                        },
-                    };
-                    handle.broadcast(&joined).await;
-                    room_handle = Some(handle);
-                }
-                Ok(ClientMsg::Input {
-                    seq,
-                    key_up,
-                    key_down,
-                    key_left,
-                    key_right,
-                    mouse_down,
-                    weapon_switch,
-                    weapon_scroll,
-                    aim_angle,
-                    facing_left,
-                }) => {
-                    if let Some(handle) = &room_handle {
-                        let input = PlayerInput {
-                            key_up,
-                            key_down,
-                            key_left,
-                            key_right,
-                            mouse_down,
-                            weapon_switch,
-                            weapon_scroll,
-                            aim_angle,
-                            facing_left,
-                        };
-                        handle.set_input(player_id, input, seq).await;
-                    }
+            Message::Text(_) => {
+                error!("received unexpected text frame");
+            }
+            Message::Binary(bytes) => match decode_client_message(&bytes) {
+                Ok(msg) => {
+                    handle_client_msg(
+                        &state,
+                        &mut room_handle,
+                        &mut username,
+                        player_id,
+                        msg,
+                        tx.clone(),
+                    )
+                    .await;
                 }
                 Err(err) => {
-                    error!("bad message: {err}");
+                    error!("bad message: {err:?}");
                 }
             },
             Message::Close(_) => break,
@@ -141,11 +107,64 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
 
     if let Some(handle) = room_handle {
         handle.remove_player(player_id).await;
-        let left = ServerMsg::PlayerLeft { player_id };
-        handle.broadcast(&left).await;
+        let payload = encode_player_left(player_id);
+        handle.broadcast(payload).await;
     }
 
     send_task.abort();
+}
+
+async fn handle_client_msg(
+    state: &Arc<AppState>,
+    room_handle: &mut Option<Arc<RoomHandle>>,
+    username: &mut String,
+    player_id: u64,
+    msg: ClientMsg,
+    tx: mpsc::UnboundedSender<Bytes>,
+) {
+    match msg {
+        ClientMsg::Hello { username: name } => {
+            *username = name;
+            let _ = tx.send(encode_welcome(player_id).into());
+        }
+        ClientMsg::JoinRoom { room_id, map } => {
+            let room_id = room_id.unwrap_or_else(|| "room-1".to_string());
+            let map_name = map.unwrap_or_else(|| "dm2".to_string());
+            let handle = get_or_create_room(state, &room_id, &map_name).await;
+            let room_state = handle.add_player(player_id, username.clone(), tx.clone()).await;
+            let _ = tx.send(room_state.into());
+            let joined = encode_player_joined(player_id, username);
+            handle.broadcast(joined).await;
+            *room_handle = Some(handle);
+        }
+        ClientMsg::Input {
+            seq,
+            key_up,
+            key_down,
+            key_left,
+            key_right,
+            mouse_down,
+            weapon_switch,
+            weapon_scroll,
+            aim_angle,
+            facing_left,
+        } => {
+            if let Some(handle) = room_handle.as_ref() {
+                let input = PlayerInput {
+                    key_up,
+                    key_down,
+                    key_left,
+                    key_right,
+                    mouse_down,
+                    weapon_switch,
+                    weapon_scroll,
+                    aim_angle,
+                    facing_left,
+                };
+                handle.set_input(player_id, input, seq).await;
+            }
+        }
+    }
 }
 
 async fn get_or_create_room(

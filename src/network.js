@@ -1,6 +1,12 @@
 import { ensureModelLoaded } from './assets'
 import { Player } from './player'
 import { SkinId } from './models'
+import {
+    decodeServerMessage,
+    encodeHello,
+    encodeInput,
+    encodeJoinRoom,
+} from './binaryProtocol'
 
 const DEFAULT_SERVER_URL = 'ws://localhost:3001/ws'
 const DEFAULT_MAP = 'dm2'
@@ -59,13 +65,14 @@ export class NetworkClient {
             }
 
             this.socket = new WebSocket(url)
+            this.socket.binaryType = 'arraybuffer'
 
             this.socket.addEventListener(
                 'open',
                 () => {
                     this.connected = true
-                    this.send({ type: 'hello', username })
-                    this.send({ type: 'join_room', room_id: roomId ?? null, map })
+                    this.send(encodeHello(username))
+                    this.send(encodeJoinRoom(roomId ?? '', map))
                     this.handlers.onOpen?.()
                     resolveOnce()
                 },
@@ -73,14 +80,12 @@ export class NetworkClient {
             )
 
             this.socket.addEventListener('message', (event) => {
-                let msg = null
-                try {
-                    msg = JSON.parse(event.data)
-                } catch (err) {
-                    console.error('Bad message', err)
+                if (event.data instanceof ArrayBuffer) {
+                    const msg = decodeServerMessage(event.data)
+                    if (msg) this.handleMessage(msg)
                     return
                 }
-                this.handleMessage(msg)
+                console.warn('Unexpected text message', event.data)
             })
 
             this.socket.addEventListener('close', () => {
@@ -115,14 +120,13 @@ export class NetworkClient {
     sendInput(input) {
         if (!this.connected || !this.socket) return
         this.inputSeq++
-        const payload = { type: 'input', seq: this.inputSeq, ...input }
         this.pendingInputs.push({ seq: this.inputSeq, input })
-        this.send(payload)
+        this.send(encodeInput(this.inputSeq, input))
     }
 
     send(payload) {
         if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return
-        this.socket.send(JSON.stringify(payload))
+        this.socket.send(payload)
     }
 
     handleMessage(msg) {

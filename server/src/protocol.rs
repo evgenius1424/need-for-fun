@@ -19,6 +19,7 @@ pub enum ClientMsg {
     },
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
@@ -39,6 +40,7 @@ pub enum ServerMsg {
     },
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Clone)]
 pub struct PlayerInfo {
     pub id: u64,
@@ -72,12 +74,14 @@ pub struct PlayerSnapshot {
     pub key_down: bool,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Clone)]
 pub struct ItemState {
     pub active: bool,
     pub respawn_timer: i32,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Clone)]
 pub struct ProjectileState {
     pub id: u64,

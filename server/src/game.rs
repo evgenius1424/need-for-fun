@@ -88,6 +88,15 @@ impl ProjectileKind {
             Self::Bfg => "bfg",
         }
     }
+
+    pub fn as_u8(&self) -> u8 {
+        match self {
+            Self::Rocket => 0,
+            Self::Grenade => 1,
+            Self::Plasma => 2,
+            Self::Bfg => 3,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

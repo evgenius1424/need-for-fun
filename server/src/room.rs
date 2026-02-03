@@ -2,16 +2,20 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytes::Bytes;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::interval;
 
+use crate::binary::{
+    encode_room_state, snapshot_for_player, ItemSnapshot, ProjectileSnapshot, SnapshotEncoder,
+};
 use crate::game::{
     apply_explosions, apply_hit_actions, apply_projectile_hits, process_item_pickups,
     respawn_if_ready, try_fire, update_projectiles, EventVec, HitAction, Projectile,
 };
 use crate::map::{GameMap, MapItem};
 use crate::physics::{step_player, PlayerState};
-use crate::protocol::{EffectEvent, ItemState, PlayerInfo, PlayerSnapshot, ProjectileState, ServerMsg};
+use crate::protocol::EffectEvent;
 
 const BRICK_WIDTH: f32 = 32.0;
 const BRICK_HEIGHT: f32 = 16.0;
@@ -33,7 +37,7 @@ pub struct PlayerInput {
 pub struct PlayerConn {
     pub id: u64,
     pub username: String,
-    pub tx: mpsc::UnboundedSender<String>,
+    pub tx: mpsc::UnboundedSender<Bytes>,
     pub input: PlayerInput,
     pub state: PlayerState,
     pub last_input_seq: u64,
@@ -46,6 +50,7 @@ pub struct Room {
     pub items: Vec<MapItem>,
     pub projectiles: Vec<Projectile>,
     pub next_projectile_id: u64,
+    pub snapshot_encoder: SnapshotEncoder,
 }
 
 pub struct RoomHandle {
@@ -65,6 +70,7 @@ impl RoomHandle {
                 tick: 0,
                 projectiles: Vec::new(),
                 next_projectile_id: 0,
+                snapshot_encoder: SnapshotEncoder::new(),
             }),
         });
         let cloned = handle.clone();
@@ -78,8 +84,8 @@ impl RoomHandle {
         &self,
         player_id: u64,
         username: String,
-        tx: mpsc::UnboundedSender<String>,
-    ) -> ServerMsg {
+        tx: mpsc::UnboundedSender<Bytes>,
+    ) -> Vec<u8> {
         let mut room = self.room.lock().await;
         let mut state = PlayerState::new(player_id);
         if let Some((row, col)) = room.map.random_respawn() {
@@ -98,24 +104,7 @@ impl RoomHandle {
             last_input_seq: 0,
         };
         room.players.insert(player_id, player);
-
-        let players = room
-            .players
-            .values()
-            .map(|p| PlayerInfo {
-                id: p.id,
-                username: p.username.clone(),
-                model: None,
-                skin: None,
-                state: Some(snapshot_for_player(&p.state, p.last_input_seq)),
-            })
-            .collect();
-
-        ServerMsg::RoomState {
-            room_id: self.id.clone(),
-            map: room.map.name.clone(),
-            players,
-        }
+        encode_room_state(&self.id, &room)
     }
 
     pub async fn remove_player(&self, player_id: u64) {
@@ -131,9 +120,9 @@ impl RoomHandle {
         }
     }
 
-    pub async fn broadcast(&self, msg: &ServerMsg) {
+    pub async fn broadcast(&self, msg: Vec<u8>) {
         let room = self.room.lock().await;
-        let payload = serde_json::to_string(msg).unwrap_or_default();
+        let payload = Bytes::from(msg);
         for player in room.players.values() {
             let _ = player.tx.send(payload.clone());
         }
@@ -144,7 +133,7 @@ async fn run_room_loop(handle: Arc<RoomHandle>) {
     let mut tick_interval = interval(Duration::from_millis(16));
     loop {
         tick_interval.tick().await;
-        let (snapshot, player_txs) = {
+        let (payload, player_txs) = {
             let mut room = handle.room.lock().await;
             room.tick += 1;
             let map = Arc::clone(&room.map);
@@ -204,13 +193,46 @@ async fn run_room_loop(handle: Arc<RoomHandle>) {
             room.projectiles = projectiles;
             room.next_projectile_id = next_projectile_id;
 
-            let snapshot = snapshot_room(&room, events);
-            let player_txs: Vec<mpsc::UnboundedSender<String>> =
+            let player_snapshots: Vec<crate::protocol::PlayerSnapshot> =
+                room.players.values().map(snapshot_for_player).collect();
+            let item_snapshots: Vec<ItemSnapshot> = room
+                .items
+                .iter()
+                .map(|item| ItemSnapshot {
+                    active: item.active,
+                    respawn_timer: item.respawn_timer as i16,
+                })
+                .collect();
+            let projectile_snapshots: Vec<ProjectileSnapshot> = room
+                .projectiles
+                .iter()
+                .map(|proj| ProjectileSnapshot {
+                    id: proj.id,
+                    x: proj.x,
+                    y: proj.y,
+                    velocity_x: proj.velocity_x,
+                    velocity_y: proj.velocity_y,
+                    owner_id: proj.owner_id as i64,
+                    kind: proj.kind.as_u8(),
+                })
+                .collect();
+            let player_txs: Vec<mpsc::UnboundedSender<Bytes>> =
                 room.players.values().map(|p| p.tx.clone()).collect();
-            (snapshot, player_txs)
+            let tick = room.tick;
+            let payload = room
+                .snapshot_encoder
+                .encode_snapshot(
+                    tick,
+                    &player_snapshots,
+                    &item_snapshots,
+                    &projectile_snapshots,
+                    &events,
+                )
+                .to_vec();
+            (payload, player_txs)
         };
 
-        let payload = serde_json::to_string(&snapshot).unwrap_or_default();
+        let payload = Bytes::from(payload);
         for tx in player_txs {
             let _ = tx.send(payload.clone());
         }
@@ -246,67 +268,5 @@ fn apply_input_to_state(input: &PlayerInput, state: &mut PlayerState) {
                 break;
             }
         }
-    }
-}
-
-fn snapshot_room(room: &Room, events: EventVec) -> ServerMsg {
-    let players = room
-        .players
-        .values()
-        .map(|p| snapshot_for_player(&p.state, p.last_input_seq))
-        .collect::<Vec<_>>();
-
-    let items = room
-        .items
-        .iter()
-        .map(|item| ItemState {
-            active: item.active,
-            respawn_timer: item.respawn_timer,
-        })
-        .collect::<Vec<_>>();
-
-    ServerMsg::Snapshot {
-        tick: room.tick,
-        players,
-        items,
-        projectiles: room
-            .projectiles
-            .iter()
-            .map(|proj| ProjectileState {
-                id: proj.id,
-                x: proj.x,
-                y: proj.y,
-                velocity_x: proj.velocity_x,
-                velocity_y: proj.velocity_y,
-                owner_id: proj.owner_id as i64,
-                kind: proj.kind.as_str(),
-            })
-            .collect(),
-        events: events.into_vec(),
-    }
-}
-
-fn snapshot_for_player(state: &PlayerState, last_input_seq: u64) -> PlayerSnapshot {
-    PlayerSnapshot {
-        id: state.id,
-        x: state.x,
-        y: state.y,
-        vx: state.velocity_x,
-        vy: state.velocity_y,
-        aim_angle: state.aim_angle,
-        facing_left: state.facing_left,
-        crouch: state.crouch,
-        dead: state.dead,
-        health: state.health,
-        armor: state.armor,
-        current_weapon: state.current_weapon,
-        fire_cooldown: state.fire_cooldown,
-        key_left: state.key_left,
-        key_right: state.key_right,
-        key_up: state.key_up,
-        key_down: state.key_down,
-        weapons: state.weapons,
-        ammo: state.ammo,
-        last_input_seq,
     }
 }
