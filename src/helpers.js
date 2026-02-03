@@ -216,19 +216,36 @@ function createConsole() {
         }
     }
 
-    const commands = {
-        help: () => {
+    const commands = {}
+    const commandHelp = new Map()
+    const addCommand = (name, handler, helpText) => {
+        commands[name] = handler
+        if (helpText) commandHelp.set(name, helpText)
+    }
+
+    addCommand(
+        'help',
+        () => {
             writeText('Available commands:')
-            writeText('  help - show this message')
-            writeText('  map <name> - load map')
-            writeText('  sensitivity [value] - get/set mouse aim sensitivity')
-            writeText('  clear - clear console')
+            for (const [name, text] of [...commandHelp.entries()].sort((a, b) =>
+                a[0].localeCompare(b[0]),
+            )) {
+                writeText(`  ${name} - ${text}`)
+            }
         },
-        map: (args) => {
+        'show this message',
+    )
+    addCommand(
+        'map',
+        (args) => {
             if (args[0]) location.href = `?mapfile=${args[0]}`
             else writeText('Usage: map <mapname>')
         },
-        sensitivity: (args) => {
+        'load map',
+    )
+    addCommand(
+        'sensitivity',
+        (args) => {
             if (!args[0]) {
                 writeText(`Sensitivity: ${Settings.aimSensitivity}`)
                 return
@@ -240,11 +257,16 @@ function createConsole() {
             }
             writeText(`Sensitivity set to ${Settings.setAimSensitivity(val)}`)
         },
-        clear: () => {
+        'get/set mouse aim sensitivity',
+    )
+    addCommand(
+        'clear',
+        () => {
             html = ''
             if (elContent) elContent.innerHTML = ''
         },
-    }
+        'clear console',
+    )
 
     const execute = (text) => {
         const [cmd, ...args] = text.split(' ')
@@ -273,7 +295,13 @@ function createConsole() {
         elInput.value = ''
     })
 
-    return { writeText }
+    return {
+        writeText,
+        registerCommand(name, handler, helpText) {
+            if (!name || typeof handler !== 'function') return
+            addCommand(name, handler, helpText)
+        },
+    }
 }
 
 function createSoundSystem() {

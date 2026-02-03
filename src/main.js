@@ -7,6 +7,7 @@ import {
     Sound,
     WeaponConstants,
     WeaponId,
+    Console,
 } from './helpers'
 import { Map } from './map'
 import { Player } from './player'
@@ -51,6 +52,9 @@ await Map.loadFromQuery()
 
 const localPlayer = new Player()
 const network = new NetworkClient()
+let multiplayerEnabled = false
+let multiplayerUiReady = false
+const netOverlay = document.getElementById('net-overlay')
 
 await ensureModelLoaded(localPlayer.model, SkinId.RED)
 
@@ -64,7 +68,8 @@ BotManager.init(localPlayer)
 spawnPlayer(localPlayer)
 setupPointerLock()
 setupExplosionHandlers()
-setupMultiplayerUI()
+setupConsoleCommands()
+if (netOverlay) netOverlay.style.display = 'none'
 
 requestAnimationFrame((ts) => gameLoop(ts, localPlayer))
 
@@ -279,6 +284,8 @@ function processAimInput(player) {
 }
 
 function setupMultiplayerUI() {
+    if (multiplayerUiReady) return
+    multiplayerUiReady = true
     const serverInput = document.getElementById('net-server')
     const usernameInput = document.getElementById('net-username')
     const roomInput = document.getElementById('net-room')
@@ -349,6 +356,80 @@ function setupMultiplayerUI() {
     disconnectBtn?.addEventListener('click', () => {
         network.disconnect()
     })
+}
+
+function setupConsoleCommands() {
+    Console.registerCommand(
+        'mp',
+        (args) => {
+            const mode = args[0]?.toLowerCase()
+            if (!mode) {
+                Console.writeText(`Multiplayer: ${multiplayerEnabled ? 'on' : 'off'}`)
+                return
+            }
+            if (mode === 'on' || mode === 'enable') {
+                enableMultiplayer()
+                return
+            }
+            if (mode === 'off' || mode === 'disable') {
+                disableMultiplayer()
+                return
+            }
+            Console.writeText('Usage: mp on|off')
+        },
+        'enable/disable multiplayer UI',
+    )
+
+    Console.registerCommand(
+        'bot',
+        (args) => {
+            const action = args[0]?.toLowerCase()
+            if (!action) {
+                Console.writeText('Usage: bot add [count] | bot remove | bot clear')
+                return
+            }
+            if (action === 'add') {
+                const count = Number.parseInt(args[1] ?? '1', 10)
+                const total = Number.isFinite(count) ? Math.max(1, count) : 1
+                for (let i = 0; i < total; i++) BotManager.spawnBot('medium')
+                Console.writeText(`Added ${total} bot${total === 1 ? '' : 's'}`)
+                return
+            }
+            if (action === 'remove') {
+                const bots = BotManager.getBots()
+                if (!bots.length) {
+                    Console.writeText('No bots to remove')
+                    return
+                }
+                BotManager.removeBot(bots[bots.length - 1])
+                Console.writeText('Removed 1 bot')
+                return
+            }
+            if (action === 'clear') {
+                BotManager.removeAllBots()
+                Console.writeText('Removed all bots')
+                return
+            }
+            Console.writeText('Usage: bot add [count] | bot remove | bot clear')
+        },
+        'add/remove bots',
+    )
+}
+
+function enableMultiplayer() {
+    if (multiplayerEnabled) return
+    multiplayerEnabled = true
+    setupMultiplayerUI()
+    if (netOverlay) netOverlay.style.display = 'block'
+    Console.writeText('Multiplayer enabled')
+}
+
+function disableMultiplayer() {
+    if (!multiplayerEnabled) return
+    multiplayerEnabled = false
+    network.disconnect()
+    if (netOverlay) netOverlay.style.display = 'none'
+    Console.writeText('Multiplayer disabled')
 }
 
 function applySnapshotEvents(events) {
