@@ -15,6 +15,7 @@ import { renderMap, updateItemSprites } from './map'
 import {
     addBulletImpact,
     addGauntletSpark,
+    addExplosion,
     addRailShot,
     addShaftShot,
     renderAimLine,
@@ -46,6 +47,7 @@ export const Render = {
     addShaftShot,
     addBulletImpact,
     addGauntletSpark,
+    addExplosion,
 }
 
 function initSprites(player) {

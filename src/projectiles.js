@@ -1,5 +1,5 @@
 import { Constants, Sound } from './helpers'
-import { Map } from './map'
+import { Map as GameMap } from './map'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
@@ -42,8 +42,8 @@ export const Projectiles = {
     },
 
     update() {
-        const cols = Map.getCols()
-        const rows = Map.getRows()
+        const cols = GameMap.getCols()
+        const rows = GameMap.getRows()
         const maxX = cols * BRICK_WIDTH + BOUNDS_MARGIN
         const maxY = rows * BRICK_HEIGHT + BOUNDS_MARGIN
 
@@ -113,6 +113,78 @@ export const Projectiles = {
 
     getAll: () => state.projectiles,
 
+    replaceAll(projectiles) {
+        const prev = new window.Map()
+        for (const p of state.projectiles) {
+            prev.set(p.id, p)
+        }
+        state.projectiles.length = 0
+        if (!Array.isArray(projectiles)) return
+        for (const proj of projectiles) {
+            if (!proj) continue
+            const old = prev.get(proj.id)
+            state.projectiles.push({
+                id: proj.id ?? state.nextId++,
+                type: proj.type,
+                x: proj.x,
+                y: proj.y,
+                prevX: old?.x ?? proj.prevX ?? proj.x,
+                prevY: old?.y ?? proj.prevY ?? proj.y,
+                velocityX: proj.velocityX ?? proj.velocity_x ?? 0,
+                velocityY: proj.velocityY ?? proj.velocity_y ?? 0,
+                ownerId: proj.ownerId ?? proj.owner_id ?? -1,
+                age: proj.age ?? 0,
+                active: proj.active ?? true,
+            })
+        }
+    },
+
+    spawnFromServer(event) {
+        if (!event) return
+        const id = event.id
+        const type = event.type ?? event.kind
+        if (id == null || !type) return
+
+        let existing = null
+        for (const proj of state.projectiles) {
+            if (proj.id === id) {
+                existing = proj
+                break
+            }
+        }
+
+        const x = event.x ?? 0
+        const y = event.y ?? 0
+        const velocityX = event.velocityX ?? event.velocity_x ?? 0
+        const velocityY = event.velocityY ?? event.velocity_y ?? 0
+        const ownerId = event.ownerId ?? event.owner_id ?? -1
+
+        if (existing) {
+            existing.type = type
+            existing.x = x
+            existing.y = y
+            existing.velocityX = velocityX
+            existing.velocityY = velocityY
+            existing.ownerId = ownerId
+            existing.active = true
+            return
+        }
+
+        state.projectiles.push({
+            id,
+            type,
+            x,
+            y,
+            prevX: x,
+            prevY: y,
+            velocityX,
+            velocityY,
+            ownerId,
+            age: 0,
+            active: true,
+        })
+    },
+
     clear() {
         state.projectiles.length = 0
     },
@@ -128,7 +200,7 @@ function checkWallCollision(proj, newX, newY) {
     const colX = Math.floor(newX / BRICK_WIDTH)
     const colY = Math.floor(newY / BRICK_HEIGHT)
 
-    if (!Map.isBrick(colX, colY)) return false
+    if (!GameMap.isBrick(colX, colY)) return false
 
     if (proj.type !== 'grenade') {
         Projectiles.explode(proj)

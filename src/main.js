@@ -16,6 +16,7 @@ import { Projectiles } from './projectiles'
 import { loadAssets, ensureModelLoaded } from './assets'
 import { BotManager } from './botManager'
 import { SkinId } from './models'
+import { NetworkClient } from './network'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 const { DAMAGE, AMMO_PICKUP } = WeaponConstants
@@ -49,8 +50,8 @@ await loadAssets()
 await Map.loadFromQuery()
 
 const localPlayer = new Player()
+const network = new NetworkClient()
 
-// Load bot skin (red) for enemies
 await ensureModelLoaded(localPlayer.model, SkinId.RED)
 
 Render.initSprites(localPlayer)
@@ -63,9 +64,7 @@ BotManager.init(localPlayer)
 spawnPlayer(localPlayer)
 setupPointerLock()
 setupExplosionHandlers()
-
-// Spawn 1 bot for testing
-BotManager.spawnBot('easy')
+setupMultiplayerUI()
 
 requestAnimationFrame((ts) => gameLoop(ts, localPlayer))
 
@@ -122,6 +121,44 @@ function setupExplosionHandlers() {
 }
 
 function gameLoop(timestamp, player) {
+    if (network.isActive()) {
+        player.prevAimAngle = player.aimAngle
+
+        for (const remote of network.getRemotePlayers()) {
+            remote.prevAimAngle = remote.aimAngle
+        }
+
+        processMovementInput(player)
+        processAimInput(player)
+
+        const weaponSwitch = Input.weaponSwitch
+        const weaponScroll = Input.weaponScroll
+        Input.weaponSwitch = -1
+        Input.weaponScroll = 0
+
+        network.sendInput({
+            tick: timestamp | 0,
+            key_up: player.keyUp,
+            key_down: player.keyDown,
+            key_left: player.keyLeft,
+            key_right: player.keyRight,
+            mouse_down: Input.mouseDown,
+            weapon_switch: weaponSwitch,
+            weapon_scroll: weaponScroll,
+            aim_angle: player.aimAngle,
+            facing_left: player.facingLeft,
+        })
+
+        // Local prediction for movement only; server snapshots will correct.
+        Physics.updateAllPlayers([player], timestamp)
+
+        network.updateInterpolation()
+        const remoteBots = network.getRemotePlayers().map((p) => ({ player: p }))
+        Render.renderGame(player, remoteBots)
+        requestAnimationFrame((ts) => gameLoop(ts, player))
+        return
+    }
+
     for (const p of BotManager.getAllPlayers()) {
         p.prevAimAngle = p.aimAngle
     }
@@ -239,6 +276,218 @@ function processAimInput(player) {
     }
 
     updateFacingDirection(player)
+}
+
+function setupMultiplayerUI() {
+    const serverInput = document.getElementById('net-server')
+    const usernameInput = document.getElementById('net-username')
+    const roomInput = document.getElementById('net-room')
+    const connectBtn = document.getElementById('net-connect')
+    const disconnectBtn = document.getElementById('net-disconnect')
+    const statusEl = document.getElementById('net-status')
+
+    const setStatus = (text, ok = false) => {
+        if (!statusEl) return
+        statusEl.textContent = text
+        statusEl.style.color = ok ? '#77ff88' : '#ff9999'
+    }
+
+    network.setLocalPlayer(localPlayer)
+    network.setHandlers({
+        onOpen: () => {
+            setStatus('connected', true)
+            connectBtn.disabled = true
+            disconnectBtn.disabled = false
+            BotManager.removeAllBots()
+        },
+        onClose: () => {
+            setStatus('offline')
+            connectBtn.disabled = false
+            disconnectBtn.disabled = true
+        },
+        onRoomState: async (room) => {
+            if (room?.map) {
+                const loaded = await Map.loadFromName(room.map)
+                if (loaded) {
+                    Render.renderMap()
+                }
+            }
+        },
+        onSnapshot: (snapshot) => {
+            if (snapshot?.items) Map.setItemStates(snapshot.items)
+            if (snapshot?.projectiles) Projectiles.replaceAll(snapshot.projectiles)
+            if (snapshot?.events) applySnapshotEvents(snapshot.events)
+        },
+        onPlayerLeft: (playerId) => {
+            Render.cleanupBotSprite(playerId)
+        },
+    })
+    network.setPredictor((player, input) => {
+        applyPredictedInput(player, input)
+        player.update()
+        Physics.stepPlayers([player], 1)
+    })
+
+    connectBtn?.addEventListener('click', async () => {
+        const username = usernameInput?.value?.trim()
+        const roomId = roomInput?.value?.trim()
+        const url = serverInput?.value?.trim()
+
+        if (!username) {
+            setStatus('username required')
+            return
+        }
+
+        try {
+            await network.connect({ url, username, roomId })
+        } catch (err) {
+            setStatus('connect failed')
+            console.error(err)
+        }
+    })
+
+    disconnectBtn?.addEventListener('click', () => {
+        network.disconnect()
+    })
+}
+
+function applySnapshotEvents(events) {
+    for (const event of events) {
+        if (!event?.type) continue
+        switch (event.type) {
+            case 'weapon_fired':
+                playWeaponSound(event.weapon_id)
+                break
+            case 'projectile_spawn':
+                Projectiles.spawnFromServer(event)
+                break
+            case 'rail':
+                Render.addRailShot({
+                    startX: event.start_x,
+                    startY: event.start_y,
+                    trace: { x: event.end_x, y: event.end_y },
+                })
+                break
+            case 'shaft':
+                Render.addShaftShot({
+                    startX: event.start_x,
+                    startY: event.start_y,
+                    trace: { x: event.end_x, y: event.end_y },
+                })
+                break
+            case 'bullet_impact':
+                Render.addBulletImpact(event.x, event.y, { radius: event.radius ?? 2.5 })
+                break
+            case 'gauntlet':
+                Render.addGauntletSpark(event.x, event.y)
+                break
+            case 'explosion':
+                Render.addExplosion(event.x, event.y, event.kind)
+                playExplosionSound(event.kind)
+                break
+            case 'damage':
+                handleDamageEvent(event)
+                break
+            default:
+                break
+        }
+    }
+}
+
+function handleDamageEvent(event) {
+    const targetId = event?.target_id
+    if (!targetId) return
+
+    const target =
+        targetId === localPlayer?.id
+            ? localPlayer
+            : network.getRemotePlayers().find((p) => p.id === targetId)
+
+    if (!target) return
+
+    if (event.killed) {
+        Sound.death(target.model)
+    } else {
+        Sound.pain(target.model, event.amount)
+    }
+}
+
+function playWeaponSound(weaponId) {
+    switch (weaponId) {
+        case WeaponId.MACHINE:
+            Sound.machinegun()
+            break
+        case WeaponId.SHOTGUN:
+            Sound.shotgun()
+            break
+        case WeaponId.GRENADE:
+            Sound.grenade()
+            break
+        case WeaponId.ROCKET:
+            Sound.rocket()
+            break
+        case WeaponId.RAIL:
+            Sound.railgun()
+            break
+        case WeaponId.PLASMA:
+            Sound.plasma()
+            break
+        case WeaponId.SHAFT:
+            Sound.shaft()
+            break
+        case WeaponId.BFG:
+            Sound.bfg()
+            break
+        default:
+            break
+    }
+}
+
+function playExplosionSound(kind) {
+    switch (kind) {
+        case 'rocket':
+            Sound.rocketExplode()
+            break
+        case 'grenade':
+            Sound.grenadeExplode()
+            break
+        case 'plasma':
+        case 'bfg':
+            Sound.plasmaHit()
+            break
+        default:
+            break
+    }
+}
+
+function applyPredictedInput(player, input) {
+    if (!input) return
+    player.keyUp = !!input.key_up
+    player.keyDown = !!input.key_down
+    player.keyLeft = !!input.key_left
+    player.keyRight = !!input.key_right
+    if (Number.isFinite(input.aim_angle)) {
+        player.aimAngle = input.aim_angle
+    }
+    if (typeof input.facing_left === 'boolean') {
+        player.facingLeft = input.facing_left
+    }
+
+    if (Number.isInteger(input.weapon_switch) && input.weapon_switch >= 0) {
+        if (player.weapons[input.weapon_switch]) {
+            player.switchWeapon(input.weapon_switch)
+        }
+    } else if (input.weapon_scroll) {
+        const direction = input.weapon_scroll < 0 ? -1 : 1
+        const total = player.weapons.length
+        for (let step = 1; step <= total; step++) {
+            const next = (player.currentWeapon + direction * step + total) % total
+            if (player.weapons[next]) {
+                player.switchWeapon(next)
+                break
+            }
+        }
+    }
 }
 
 function extractPointerLockedDelta() {

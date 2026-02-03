@@ -50,6 +50,16 @@ export const Physics = {
         physics.alpha = (timestamp - physics.time) / FRAME_MS
         return true
     },
+    stepPlayers(players, frames = 1) {
+        let remaining = Math.max(0, frames | 0)
+        while (remaining-- > 0) {
+            for (const player of players) {
+                player.prevX = player.x
+                player.prevY = player.y
+                if (!player.dead) playerMove(player)
+            }
+        }
+    },
     getAlpha() {
         return physics.alpha
     },

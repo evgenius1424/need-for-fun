@@ -3,6 +3,8 @@ node_modules
 
 # Build output
 dist
+server/target
+AGENTS.md
 
 # Logs
 *.log

@@ -40,7 +40,7 @@ const state = {
     gauntletHits: [],
 }
 
-Projectiles.onExplosion((x, y, type) => {
+function pushExplosion(x, y, type) {
     const isLarge = type === 'rocket' || type === 'grenade' || type === 'bfg'
     const radius = isLarge ? 40 : 15
     state.explosions.push({
@@ -52,6 +52,10 @@ Projectiles.onExplosion((x, y, type) => {
         maxAge: 15,
         color: PROJECTILE_COLORS[type] ?? 0xff6600,
     })
+}
+
+Projectiles.onExplosion((x, y, type) => {
+    pushExplosion(x, y, type)
 })
 
 export function addRailShot(shot) {
@@ -98,6 +102,10 @@ export function addGauntletSpark(x, y, options = {}) {
         color: options.color ?? 0x6ff2ff,
         alpha: options.alpha ?? 0.9,
     })
+}
+
+export function addExplosion(x, y, type) {
+    pushExplosion(x, y, type)
 }
 
 export function renderSmoke() {

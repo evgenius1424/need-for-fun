@@ -2,10 +2,10 @@ import { Constants, WeaponId } from '../../helpers'
 
 const { BRICK_WIDTH } = Constants
 
+export const PLAYER_HEIGHT = 48
+export const PLAYER_HALF_HEIGHT = PLAYER_HEIGHT / 2
 
-export const PLAYER_HALF_HEIGHT = 24
-
-export const PLAYER_SCALE_X = BRICK_WIDTH / 48
+export const PLAYER_SCALE_X = BRICK_WIDTH / PLAYER_HEIGHT
 export const PLAYER_SCALE_Y = 1
 export const WEAPON_SCALE = 0.85
 export const BG_TILE_SCALE = 0.7

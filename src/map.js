@@ -32,6 +32,15 @@ export const Map = {
             parseMapText(mapText)
         }
     },
+    async loadFromName(mapName) {
+        const mapText = await loadFromFile(mapName)
+        if (mapText) {
+            MapEditor.setContent(mapText)
+            parseMapText(mapText)
+            return true
+        }
+        return false
+    },
 
     isBrick(col, row) {
         const { rows, cols, bricks } = state
@@ -51,6 +60,16 @@ export const Map = {
     getRandomRespawn() {
         const { respawns } = state
         return respawns[(Math.random() * respawns.length) | 0]
+    },
+    setItemStates(itemStates) {
+        if (!Array.isArray(itemStates) || itemStates.length !== state.items.length) return
+        for (let i = 0; i < state.items.length; i++) {
+            const src = itemStates[i]
+            if (!src) continue
+            state.items[i].active = !!src.active
+            state.items[i].respawnTimer =
+                src.respawn_timer ?? src.respawnTimer ?? state.items[i].respawnTimer
+        }
     },
 }
 
