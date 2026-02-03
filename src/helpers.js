@@ -213,6 +213,8 @@ function createConsole() {
         if (isOpen && elContent && elInput) {
             elContent.scrollTop = elContent.scrollHeight
             elInput.focus()
+        } else if (elInput) {
+            elInput.blur()
         }
     }
 
