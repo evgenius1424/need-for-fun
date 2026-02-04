@@ -1,49 +1,62 @@
+#![forbid(unsafe_code)]
+#![deny(rust_2018_idioms)]
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::panic)]
+
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
-use futures_util::{SinkExt, StreamExt};
 use bytes::Bytes;
-use tokio::sync::{mpsc, Mutex};
-use tracing::{error, info};
+use futures_util::{SinkExt, StreamExt};
+use tokio::sync::{mpsc, RwLock};
+use tracing::{error, info, warn};
 
+mod binary;
+mod constants;
+mod game;
 mod map;
 mod physics;
 mod protocol;
 mod room;
-mod game;
-mod constants;
-mod binary;
 
-use crate::map::GameMap;
-use crate::binary::{
-    decode_client_message, encode_player_joined, encode_player_left, encode_welcome,
+use crate::binary::{decode_client_message, encode_welcome};
+use crate::constants::{
+    DEFAULT_MAP_DIR, DEFAULT_MAP_NAME, DEFAULT_PORT, DEFAULT_ROOM_ID, OUTBOUND_CHANNEL_CAPACITY,
 };
+use crate::game::WeaponId;
+use crate::map::GameMap;
 use crate::protocol::ClientMsg;
-use crate::room::{PlayerInput, RoomHandle};
+use crate::room::{PlayerId, PlayerInput, RoomHandle, RoomId};
 
 struct AppState {
-    rooms: Mutex<HashMap<String, Arc<RoomHandle>>>,
+    rooms: RwLock<HashMap<RoomId, Arc<RoomHandle>>>,
     next_player_id: AtomicU64,
     map_dir: PathBuf,
 }
 
+enum ControlOut {
+    Pong(Vec<u8>),
+    Close,
+}
+
 #[tokio::main]
-async fn main() {
+async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt::init();
 
     let map_dir = std::env::var("MAP_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("../public/maps"));
+        .unwrap_or_else(|_| PathBuf::from(DEFAULT_MAP_DIR));
 
     let state = Arc::new(AppState {
-        rooms: Mutex::new(HashMap::new()),
+        rooms: RwLock::new(HashMap::new()),
         next_player_id: AtomicU64::new(1),
         map_dir,
     });
@@ -52,11 +65,12 @@ async fn main() {
         .route("/ws", get(ws_handler))
         .with_state(state);
 
-    let port = std::env::var("PORT").unwrap_or_else(|_| "3001".to_string());
+    let port = std::env::var("PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());
     let addr = format!("0.0.0.0:{port}");
     info!("listening on {addr}");
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    axum::serve(listener, app).await
 }
 
 async fn ws_handler(State(state): State<Arc<AppState>>, ws: WebSocketUpgrade) -> impl IntoResponse {
@@ -64,78 +78,164 @@ async fn ws_handler(State(state): State<Arc<AppState>>, ws: WebSocketUpgrade) ->
 }
 
 async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
-    let (mut sender, mut receiver) = socket.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<Bytes>();
+    let (mut ws_sender, mut ws_receiver) = socket.split();
+
+    let (outbound_tx, mut outbound_rx) = mpsc::channel::<Bytes>(OUTBOUND_CHANNEL_CAPACITY);
+    let (control_tx, mut control_rx) = mpsc::channel::<ControlOut>(8);
 
     let send_task = tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            if sender.send(Message::Binary(msg.to_vec())).await.is_err() {
-                break;
+        loop {
+            tokio::select! {
+                Some(control) = control_rx.recv() => {
+                    let result = match control {
+                        ControlOut::Pong(payload) => ws_sender.send(Message::Pong(payload)).await,
+                        ControlOut::Close => ws_sender.send(Message::Close(Some(CloseFrame {
+                            code: axum::extract::ws::close_code::PROTOCOL,
+                            reason: "protocol error".into(),
+                        }))).await,
+                    };
+                    if result.is_err() {
+                        break;
+                    }
+                }
+                Some(msg) = outbound_rx.recv() => {
+                    if ws_sender.send(Message::Binary(msg.to_vec())).await.is_err() {
+                        break;
+                    }
+                }
+                else => break,
             }
         }
     });
 
-    let player_id = state.next_player_id.fetch_add(1, Ordering::Relaxed);
-    let mut username = format!("player{player_id}");
-    let mut room_handle: Option<Arc<RoomHandle>> = None;
+    let player_id = PlayerId(state.next_player_id.fetch_add(1, Ordering::Relaxed));
+    let mut username = format!("player{}", player_id.0);
+    let mut current_room: Option<Arc<RoomHandle>> = None;
 
-    while let Some(Ok(msg)) = receiver.next().await {
-        match msg {
+    if outbound_tx
+        .try_send(Bytes::from(encode_welcome(player_id.0)))
+        .is_err()
+    {
+        let _ = send_task.await;
+        return;
+    }
+
+    while let Some(result) = ws_receiver.next().await {
+        let Ok(msg) = result else {
+            break;
+        };
+
+        let keep_running = match msg {
             Message::Text(_) => {
-                error!("received unexpected text frame");
+                warn!(
+                    player_id = player_id.0,
+                    "closing socket after unexpected text frame"
+                );
+                let _ = control_tx.try_send(ControlOut::Close);
+                false
             }
             Message::Binary(bytes) => match decode_client_message(&bytes) {
-                Ok(msg) => {
+                Ok(client_msg) => {
                     handle_client_msg(
                         &state,
-                        &mut room_handle,
+                        &mut current_room,
                         &mut username,
                         player_id,
-                        msg,
-                        tx.clone(),
+                        client_msg,
+                        &outbound_tx,
                     )
-                    .await;
+                    .await
                 }
                 Err(err) => {
-                    error!("bad message: {err:?}");
+                    warn!(player_id = player_id.0, "bad message: {err:?}");
+                    true
                 }
             },
-            Message::Close(_) => break,
-            _ => {}
+            Message::Ping(payload) => control_tx.try_send(ControlOut::Pong(payload)).is_ok(),
+            Message::Close(_) => false,
+            Message::Pong(_) => true,
+        };
+
+        if !keep_running {
+            break;
         }
     }
 
-    if let Some(handle) = room_handle {
-        handle.remove_player(player_id).await;
-        let payload = encode_player_left(player_id);
-        handle.broadcast(payload).await;
+    if let Some(room) = current_room.take() {
+        room.leave(player_id).await;
     }
 
-    send_task.abort();
+    drop(outbound_tx);
+    drop(control_tx);
+
+    if let Err(err) = send_task.await {
+        error!(player_id = player_id.0, "send task join error: {err}");
+    }
 }
 
 async fn handle_client_msg(
     state: &Arc<AppState>,
-    room_handle: &mut Option<Arc<RoomHandle>>,
+    current_room: &mut Option<Arc<RoomHandle>>,
     username: &mut String,
-    player_id: u64,
+    player_id: PlayerId,
     msg: ClientMsg,
-    tx: mpsc::UnboundedSender<Bytes>,
-) {
+    outbound_tx: &mpsc::Sender<Bytes>,
+) -> bool {
     match msg {
-        ClientMsg::Hello { username: name } => {
-            *username = name;
-            let _ = tx.send(encode_welcome(player_id).into());
+        ClientMsg::Hello {
+            username: requested_name,
+        } => {
+            if current_room.is_some() {
+                info!(player_id = player_id.0, "ignoring hello after room join");
+                return true;
+            }
+
+            if !requested_name.is_empty() {
+                *username = requested_name;
+            }
+            true
         }
         ClientMsg::JoinRoom { room_id, map } => {
-            let room_id = room_id.unwrap_or_else(|| "room-1".to_string());
-            let map_name = map.unwrap_or_else(|| "dm2".to_string());
-            let handle = get_or_create_room(state, &room_id, &map_name).await;
-            let room_state = handle.add_player(player_id, username.clone(), tx.clone()).await;
-            let _ = tx.send(room_state.into());
-            let joined = encode_player_joined(player_id, username);
-            handle.broadcast(joined).await;
-            *room_handle = Some(handle);
+            let room_id = RoomId::from(room_id.unwrap_or_else(|| DEFAULT_ROOM_ID.to_string()));
+            let map_name = map.unwrap_or_else(|| DEFAULT_MAP_NAME.to_string());
+
+            if current_room
+                .as_ref()
+                .is_some_and(|room| room.id() == &room_id)
+            {
+                return true;
+            }
+
+            if let Some(previous_room) = current_room.take() {
+                previous_room.leave(player_id).await;
+            }
+
+            let Some(handle) = get_or_create_room(state, room_id.clone(), &map_name).await else {
+                warn!(
+                    player_id = player_id.0,
+                    room_id = room_id.as_str(),
+                    "join rejected: room map unavailable"
+                );
+                return true;
+            };
+
+            let Some(room_state) = handle
+                .join(player_id, username.clone(), outbound_tx.clone())
+                .await
+            else {
+                warn!(
+                    player_id = player_id.0,
+                    "room join failed: room task closed"
+                );
+                return true;
+            };
+
+            if outbound_tx.try_send(room_state).is_err() {
+                return false;
+            }
+
+            *current_room = Some(handle);
+            true
         }
         ClientMsg::Input {
             seq,
@@ -149,37 +249,112 @@ async fn handle_client_msg(
             aim_angle,
             facing_left,
         } => {
-            if let Some(handle) = room_handle.as_ref() {
-                let input = PlayerInput {
-                    key_up,
-                    key_down,
-                    key_left,
-                    key_right,
-                    mouse_down,
-                    weapon_switch,
-                    weapon_scroll,
-                    aim_angle,
-                    facing_left,
-                };
-                handle.set_input(player_id, input, seq).await;
-            }
+            let Some(room) = current_room.as_ref() else {
+                return true;
+            };
+
+            let input = PlayerInput {
+                key_up,
+                key_down,
+                key_left,
+                key_right,
+                mouse_down,
+                weapon_switch: WeaponId::from_i32(weapon_switch),
+                weapon_scroll: weapon_scroll as i8,
+                aim_angle,
+                facing_left,
+            };
+
+            room.set_input(player_id, seq, input).await;
+            true
         }
     }
 }
 
 async fn get_or_create_room(
     state: &Arc<AppState>,
-    room_id: &str,
+    room_id: RoomId,
     map_name: &str,
-) -> Arc<RoomHandle> {
-    let mut rooms = state.rooms.lock().await;
-    if let Some(room) = rooms.get(room_id) {
-        return room.clone();
+) -> Option<Arc<RoomHandle>> {
+    if let Some(existing) = state.rooms.read().await.get(&room_id).cloned() {
+        return Some(existing);
     }
 
-    let map = GameMap::load(&state.map_dir, map_name)
-        .unwrap_or_else(|_| GameMap::load(&state.map_dir, "dm2").unwrap());
-    let handle = RoomHandle::new(room_id.to_string(), map);
-    rooms.insert(room_id.to_string(), handle.clone());
-    handle
+    let map = match load_map_with_fallback(&state.map_dir, map_name) {
+        Some(map) => map,
+        None => return None,
+    };
+
+    let mut rooms = state.rooms.write().await;
+    if let Some(existing) = rooms.get(&room_id).cloned() {
+        return Some(existing);
+    }
+
+    let handle = RoomHandle::new(room_id.clone(), map);
+    rooms.insert(room_id, handle.clone());
+    Some(handle)
+}
+
+fn load_map_with_fallback(map_dir: &Path, map_name: &str) -> Option<GameMap> {
+    match GameMap::load(map_dir, map_name) {
+        Ok(map) => Some(map),
+        Err(primary_err) => {
+            warn!(
+                "failed to load map '{map_name}': {primary_err}. trying fallback '{DEFAULT_MAP_NAME}'"
+            );
+            match GameMap::load(map_dir, DEFAULT_MAP_NAME) {
+                Ok(map) => Some(map),
+                Err(fallback_err) => {
+                    error!("failed to load fallback map '{DEFAULT_MAP_NAME}': {fallback_err}");
+                    None
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::AtomicU64;
+
+    use tokio::sync::{mpsc, RwLock};
+
+    use super::{get_or_create_room, AppState};
+    use crate::room::{PlayerId, RoomId};
+
+    #[tokio::test]
+    async fn player_can_move_between_rooms_without_ghosting() {
+        let state = std::sync::Arc::new(AppState {
+            rooms: RwLock::new(std::collections::HashMap::new()),
+            next_player_id: AtomicU64::new(1),
+            map_dir: std::path::PathBuf::from("../public/maps"),
+        });
+
+        let room_a = get_or_create_room(&state, RoomId("a".to_string()), "dm2").await;
+        assert!(room_a.is_some());
+        let Some(room_a) = room_a else {
+            return;
+        };
+
+        let room_b = get_or_create_room(&state, RoomId("b".to_string()), "dm2").await;
+        assert!(room_b.is_some());
+        let Some(room_b) = room_b else {
+            return;
+        };
+
+        let (tx, _rx) = mpsc::channel(8);
+        let joined = room_a
+            .join(PlayerId(7), "player7".to_string(), tx.clone())
+            .await;
+        assert!(joined.is_some());
+        assert!(room_a.contains_player(PlayerId(7)).await);
+
+        room_a.leave(PlayerId(7)).await;
+        let joined = room_b.join(PlayerId(7), "player7".to_string(), tx).await;
+        assert!(joined.is_some());
+
+        tokio::task::yield_now().await;
+        assert!(!room_a.contains_player(PlayerId(7)).await);
+        assert!(room_b.contains_player(PlayerId(7)).await);
+    }
 }

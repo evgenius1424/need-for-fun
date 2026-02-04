@@ -1,5 +1,6 @@
 use rand::Rng;
 
+use crate::constants::{PLAYER_HALF_H, TILE_H, TILE_W};
 use crate::map::GameMap;
 use crate::physics::PlayerState;
 use crate::protocol::EffectEvent;
@@ -7,10 +8,6 @@ use smallvec::SmallVec;
 
 pub use crate::constants::WEAPON_COUNT;
 pub type EventVec = SmallVec<[EffectEvent; 16]>;
-
-const BRICK_WIDTH: f32 = 32.0;
-const BRICK_HEIGHT: f32 = 16.0;
-const HALF_HEIGHT: f32 = 24.0;
 
 const MAX_HEALTH: i32 = 100;
 const MAX_ARMOR: i32 = 200;
@@ -27,7 +24,7 @@ const HITSCAN_PLAYER_RADIUS: f32 = 14.0;
 const GAUNTLET_PLAYER_RADIUS: f32 = 22.0;
 const GAUNTLET_RANGE: f32 = 50.0;
 
-const SHAFT_RANGE: f32 = BRICK_WIDTH * 3.0;
+const SHAFT_RANGE: f32 = TILE_W * 3.0;
 const SHOTGUN_RANGE: f32 = 800.0;
 const SHOTGUN_PELLETS: usize = 11;
 const SHOTGUN_SPREAD: f32 = 0.15;
@@ -80,15 +77,6 @@ pub enum ProjectileKind {
 }
 
 impl ProjectileKind {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Rocket => "rocket",
-            Self::Grenade => "grenade",
-            Self::Plasma => "plasma",
-            Self::Bfg => "bfg",
-        }
-    }
-
     pub fn as_u8(&self) -> u8 {
         match self {
             Self::Rocket => 0,
@@ -138,6 +126,7 @@ pub fn try_fire(
     now_id: &mut u64,
     hitscan_actions: &mut Vec<HitAction>,
     events: &mut EventVec,
+    rng: &mut impl Rng,
 ) {
     if !can_fire(player) {
         return;
@@ -171,7 +160,6 @@ pub fn try_fire(
             events.push(EffectEvent::Gauntlet { x: hit_x, y: hit_y });
         }
         WeaponId::Shotgun => {
-            let mut rng = rand::thread_rng();
             let (x, y) = get_weapon_origin(player);
             for _ in 0..SHOTGUN_PELLETS {
                 let angle = player.aim_angle + (rng.gen::<f32>() - 0.5) * SHOTGUN_SPREAD;
@@ -246,7 +234,7 @@ pub fn try_fire(
             let id = next_id(now_id);
             events.push(EffectEvent::ProjectileSpawn {
                 id,
-                kind: kind.as_str(),
+                kind: kind.as_u8(),
                 x: proj_x,
                 y: proj_y,
                 velocity_x,
@@ -303,14 +291,9 @@ pub fn apply_hit_actions(
                 trace_y,
                 damage,
             } => {
-                if let Some(target_id) = find_hitscan_target(
-                    attacker_id,
-                    start_x,
-                    start_y,
-                    trace_x,
-                    trace_y,
-                    players,
-                ) {
+                if let Some(target_id) =
+                    find_hitscan_target(attacker_id, start_x, start_y, trace_x, trace_y, players)
+                {
                     apply_damage(attacker_id, target_id, damage, players, events);
                 }
             }
@@ -320,9 +303,7 @@ pub fn apply_hit_actions(
                 hit_y,
                 damage,
             } => {
-                if let Some(target_id) =
-                    find_melee_target(attacker_id, hit_x, hit_y, players)
-                {
+                if let Some(target_id) = find_melee_target(attacker_id, hit_x, hit_y, players) {
                     apply_damage(attacker_id, target_id, damage, players, events);
                 }
             }
@@ -330,14 +311,11 @@ pub fn apply_hit_actions(
     }
 }
 
-pub fn update_projectiles(
-    map: &GameMap,
-    projectiles: &mut Vec<Projectile>,
-) -> Vec<Explosion> {
+pub fn update_projectiles(map: &GameMap, projectiles: &mut Vec<Projectile>) -> Vec<Explosion> {
     let cols = map.cols as f32;
     let rows = map.rows as f32;
-    let max_x = cols * BRICK_WIDTH + BOUNDS_MARGIN;
-    let max_y = rows * BRICK_HEIGHT + BOUNDS_MARGIN;
+    let max_x = cols * TILE_W + BOUNDS_MARGIN;
+    let max_y = rows * TILE_H + BOUNDS_MARGIN;
 
     let mut explosions = Vec::new();
 
@@ -477,13 +455,13 @@ pub fn process_item_pickups(players: &mut [PlayerState], items: &mut [crate::map
     }
 }
 
-pub fn respawn_if_ready(player: &mut PlayerState, map: &GameMap) {
+pub fn respawn_if_ready_with_rng(player: &mut PlayerState, map: &GameMap, rng: &mut impl Rng) {
     if !player.dead || player.respawn_timer > 0 {
         return;
     }
-    if let Some((row, col)) = map.random_respawn() {
-        let x = col as f32 * BRICK_WIDTH + 10.0;
-        let y = row as f32 * BRICK_HEIGHT - HALF_HEIGHT;
+    if let Some((row, col)) = map.random_respawn_with_rng(rng) {
+        let x = col as f32 * TILE_W + 10.0;
+        let y = row as f32 * TILE_H - PLAYER_HALF_H;
         player.set_xy(x, y, map);
         player.prev_x = player.x;
         player.prev_y = player.y;
@@ -554,8 +532,8 @@ fn apply_damage(
 }
 
 fn is_player_near_item(player: &PlayerState, item: &crate::map::MapItem) -> bool {
-    let x = item.col as f32 * BRICK_WIDTH + BRICK_WIDTH / 2.0;
-    let y = item.row as f32 * BRICK_HEIGHT + BRICK_HEIGHT / 2.0;
+    let x = item.col as f32 * TILE_W + TILE_W / 2.0;
+    let y = item.row as f32 * TILE_H + TILE_H / 2.0;
     let dx = player.x - x;
     let dy = player.y - y;
     (dx * dx + dy * dy).sqrt() <= PICKUP_RADIUS
@@ -652,7 +630,11 @@ fn projectile_config(weapon: WeaponId) -> (f32, f32, ProjectileKind) {
 
 fn get_weapon_origin(player: &PlayerState) -> (f32, f32) {
     let crouch_lift = 4.0;
-    let y = if player.crouch { player.y + crouch_lift } else { player.y };
+    let y = if player.crouch {
+        player.y + crouch_lift
+    } else {
+        player.y
+    };
     (player.x, y)
 }
 
@@ -660,25 +642,33 @@ fn ray_trace(start_x: f32, start_y: f32, angle: f32, max_distance: f32, map: &Ga
     let dir_x = angle.cos();
     let dir_y = angle.sin();
 
-    let mut map_x = (start_x / BRICK_WIDTH).floor() as i32;
-    let mut map_y = (start_y / BRICK_HEIGHT).floor() as i32;
+    let mut map_x = (start_x / TILE_W).floor() as i32;
+    let mut map_y = (start_y / TILE_H).floor() as i32;
 
-    let delta_dist_x = if dir_x == 0.0 { 1e30 } else { (1.0 / dir_x).abs() };
-    let delta_dist_y = if dir_y == 0.0 { 1e30 } else { (1.0 / dir_y).abs() };
+    let delta_dist_x = if dir_x == 0.0 {
+        1e30
+    } else {
+        (1.0 / dir_x).abs()
+    };
+    let delta_dist_y = if dir_y == 0.0 {
+        1e30
+    } else {
+        (1.0 / dir_y).abs()
+    };
 
     let step_x = if dir_x < 0.0 { -1 } else { 1 };
     let step_y = if dir_y < 0.0 { -1 } else { 1 };
 
     let mut side_dist_x = if dir_x < 0.0 {
-        (start_x / BRICK_WIDTH - map_x as f32) * delta_dist_x
+        (start_x / TILE_W - map_x as f32) * delta_dist_x
     } else {
-        (map_x as f32 + 1.0 - start_x / BRICK_WIDTH) * delta_dist_x
+        (map_x as f32 + 1.0 - start_x / TILE_W) * delta_dist_x
     };
 
     let mut side_dist_y = if dir_y < 0.0 {
-        (start_y / BRICK_HEIGHT - map_y as f32) * delta_dist_y
+        (start_y / TILE_H - map_y as f32) * delta_dist_y
     } else {
-        (map_y as f32 + 1.0 - start_y / BRICK_HEIGHT) * delta_dist_y
+        (map_y as f32 + 1.0 - start_y / TILE_H) * delta_dist_y
     };
 
     let max_dist_sq = max_distance * max_distance;
@@ -696,8 +686,8 @@ fn ray_trace(start_x: f32, start_y: f32, angle: f32, max_distance: f32, map: &Ga
             side = 1;
         }
 
-        let check_x = (map_x as f32 + 0.5) * BRICK_WIDTH - start_x;
-        let check_y = (map_y as f32 + 0.5) * BRICK_HEIGHT - start_y;
+        let check_x = (map_x as f32 + 0.5) * TILE_W - start_x;
+        let check_y = (map_y as f32 + 0.5) * TILE_H - start_y;
         if check_x * check_x + check_y * check_y > max_dist_sq {
             break;
         }
@@ -715,11 +705,11 @@ fn ray_trace(start_x: f32, start_y: f32, angle: f32, max_distance: f32, map: &Ga
     }
 
     let (hit_x, hit_y) = if side == 0 {
-        let hx = (map_x + if step_x == -1 { 1 } else { 0 }) as f32 * BRICK_WIDTH;
+        let hx = (map_x + if step_x == -1 { 1 } else { 0 }) as f32 * TILE_W;
         let hy = start_y + ((hx - start_x) / dir_x) * dir_y;
         (hx, hy)
     } else {
-        let hy = (map_y + if step_y == -1 { 1 } else { 0 }) as f32 * BRICK_HEIGHT;
+        let hy = (map_y + if step_y == -1 { 1 } else { 0 }) as f32 * TILE_H;
         let hx = start_x + ((hy - start_y) / dir_y) * dir_x;
         (hx, hy)
     };
@@ -742,7 +732,11 @@ fn find_hitscan_target(
 ) -> Option<u64> {
     let dx = end_x - start_x;
     let dy = end_y - start_y;
-    let len_sq = if dx == 0.0 && dy == 0.0 { 1.0 } else { dx * dx + dy * dy };
+    let len_sq = if dx == 0.0 && dy == 0.0 {
+        1.0
+    } else {
+        dx * dx + dy * dy
+    };
 
     let mut closest_id = None;
     let mut closest_t = f32::INFINITY;
@@ -822,8 +816,8 @@ fn check_wall_collision(
     new_y: f32,
     explosions: &mut Vec<Explosion>,
 ) -> bool {
-    let col_x = (new_x / BRICK_WIDTH).floor() as i32;
-    let col_y = (new_y / BRICK_HEIGHT).floor() as i32;
+    let col_x = (new_x / TILE_W).floor() as i32;
+    let col_y = (new_y / TILE_H).floor() as i32;
     if !map.is_brick(col_x, col_y) {
         return false;
     }
@@ -833,8 +827,8 @@ fn check_wall_collision(
         return true;
     }
 
-    let old_col_x = (proj.x / BRICK_WIDTH).floor() as i32;
-    let old_col_y = (proj.y / BRICK_HEIGHT).floor() as i32;
+    let old_col_x = (proj.x / TILE_W).floor() as i32;
+    let old_col_y = (proj.y / TILE_H).floor() as i32;
     if old_col_x != col_x {
         proj.velocity_x *= -BOUNCE_DECAY;
     }

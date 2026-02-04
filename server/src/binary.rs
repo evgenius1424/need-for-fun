@@ -1,8 +1,10 @@
 use std::string::FromUtf8Error;
 
-use crate::game::{EventVec, ProjectileKind, WEAPON_COUNT};
+use bytes::{BufMut, Bytes, BytesMut};
+
+use crate::constants::WEAPON_COUNT;
 use crate::protocol::{ClientMsg, EffectEvent, PlayerSnapshot};
-use crate::room::{PlayerConn, Room};
+use crate::room::PlayerConn;
 
 pub const MSG_HELLO: u8 = 0x01;
 pub const MSG_JOIN_ROOM: u8 = 0x02;
@@ -22,11 +24,6 @@ pub const EVENT_GAUNTLET: u8 = 0x06;
 pub const EVENT_EXPLOSION: u8 = 0x07;
 pub const EVENT_DAMAGE: u8 = 0x08;
 
-pub const PROJ_ROCKET: u8 = 0;
-pub const PROJ_GRENADE: u8 = 1;
-pub const PROJ_PLASMA: u8 = 2;
-pub const PROJ_BFG: u8 = 3;
-
 const MAX_USERNAME_LEN: usize = 32;
 
 #[allow(dead_code)]
@@ -42,67 +39,6 @@ impl From<FromUtf8Error> for DecodeError {
     fn from(_: FromUtf8Error) -> Self {
         Self::InvalidUtf8
     }
-}
-
-pub fn decode_client_message(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
-    let first = *bytes.first().ok_or(DecodeError::Empty)?;
-    match first {
-        MSG_HELLO => decode_hello(bytes),
-        MSG_JOIN_ROOM => decode_join_room(bytes),
-        MSG_INPUT => decode_input(bytes),
-        _ => Err(DecodeError::UnknownType(first)),
-    }
-}
-
-pub fn encode_welcome(player_id: u64) -> Vec<u8> {
-    let mut out = Vec::with_capacity(9);
-    out.push(MSG_WELCOME);
-    push_u64(&mut out, player_id);
-    out
-}
-
-pub fn encode_player_joined(id: u64, username: &str) -> Vec<u8> {
-    let name_bytes = username.as_bytes();
-    let len = name_bytes.len().min(255);
-    let mut out = Vec::with_capacity(10 + len);
-    out.push(MSG_PLAYER_JOINED);
-    push_u64(&mut out, id);
-    out.push(len as u8);
-    out.extend_from_slice(&name_bytes[..len]);
-    out
-}
-
-pub fn encode_player_left(id: u64) -> Vec<u8> {
-    let mut out = Vec::with_capacity(9);
-    out.push(MSG_PLAYER_LEFT);
-    push_u64(&mut out, id);
-    out
-}
-
-pub fn encode_room_state(room_id: &str, room: &Room) -> Vec<u8> {
-    let room_id_bytes = room_id.as_bytes();
-    let map_bytes = room.map.name.as_bytes();
-    let room_len = room_id_bytes.len().min(255);
-    let map_len = map_bytes.len().min(255);
-    let player_count = room.players.len().min(255) as u8;
-
-    let mut out = Vec::with_capacity(4 + room_len + map_len + player_count as usize * 80);
-    out.push(MSG_ROOM_STATE);
-    out.push(room_len as u8);
-    out.push(map_len as u8);
-    out.push(player_count);
-    out.extend_from_slice(&room_id_bytes[..room_len]);
-    out.extend_from_slice(&map_bytes[..map_len]);
-
-    for player in room.players.values() {
-        encode_player_info(&mut out, player);
-    }
-
-    out
-}
-
-pub struct SnapshotEncoder {
-    buffer: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -122,10 +58,76 @@ pub struct ProjectileSnapshot {
     pub kind: u8,
 }
 
+pub fn decode_client_message(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
+    let first = *bytes.first().ok_or(DecodeError::Empty)?;
+    match first {
+        MSG_HELLO => decode_hello(bytes),
+        MSG_JOIN_ROOM => decode_join_room(bytes),
+        MSG_INPUT => decode_input(bytes),
+        _ => Err(DecodeError::UnknownType(first)),
+    }
+}
+
+pub fn encode_welcome(player_id: u64) -> Vec<u8> {
+    let mut out = Vec::with_capacity(9);
+    out.push(MSG_WELCOME);
+    push_u64_vec(&mut out, player_id);
+    out
+}
+
+pub fn encode_player_joined(id: u64, username: &str) -> Vec<u8> {
+    let name_bytes = username.as_bytes();
+    let len = name_bytes.len().min(255);
+    let mut out = Vec::with_capacity(10 + len);
+    out.push(MSG_PLAYER_JOINED);
+    push_u64_vec(&mut out, id);
+    out.push(len as u8);
+    out.extend_from_slice(&name_bytes[..len]);
+    out
+}
+
+pub fn encode_player_left(id: u64) -> Vec<u8> {
+    let mut out = Vec::with_capacity(9);
+    out.push(MSG_PLAYER_LEFT);
+    push_u64_vec(&mut out, id);
+    out
+}
+
+pub fn encode_room_state(
+    room_id: &str,
+    map_name: &str,
+    players: &[PlayerConn],
+    player_states: &[crate::physics::PlayerState],
+) -> Vec<u8> {
+    let room_id_bytes = room_id.as_bytes();
+    let map_bytes = map_name.as_bytes();
+    let room_len = room_id_bytes.len().min(255);
+    let map_len = map_bytes.len().min(255);
+    let player_count = players.len().min(255) as u8;
+
+    let mut out = Vec::with_capacity(4 + room_len + map_len + player_count as usize * 96);
+    out.push(MSG_ROOM_STATE);
+    out.push(room_len as u8);
+    out.push(map_len as u8);
+    out.push(player_count);
+    out.extend_from_slice(&room_id_bytes[..room_len]);
+    out.extend_from_slice(&map_bytes[..map_len]);
+
+    for (idx, player) in players.iter().enumerate() {
+        encode_player_info(&mut out, player, &player_states[idx]);
+    }
+
+    out
+}
+
+pub struct SnapshotEncoder {
+    buffer: BytesMut,
+}
+
 impl SnapshotEncoder {
     pub fn new() -> Self {
         Self {
-            buffer: Vec::with_capacity(4096),
+            buffer: BytesMut::with_capacity(4096),
         }
     }
 
@@ -135,10 +137,10 @@ impl SnapshotEncoder {
         players: &[PlayerSnapshot],
         items: &[ItemSnapshot],
         projectiles: &[ProjectileSnapshot],
-        events: &EventVec,
-    ) -> &[u8] {
+        events: &[EffectEvent],
+    ) -> Bytes {
         self.buffer.clear();
-        self.buffer.push(MSG_SNAPSHOT);
+        self.buffer.put_u8(MSG_SNAPSHOT);
         push_u64(&mut self.buffer, tick);
 
         let player_count = players.len().min(255) as u8;
@@ -146,10 +148,10 @@ impl SnapshotEncoder {
         let projectile_count = projectiles.len().min(u16::MAX as usize) as u16;
         let event_count = events.len().min(255) as u8;
 
-        self.buffer.push(player_count);
-        self.buffer.push(item_count);
+        self.buffer.put_u8(player_count);
+        self.buffer.put_u8(item_count);
         push_u16(&mut self.buffer, projectile_count);
-        self.buffer.push(event_count);
+        self.buffer.put_u8(event_count);
 
         for snapshot in players {
             encode_player_record(&mut self.buffer, snapshot);
@@ -160,7 +162,7 @@ impl SnapshotEncoder {
             if item.active {
                 flags |= 0x01;
             }
-            self.buffer.push(flags);
+            self.buffer.put_u8(flags);
             push_i16(&mut self.buffer, item.respawn_timer);
         }
 
@@ -171,14 +173,14 @@ impl SnapshotEncoder {
             push_f32(&mut self.buffer, proj.velocity_x);
             push_f32(&mut self.buffer, proj.velocity_y);
             push_i64(&mut self.buffer, proj.owner_id);
-            self.buffer.push(proj.kind);
+            self.buffer.put_u8(proj.kind);
         }
 
         for event in events {
             encode_event(&mut self.buffer, event);
         }
 
-        &self.buffer
+        self.buffer.split().freeze()
     }
 }
 
@@ -186,6 +188,55 @@ impl Default for SnapshotEncoder {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[cfg(test)]
+pub fn encode_input_message(msg: &ClientMsg) -> Option<Vec<u8>> {
+    let ClientMsg::Input {
+        seq,
+        key_up,
+        key_down,
+        key_left,
+        key_right,
+        mouse_down,
+        weapon_switch,
+        weapon_scroll,
+        aim_angle,
+        facing_left,
+    } = msg
+    else {
+        return None;
+    };
+
+    let mut out = Vec::with_capacity(16);
+    out.push(MSG_INPUT);
+    push_u64_vec(&mut out, *seq);
+    push_f32_vec(&mut out, *aim_angle);
+
+    let mut flags = 0u8;
+    if *key_up {
+        flags |= 0x01;
+    }
+    if *key_down {
+        flags |= 0x02;
+    }
+    if *key_left {
+        flags |= 0x04;
+    }
+    if *key_right {
+        flags |= 0x08;
+    }
+    if *mouse_down {
+        flags |= 0x10;
+    }
+    if *facing_left {
+        flags |= 0x20;
+    }
+    out.push(flags);
+    out.push(*weapon_switch as i8 as u8);
+    out.push(*weapon_scroll as i8 as u8);
+
+    Some(out)
 }
 
 fn decode_hello(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
@@ -204,12 +255,15 @@ fn decode_join_room(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
     if bytes.len() < 3 {
         return Err(DecodeError::OutOfBounds);
     }
+
     let room_len = bytes[1] as usize;
     let map_len = bytes[2] as usize;
     let mut offset = 3;
+
     if bytes.len() < offset + room_len + map_len {
         return Err(DecodeError::OutOfBounds);
     }
+
     let room_id = if room_len > 0 {
         let room = String::from_utf8(bytes[offset..offset + room_len].to_vec())?;
         offset += room_len;
@@ -217,12 +271,14 @@ fn decode_join_room(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
     } else {
         None
     };
+
     let map = if map_len > 0 {
         let name = String::from_utf8(bytes[offset..offset + map_len].to_vec())?;
         Some(name)
     } else {
         None
     };
+
     Ok(ClientMsg::JoinRoom { room_id, map })
 }
 
@@ -230,6 +286,7 @@ fn decode_input(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
     if bytes.len() < 16 {
         return Err(DecodeError::OutOfBounds);
     }
+
     let seq = read_u64(bytes, 1)?;
     let aim_angle = read_f32(bytes, 9)?;
     let flags = bytes[13];
@@ -250,49 +307,47 @@ fn decode_input(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
     })
 }
 
-fn encode_player_info(out: &mut Vec<u8>, player: &PlayerConn) {
+fn encode_player_info(out: &mut Vec<u8>, player: &PlayerConn, state: &crate::physics::PlayerState) {
     let name_bytes = player.username.as_bytes();
     let len = name_bytes.len().min(255);
     out.push(len as u8);
     out.extend_from_slice(&name_bytes[..len]);
-    let snapshot = snapshot_for_player(player);
-    encode_player_record(out, &snapshot);
-}
 
-pub fn snapshot_for_player(player: &PlayerConn) -> PlayerSnapshot {
-    PlayerSnapshot {
-        id: player.state.id,
-        x: player.state.x,
-        y: player.state.y,
-        vx: player.state.velocity_x,
-        vy: player.state.velocity_y,
-        aim_angle: player.state.aim_angle,
-        facing_left: player.state.facing_left,
-        crouch: player.state.crouch,
-        dead: player.state.dead,
-        health: player.state.health,
-        armor: player.state.armor,
-        current_weapon: player.state.current_weapon,
-        fire_cooldown: player.state.fire_cooldown,
-        weapons: player.state.weapons,
-        ammo: player.state.ammo,
+    let snapshot = PlayerSnapshot {
+        id: state.id,
+        x: state.x,
+        y: state.y,
+        vx: state.velocity_x,
+        vy: state.velocity_y,
+        aim_angle: state.aim_angle,
+        facing_left: state.facing_left,
+        crouch: state.crouch,
+        dead: state.dead,
+        health: state.health,
+        armor: state.armor,
+        current_weapon: state.current_weapon,
+        fire_cooldown: state.fire_cooldown,
+        weapons: state.weapons,
+        ammo: state.ammo,
         last_input_seq: player.last_input_seq,
-        key_left: player.state.key_left,
-        key_right: player.state.key_right,
-        key_up: player.state.key_up,
-        key_down: player.state.key_down,
-    }
+        key_left: state.key_left,
+        key_right: state.key_right,
+        key_up: state.key_up,
+        key_down: state.key_down,
+    };
+
+    encode_player_record_vec(out, &snapshot);
 }
 
-fn encode_player_record(out: &mut Vec<u8>, snap: &PlayerSnapshot) {
-    push_u64(out, snap.id);
-    push_f32(out, snap.x);
-    push_f32(out, snap.y);
-    push_f32(out, snap.vx);
-    push_f32(out, snap.vy);
-    push_f32(out, snap.aim_angle);
-    push_i16(out, snap.health as i16);
-    push_i16(out, snap.armor as i16);
+fn encode_player_record_vec(out: &mut Vec<u8>, snap: &PlayerSnapshot) {
+    push_u64_vec(out, snap.id);
+    push_f32_vec(out, snap.x);
+    push_f32_vec(out, snap.y);
+    push_f32_vec(out, snap.vx);
+    push_f32_vec(out, snap.vy);
+    push_f32_vec(out, snap.aim_angle);
+    push_i16_vec(out, snap.health as i16);
+    push_i16_vec(out, snap.armor as i16);
     out.push(snap.current_weapon as u8);
     out.push(snap.fire_cooldown.clamp(0, 255) as u8);
 
@@ -302,13 +357,16 @@ fn encode_player_record(out: &mut Vec<u8>, snap: &PlayerSnapshot) {
             weapon_bits |= 1 << idx;
         }
     }
-    push_u16(out, weapon_bits);
+    push_u16_vec(out, weapon_bits);
 
     for idx in 0..WEAPON_COUNT {
-        push_i16(out, snap.ammo[idx].clamp(i16::MIN as i32, i16::MAX as i32) as i16);
+        push_i16_vec(
+            out,
+            snap.ammo[idx].clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+        );
     }
 
-    push_u64(out, snap.last_input_seq);
+    push_u64_vec(out, snap.last_input_seq);
 
     let mut flags = 0u8;
     if snap.facing_left {
@@ -335,15 +393,69 @@ fn encode_player_record(out: &mut Vec<u8>, snap: &PlayerSnapshot) {
     out.push(flags);
 }
 
-fn encode_event(out: &mut Vec<u8>, event: &EffectEvent) {
+fn encode_player_record(out: &mut BytesMut, snap: &PlayerSnapshot) {
+    push_u64(out, snap.id);
+    push_f32(out, snap.x);
+    push_f32(out, snap.y);
+    push_f32(out, snap.vx);
+    push_f32(out, snap.vy);
+    push_f32(out, snap.aim_angle);
+    push_i16(out, snap.health as i16);
+    push_i16(out, snap.armor as i16);
+    out.put_u8(snap.current_weapon as u8);
+    out.put_u8(snap.fire_cooldown.clamp(0, 255) as u8);
+
+    let mut weapon_bits: u16 = 0;
+    for (idx, has) in snap.weapons.iter().enumerate() {
+        if *has {
+            weapon_bits |= 1 << idx;
+        }
+    }
+    push_u16(out, weapon_bits);
+
+    for idx in 0..WEAPON_COUNT {
+        push_i16(
+            out,
+            snap.ammo[idx].clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+        );
+    }
+
+    push_u64(out, snap.last_input_seq);
+
+    let mut flags = 0u8;
+    if snap.facing_left {
+        flags |= 0x01;
+    }
+    if snap.crouch {
+        flags |= 0x02;
+    }
+    if snap.dead {
+        flags |= 0x04;
+    }
+    if snap.key_left {
+        flags |= 0x08;
+    }
+    if snap.key_right {
+        flags |= 0x10;
+    }
+    if snap.key_up {
+        flags |= 0x20;
+    }
+    if snap.key_down {
+        flags |= 0x40;
+    }
+    out.put_u8(flags);
+}
+
+fn encode_event(out: &mut BytesMut, event: &EffectEvent) {
     match event {
         EffectEvent::WeaponFired {
             player_id,
             weapon_id,
         } => {
-            out.push(EVENT_WEAPON_FIRED);
+            out.put_u8(EVENT_WEAPON_FIRED);
             push_u64(out, *player_id);
-            out.push(*weapon_id as u8);
+            out.put_u8(*weapon_id as u8);
         }
         EffectEvent::ProjectileSpawn {
             id,
@@ -354,9 +466,9 @@ fn encode_event(out: &mut Vec<u8>, event: &EffectEvent) {
             velocity_y,
             owner_id,
         } => {
-            out.push(EVENT_PROJECTILE_SPAWN);
+            out.put_u8(EVENT_PROJECTILE_SPAWN);
             push_u64(out, *id);
-            out.push(projectile_kind_id_str(kind));
+            out.put_u8(*kind);
             push_f32(out, *x);
             push_f32(out, *y);
             push_f32(out, *velocity_x);
@@ -369,7 +481,7 @@ fn encode_event(out: &mut Vec<u8>, event: &EffectEvent) {
             end_x,
             end_y,
         } => {
-            out.push(EVENT_RAIL);
+            out.put_u8(EVENT_RAIL);
             push_f32(out, *start_x);
             push_f32(out, *start_y);
             push_f32(out, *end_x);
@@ -381,28 +493,28 @@ fn encode_event(out: &mut Vec<u8>, event: &EffectEvent) {
             end_x,
             end_y,
         } => {
-            out.push(EVENT_SHAFT);
+            out.put_u8(EVENT_SHAFT);
             push_f32(out, *start_x);
             push_f32(out, *start_y);
             push_f32(out, *end_x);
             push_f32(out, *end_y);
         }
         EffectEvent::BulletImpact { x, y, radius } => {
-            out.push(EVENT_BULLET_IMPACT);
+            out.put_u8(EVENT_BULLET_IMPACT);
             push_f32(out, *x);
             push_f32(out, *y);
             push_f32(out, *radius);
         }
         EffectEvent::Gauntlet { x, y } => {
-            out.push(EVENT_GAUNTLET);
+            out.put_u8(EVENT_GAUNTLET);
             push_f32(out, *x);
             push_f32(out, *y);
         }
         EffectEvent::Explosion { x, y, kind } => {
-            out.push(EVENT_EXPLOSION);
+            out.put_u8(EVENT_EXPLOSION);
             push_f32(out, *x);
             push_f32(out, *y);
-            out.push(projectile_kind_id_str(kind));
+            out.put_u8(*kind);
         }
         EffectEvent::Damage {
             attacker_id,
@@ -410,7 +522,7 @@ fn encode_event(out: &mut Vec<u8>, event: &EffectEvent) {
             amount,
             killed,
         } => {
-            out.push(EVENT_DAMAGE);
+            out.put_u8(EVENT_DAMAGE);
             push_u64(out, *attacker_id);
             push_u64(out, *target_id);
             push_i16(
@@ -421,48 +533,44 @@ fn encode_event(out: &mut Vec<u8>, event: &EffectEvent) {
             if *killed {
                 flags |= 0x01;
             }
-            out.push(flags);
+            out.put_u8(flags);
         }
     }
 }
 
-#[allow(dead_code)]
-fn projectile_kind_id(kind: ProjectileKind) -> u8 {
-    match kind {
-        ProjectileKind::Rocket => PROJ_ROCKET,
-        ProjectileKind::Grenade => PROJ_GRENADE,
-        ProjectileKind::Plasma => PROJ_PLASMA,
-        ProjectileKind::Bfg => PROJ_BFG,
-    }
-}
-
-fn projectile_kind_id_str(kind: &str) -> u8 {
-    match kind {
-        "rocket" => PROJ_ROCKET,
-        "grenade" => PROJ_GRENADE,
-        "plasma" => PROJ_PLASMA,
-        "bfg" => PROJ_BFG,
-        _ => PROJ_ROCKET,
-    }
-}
-
-fn push_u16(out: &mut Vec<u8>, v: u16) {
+fn push_u16_vec(out: &mut Vec<u8>, v: u16) {
     out.extend_from_slice(&v.to_le_bytes());
 }
 
-fn push_i16(out: &mut Vec<u8>, v: i16) {
+fn push_i16_vec(out: &mut Vec<u8>, v: i16) {
     out.extend_from_slice(&v.to_le_bytes());
 }
 
-fn push_u64(out: &mut Vec<u8>, v: u64) {
+fn push_u64_vec(out: &mut Vec<u8>, v: u64) {
     out.extend_from_slice(&v.to_le_bytes());
 }
 
-fn push_i64(out: &mut Vec<u8>, v: i64) {
+fn push_f32_vec(out: &mut Vec<u8>, v: f32) {
     out.extend_from_slice(&v.to_le_bytes());
 }
 
-fn push_f32(out: &mut Vec<u8>, v: f32) {
+fn push_u16(out: &mut BytesMut, v: u16) {
+    out.extend_from_slice(&v.to_le_bytes());
+}
+
+fn push_i16(out: &mut BytesMut, v: i16) {
+    out.extend_from_slice(&v.to_le_bytes());
+}
+
+fn push_u64(out: &mut BytesMut, v: u64) {
+    out.extend_from_slice(&v.to_le_bytes());
+}
+
+fn push_i64(out: &mut BytesMut, v: i64) {
+    out.extend_from_slice(&v.to_le_bytes());
+}
+
+fn push_f32(out: &mut BytesMut, v: f32) {
     out.extend_from_slice(&v.to_le_bytes());
 }
 
@@ -470,12 +578,76 @@ fn read_u64(bytes: &[u8], offset: usize) -> Result<u64, DecodeError> {
     if bytes.len() < offset + 8 {
         return Err(DecodeError::OutOfBounds);
     }
-    Ok(u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()))
+    let mut raw = [0_u8; 8];
+    raw.copy_from_slice(&bytes[offset..offset + 8]);
+    Ok(u64::from_le_bytes(raw))
 }
 
 fn read_f32(bytes: &[u8], offset: usize) -> Result<f32, DecodeError> {
     if bytes.len() < offset + 4 {
         return Err(DecodeError::OutOfBounds);
     }
-    Ok(f32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap()))
+    let mut raw = [0_u8; 4];
+    raw.copy_from_slice(&bytes[offset..offset + 4]);
+    Ok(f32::from_le_bytes(raw))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decode_client_message, encode_input_message};
+    use crate::protocol::ClientMsg;
+
+    #[test]
+    fn input_binary_roundtrip() {
+        let input = ClientMsg::Input {
+            seq: 42,
+            key_up: true,
+            key_down: false,
+            key_left: true,
+            key_right: false,
+            mouse_down: true,
+            weapon_switch: 3,
+            weapon_scroll: -1,
+            aim_angle: 1.25,
+            facing_left: true,
+        };
+
+        let maybe_bytes = encode_input_message(&input);
+        assert!(maybe_bytes.is_some());
+        let Some(bytes) = maybe_bytes else {
+            return;
+        };
+        let decoded = decode_client_message(&bytes);
+        assert!(decoded.is_ok());
+        let Ok(decoded) = decoded else {
+            return;
+        };
+
+        let ClientMsg::Input {
+            seq,
+            key_up,
+            key_down,
+            key_left,
+            key_right,
+            mouse_down,
+            weapon_switch,
+            weapon_scroll,
+            aim_angle,
+            facing_left,
+        } = decoded
+        else {
+            return;
+        };
+
+        assert_eq!(seq, 42);
+        assert!(key_up);
+        assert!(!key_down);
+        assert!(key_left);
+        assert!(!key_right);
+        assert!(mouse_down);
+        assert_eq!(weapon_switch, 3);
+        assert_eq!(weapon_scroll, -1);
+        assert!((aim_angle - 1.25).abs() < f32::EPSILON);
+        assert!(facing_left);
+    }
 }

@@ -396,6 +396,7 @@ dependencies = [
  "bytes",
  "futures-util",
  "rand",
+ "rand_chacha",
  "serde",
  "serde_json",
  "smallvec",

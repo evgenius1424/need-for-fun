@@ -1,13 +1,10 @@
+use crate::constants::{
+    PLAYER_CROUCH_HALF_H, PLAYER_HALF_H, PLAYER_HALF_W, TILE_H, TILE_W, WEAPON_COUNT,
+};
 use crate::map::GameMap;
-use crate::constants::WEAPON_COUNT;
 
-const BRICK_WIDTH: f32 = 32.0;
-const BRICK_HEIGHT: f32 = 16.0;
 const PLAYER_MAX_VELOCITY_X: f32 = 3.0;
 
-const HALF_WIDTH: f32 = 9.0;
-const HALF_HEIGHT: f32 = 24.0;
-const CROUCH_HALF_HEIGHT: f32 = 8.0;
 const GROUND_PROBE: f32 = 25.0;
 const HEAD_PROBE: f32 = 25.0;
 const CROUCH_HEAD_PROBE: f32 = 9.0;
@@ -130,14 +127,15 @@ impl PlayerState {
         self.last_cache_x = cache_x;
         self.last_cache_y = cache_y;
 
-        let col_l = trunc_i32((self.x - HALF_WIDTH) / BRICK_WIDTH);
-        let col_r = trunc_i32((self.x + HALF_WIDTH) / BRICK_WIDTH);
-        let col_l_narrow = trunc_i32((self.x - CROUCH_HALF_HEIGHT) / BRICK_WIDTH);
-        let col_r_narrow = trunc_i32((self.x + CROUCH_HALF_HEIGHT) / BRICK_WIDTH);
+        let col_l = trunc_i32((self.x - PLAYER_HALF_W) / TILE_W);
+        let col_r = trunc_i32((self.x + PLAYER_HALF_W) / TILE_W);
+        let col_l_narrow = trunc_i32((self.x - PLAYER_CROUCH_HALF_H) / TILE_W);
+        let col_r_narrow = trunc_i32((self.x + PLAYER_CROUCH_HALF_H) / TILE_W);
 
         self.cache_on_ground = check_ground(map, col_l, col_r, self.y);
         self.cache_brick_on_head = check_head(map, col_l, col_r, self.y);
-        self.cache_brick_crouch_on_head = check_crouch_head(map, col_l_narrow, col_r_narrow, self.y);
+        self.cache_brick_crouch_on_head =
+            check_crouch_head(map, col_l_narrow, col_r_narrow, self.y);
     }
 
     fn is_on_ground(&self) -> bool {
@@ -196,32 +194,29 @@ fn apply_physics(player: &mut PlayerState, map: &GameMap) {
     player.set_xy(new_x, new_y, map);
 
     if player.crouch {
-        if player.is_on_ground() && (player.is_brick_crouch_on_head() || player.velocity_y > 0.0)
-        {
+        if player.is_on_ground() && (player.is_brick_crouch_on_head() || player.velocity_y > 0.0) {
             player.velocity_y = 0.0;
-            let snap = trunc_i32(round(player.y) / BRICK_HEIGHT) as f32 * BRICK_HEIGHT
-                + BRICK_HEIGHT / 2.0;
+            let snap = trunc_i32(round(player.y) / TILE_H) as f32 * TILE_H + TILE_H / 2.0;
             player.set_xy(player.x, snap, map);
         } else if player.is_brick_crouch_on_head() && player.velocity_y < 0.0 {
             player.velocity_y = 0.0;
             player.doublejump_countdown = 3;
-            let snap = trunc_i32(round(player.y) / BRICK_HEIGHT) as f32 * BRICK_HEIGHT
-                + BRICK_HEIGHT / 2.0;
+            let snap = trunc_i32(round(player.y) / TILE_H) as f32 * TILE_H + TILE_H / 2.0;
             player.set_xy(player.x, snap, map);
         }
     }
 
     if player.velocity_x != 0.0 {
-        let col = trunc_i32(round(start_x + if player.velocity_x < 0.0 { -11.0 } else { 11.0 })
-            / BRICK_WIDTH);
+        let col =
+            trunc_i32(round(start_x + if player.velocity_x < 0.0 { -11.0 } else { 11.0 }) / TILE_W);
         let check_y = if player.crouch { player.y } else { start_y };
         let head_off = if player.crouch { 8.0 } else { 16.0 };
 
-        if map.is_brick(col, trunc_i32(round(check_y - head_off) / BRICK_HEIGHT))
-            || map.is_brick(col, trunc_i32(round(check_y) / BRICK_HEIGHT))
-            || map.is_brick(col, trunc_i32(round(check_y + BRICK_HEIGHT) / BRICK_HEIGHT))
+        if map.is_brick(col, trunc_i32(round(check_y - head_off) / TILE_H))
+            || map.is_brick(col, trunc_i32(round(check_y) / TILE_H))
+            || map.is_brick(col, trunc_i32(round(check_y + TILE_H) / TILE_H))
         {
-            let snap = trunc_i32(start_x / BRICK_WIDTH) as f32 * BRICK_WIDTH
+            let snap = trunc_i32(start_x / TILE_W) as f32 * TILE_W
                 + if player.velocity_x < 0.0 { 9.0 } else { 22.0 };
             player.set_xy(snap, player.y, map);
             player.velocity_x = 0.0;
@@ -231,8 +226,7 @@ fn apply_physics(player: &mut PlayerState, map: &GameMap) {
 
     if player.is_on_ground() && (player.is_brick_on_head() || player.velocity_y > 0.0) {
         player.velocity_y = 0.0;
-        let snap =
-            trunc_i32(round(player.y) / BRICK_HEIGHT) as f32 * BRICK_HEIGHT + BRICK_HEIGHT / 2.0;
+        let snap = trunc_i32(round(player.y) / TILE_H) as f32 * TILE_H + TILE_H / 2.0;
         player.set_xy(player.x, snap, map);
     } else if player.is_brick_on_head() && player.velocity_y < 0.0 {
         player.velocity_y = 0.0;
@@ -276,7 +270,8 @@ fn handle_jump(player: &mut PlayerState) {
                 player.doublejump_countdown = 14;
             }
             player.velocity_y = -2.9 + SPEED_JUMP_Y[player.speed_jump as usize];
-            if player.speed_jump < 6 && !player.last_was_jump && player.key_left != player.key_right {
+            if player.speed_jump < 6 && !player.last_was_jump && player.key_left != player.key_right
+            {
                 player.speed_jump_dir = if player.key_left { -1 } else { 1 };
                 player.speed_jump += 1;
             }
@@ -329,48 +324,48 @@ fn get_speed_x(player: &PlayerState) -> f32 {
 }
 
 fn check_ground(map: &GameMap, col_l: i32, col_r: i32, y: f32) -> bool {
-    let row_probe = trunc_i32((y + GROUND_PROBE) / BRICK_HEIGHT);
+    let row_probe = trunc_i32((y + GROUND_PROBE) / TILE_H);
     if row_probe >= map.rows {
         return true;
     }
 
-    let row_inside = trunc_i32((y + HALF_HEIGHT - 1.0) / BRICK_HEIGHT);
-    let row_body = trunc_i32((y + CROUCH_HALF_HEIGHT) / BRICK_HEIGHT);
+    let row_inside = trunc_i32((y + PLAYER_HALF_H - 1.0) / TILE_H);
+    let row_body = trunc_i32((y + PLAYER_CROUCH_HALF_H) / TILE_H);
 
     (map.is_brick(col_l, row_probe) && !map.is_brick(col_l, row_inside))
         || (map.is_brick(col_r, row_probe) && !map.is_brick(col_r, row_inside))
-        || (map.is_brick(col_l, trunc_i32((y + HALF_HEIGHT) / BRICK_HEIGHT))
+        || (map.is_brick(col_l, trunc_i32((y + PLAYER_HALF_H) / TILE_H))
             && !map.is_brick(col_l, row_body))
-        || (map.is_brick(col_r, trunc_i32((y + HALF_HEIGHT) / BRICK_HEIGHT))
+        || (map.is_brick(col_r, trunc_i32((y + PLAYER_HALF_H) / TILE_H))
             && !map.is_brick(col_r, row_body))
 }
 
 fn check_head(map: &GameMap, col_l: i32, col_r: i32, y: f32) -> bool {
-    let row_probe = trunc_i32((y - HEAD_PROBE) / BRICK_HEIGHT);
+    let row_probe = trunc_i32((y - HEAD_PROBE) / TILE_H);
     if row_probe < 0 {
         return true;
     }
-    let row_inside = trunc_i32((y - HALF_HEIGHT + 1.0) / BRICK_HEIGHT);
-    let row_body = trunc_i32((y - CROUCH_HALF_HEIGHT) / BRICK_HEIGHT);
+    let row_inside = trunc_i32((y - PLAYER_HALF_H + 1.0) / TILE_H);
+    let row_body = trunc_i32((y - PLAYER_CROUCH_HALF_H) / TILE_H);
 
     (map.is_brick(col_l, row_probe) && !map.is_brick(col_l, row_inside))
         || (map.is_brick(col_r, row_probe) && !map.is_brick(col_r, row_inside))
-        || (map.is_brick(col_l, trunc_i32((y - HALF_HEIGHT) / BRICK_HEIGHT))
+        || (map.is_brick(col_l, trunc_i32((y - PLAYER_HALF_H) / TILE_H))
             && !map.is_brick(col_l, row_body))
-        || (map.is_brick(col_r, trunc_i32((y - HALF_HEIGHT) / BRICK_HEIGHT))
+        || (map.is_brick(col_r, trunc_i32((y - PLAYER_HALF_H) / TILE_H))
             && !map.is_brick(col_r, row_body))
 }
 
 fn check_crouch_head(map: &GameMap, col_l: i32, col_r: i32, y: f32) -> bool {
-    let row_probe = trunc_i32((y - CROUCH_HEAD_PROBE) / BRICK_HEIGHT);
-    let row_inside = trunc_i32((y - 7.0) / BRICK_HEIGHT);
+    let row_probe = trunc_i32((y - CROUCH_HEAD_PROBE) / TILE_H);
+    let row_inside = trunc_i32((y - 7.0) / TILE_H);
 
     (map.is_brick(col_l, row_probe) && !map.is_brick(col_l, row_inside))
         || (map.is_brick(col_r, row_probe) && !map.is_brick(col_r, row_inside))
-        || map.is_brick(col_l, trunc_i32((y - 23.0) / BRICK_HEIGHT))
-        || map.is_brick(col_r, trunc_i32((y - 23.0) / BRICK_HEIGHT))
-        || map.is_brick(col_l, trunc_i32((y - 16.0) / BRICK_HEIGHT))
-        || map.is_brick(col_r, trunc_i32((y - 16.0) / BRICK_HEIGHT))
+        || map.is_brick(col_l, trunc_i32((y - 23.0) / TILE_H))
+        || map.is_brick(col_r, trunc_i32((y - 23.0) / TILE_H))
+        || map.is_brick(col_l, trunc_i32((y - 16.0) / TILE_H))
+        || map.is_brick(col_r, trunc_i32((y - 16.0) / TILE_H))
 }
 
 fn trunc_i32(val: f32) -> i32 {

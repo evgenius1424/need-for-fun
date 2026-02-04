@@ -3,8 +3,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
-    Hello { username: String },
-    JoinRoom { room_id: Option<String>, map: Option<String> },
+    Hello {
+        username: String,
+    },
+    JoinRoom {
+        room_id: Option<String>,
+        map: Option<String>,
+    },
     Input {
         seq: u64,
         key_up: bool,
@@ -23,14 +28,20 @@ pub enum ClientMsg {
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
-    Welcome { player_id: u64 },
+    Welcome {
+        player_id: u64,
+    },
     RoomState {
         room_id: String,
         map: String,
         players: Vec<PlayerInfo>,
     },
-    PlayerJoined { player: PlayerInfo },
-    PlayerLeft { player_id: u64 },
+    PlayerJoined {
+        player: PlayerInfo,
+    },
+    PlayerLeft {
+        player_id: u64,
+    },
     Snapshot {
         tick: u64,
         players: Vec<PlayerSnapshot>,
@@ -91,7 +102,7 @@ pub struct ProjectileState {
     pub velocity_y: f32,
     pub owner_id: i64,
     #[serde(rename = "type")]
-    pub kind: &'static str,
+    pub kind: u8,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -103,7 +114,7 @@ pub enum EffectEvent {
     },
     ProjectileSpawn {
         id: u64,
-        kind: &'static str,
+        kind: u8,
         x: f32,
         y: f32,
         velocity_x: f32,
@@ -134,7 +145,7 @@ pub enum EffectEvent {
     Explosion {
         x: f32,
         y: f32,
-        kind: &'static str,
+        kind: u8,
     },
     Damage {
         attacker_id: u64,

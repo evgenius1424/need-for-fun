@@ -1,8 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rand::seq::SliceRandom;
-use rand::thread_rng;
+use rand::Rng;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ItemKind {
@@ -39,17 +38,14 @@ impl ItemKind {
 
     pub fn respawn_time(self) -> i32 {
         match self {
-            Self::Health5 => 300,
-            Self::Health25 => 300,
-            Self::Health50 => 600,
-            Self::Health100 => 900,
-            Self::Armor50 => 600,
-            Self::Armor100 => 900,
+            Self::Health5 | Self::Health25 => 300,
+            Self::Health50 | Self::Armor50 => 600,
+            Self::Health100 | Self::Armor100 => 900,
             Self::Quad => 1200,
-            Self::WeaponMachine => 600,
-            Self::WeaponShotgun => 600,
-            Self::WeaponGrenade => 600,
-            Self::WeaponRocket => 600,
+            Self::WeaponMachine
+            | Self::WeaponShotgun
+            | Self::WeaponGrenade
+            | Self::WeaponRocket => 600,
         }
     }
 }
@@ -58,7 +54,7 @@ impl ItemKind {
 pub struct GameMap {
     pub rows: i32,
     pub cols: i32,
-    pub bricks: Vec<Vec<bool>>,
+    pub bricks: Vec<u8>,
     pub respawns: Vec<(i32, i32)>,
     pub items: Vec<MapItem>,
     pub name: String,
@@ -81,36 +77,47 @@ impl GameMap {
         Ok(parse_map(&content, map_name))
     }
 
+    #[inline]
+    fn idx(&self, col: i32, row: i32) -> usize {
+        row as usize * self.cols as usize + col as usize
+    }
+
     pub fn is_brick(&self, col: i32, row: i32) -> bool {
         if row < 0 || col < 0 || row >= self.rows || col >= self.cols {
             return true;
         }
-        self.bricks[row as usize][col as usize]
+        self.bricks[self.idx(col, row)] != 0
     }
 
-    pub fn random_respawn(&self) -> Option<(i32, i32)> {
-        let mut rng = thread_rng();
-        self.respawns.choose(&mut rng).copied()
+    pub fn random_respawn_with_rng<R: Rng + ?Sized>(&self, rng: &mut R) -> Option<(i32, i32)> {
+        if self.respawns.is_empty() {
+            return None;
+        }
+        let idx = rng.gen_range(0..self.respawns.len());
+        self.respawns.get(idx).copied()
     }
 }
 
 fn parse_map(map_text: &str, map_name: &str) -> GameMap {
-    let cleaned = map_text.replace("\r", "");
-    let lines: Vec<&str> = cleaned.split('\n').collect();
-    let rows = lines.len() as i32;
-    let cols = lines.iter().map(|line| line.len()).max().unwrap_or(0) as i32;
+    let rows_vec: Vec<&str> = map_text.trim_end_matches(['\r', '\n']).lines().collect();
+    let rows = rows_vec.len() as i32;
+    let cols = rows_vec.iter().map(|line| line.len()).max().unwrap_or(0) as i32;
 
-    let mut bricks = vec![vec![false; cols as usize]; rows as usize];
+    let mut bricks = vec![0_u8; rows.max(0) as usize * cols.max(0) as usize];
     let mut respawns = Vec::new();
     let mut items = Vec::new();
 
-    for (row_idx, line) in lines.iter().enumerate() {
+    for (row_idx, line) in rows_vec.iter().enumerate() {
         let row = row_idx as i32;
-        for col in 0..cols {
-            let ch = line.chars().nth(col as usize).unwrap_or(' ');
-            let is_brick = matches!(ch, '0' | '1' | '2');
-            bricks[row as usize][col as usize] = is_brick;
+        for (col_idx, byte) in line.as_bytes().iter().copied().enumerate() {
+            let col = col_idx as i32;
+            let is_brick = matches!(byte, b'0' | b'1' | b'2');
+            if is_brick {
+                let idx = row as usize * cols as usize + col as usize;
+                bricks[idx] = 1;
+            }
 
+            let ch = byte as char;
             if ch == 'R' {
                 respawns.push((row, col));
             }
@@ -134,5 +141,20 @@ fn parse_map(map_text: &str, map_name: &str) -> GameMap {
         respawns,
         items,
         name: map_name.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_map;
+
+    #[test]
+    fn parse_map_ignores_trailing_newline() {
+        let map = parse_map("R0\n00\n", "test");
+        assert_eq!(map.rows, 2);
+        assert_eq!(map.cols, 2);
+        assert!(map.is_brick(1, 0));
+        assert!(map.is_brick(0, 1));
+        assert_eq!(map.respawns, vec![(0, 0)]);
     }
 }
