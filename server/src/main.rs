@@ -316,42 +316,75 @@ fn load_map_with_fallback(map_dir: &Path, map_name: &str) -> Option<GameMap> {
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
 
+    use bytes::Bytes;
     use tokio::sync::{mpsc, RwLock};
 
-    use super::{get_or_create_room, AppState};
-    use crate::room::{PlayerId, RoomId};
+    use super::{handle_client_msg, AppState};
+    use crate::map::GameMap;
+    use crate::protocol::ClientMsg;
+    use crate::room::{PlayerId, RoomHandle, RoomId};
+
+    fn simple_map() -> GameMap {
+        GameMap {
+            rows: 1,
+            cols: 1,
+            bricks: vec![0],
+            respawns: vec![(0, 0)],
+            items: Vec::new(),
+            name: "test".to_string(),
+        }
+    }
 
     #[tokio::test]
     async fn player_can_move_between_rooms_without_ghosting() {
-        let state = std::sync::Arc::new(AppState {
+        let room_a = RoomHandle::new(RoomId("a".to_string()), simple_map());
+        let room_b = RoomHandle::new(RoomId("b".to_string()), simple_map());
+
+        let mut rooms = std::collections::HashMap::new();
+        rooms.insert(RoomId("a".to_string()), Arc::clone(&room_a));
+        rooms.insert(RoomId("b".to_string()), Arc::clone(&room_b));
+
+        let state = Arc::new(AppState {
             rooms: RwLock::new(std::collections::HashMap::new()),
             next_player_id: AtomicU64::new(1),
-            map_dir: std::path::PathBuf::from("../public/maps"),
+            map_dir: std::path::PathBuf::new(),
         });
+        *state.rooms.write().await = rooms;
 
-        let room_a = get_or_create_room(&state, RoomId("a".to_string()), "dm2").await;
-        assert!(room_a.is_some());
-        let Some(room_a) = room_a else {
-            return;
-        };
+        let (tx, _rx) = mpsc::channel::<Bytes>(8);
+        let mut current_room: Option<Arc<RoomHandle>> = None;
+        let mut username = "player7".to_string();
 
-        let room_b = get_or_create_room(&state, RoomId("b".to_string()), "dm2").await;
-        assert!(room_b.is_some());
-        let Some(room_b) = room_b else {
-            return;
-        };
-
-        let (tx, _rx) = mpsc::channel(8);
-        let joined = room_a
-            .join(PlayerId(7), "player7".to_string(), tx.clone())
-            .await;
-        assert!(joined.is_some());
+        let joined_first = handle_client_msg(
+            &state,
+            &mut current_room,
+            &mut username,
+            PlayerId(7),
+            ClientMsg::JoinRoom {
+                room_id: Some("a".to_string()),
+                map: None,
+            },
+            &tx,
+        )
+        .await;
+        assert!(joined_first);
         assert!(room_a.contains_player(PlayerId(7)).await);
 
-        room_a.leave(PlayerId(7)).await;
-        let joined = room_b.join(PlayerId(7), "player7".to_string(), tx).await;
-        assert!(joined.is_some());
+        let joined_second = handle_client_msg(
+            &state,
+            &mut current_room,
+            &mut username,
+            PlayerId(7),
+            ClientMsg::JoinRoom {
+                room_id: Some("b".to_string()),
+                map: None,
+            },
+            &tx,
+        )
+        .await;
+        assert!(joined_second);
 
         tokio::task::yield_now().await;
         assert!(!room_a.contains_player(PlayerId(7)).await);

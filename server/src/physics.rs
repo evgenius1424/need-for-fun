@@ -1,5 +1,6 @@
 use crate::constants::{
-    PLAYER_CROUCH_HALF_H, PLAYER_HALF_H, PLAYER_HALF_W, TILE_H, TILE_W, WEAPON_COUNT,
+    PLAYER_CROUCH_HALF_H, PLAYER_CROUCH_HALF_W, PLAYER_HALF_H, PLAYER_HALF_W, TILE_H, TILE_W,
+    WEAPON_COUNT,
 };
 use crate::map::GameMap;
 
@@ -129,8 +130,8 @@ impl PlayerState {
 
         let col_l = trunc_i32((self.x - PLAYER_HALF_W) / TILE_W);
         let col_r = trunc_i32((self.x + PLAYER_HALF_W) / TILE_W);
-        let col_l_narrow = trunc_i32((self.x - PLAYER_CROUCH_HALF_H) / TILE_W);
-        let col_r_narrow = trunc_i32((self.x + PLAYER_CROUCH_HALF_H) / TILE_W);
+        let col_l_narrow = trunc_i32((self.x - PLAYER_CROUCH_HALF_W) / TILE_W);
+        let col_r_narrow = trunc_i32((self.x + PLAYER_CROUCH_HALF_W) / TILE_W);
 
         self.cache_on_ground = check_ground(map, col_l, col_r, self.y);
         self.cache_brick_on_head = check_head(map, col_l, col_r, self.y);

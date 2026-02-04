@@ -14,3 +14,6 @@ pub const TILE_H: f32 = 16.0;
 pub const PLAYER_HALF_W: f32 = 9.0;
 pub const PLAYER_HALF_H: f32 = 24.0;
 pub const PLAYER_CROUCH_HALF_H: f32 = 8.0;
+pub const PLAYER_CROUCH_HALF_W: f32 = 8.0;
+
+pub const SNAPSHOT_BUFFER_RING: usize = 8;

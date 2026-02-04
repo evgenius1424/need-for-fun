@@ -2,7 +2,7 @@ use std::string::FromUtf8Error;
 
 use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::constants::WEAPON_COUNT;
+use crate::constants::{SNAPSHOT_BUFFER_RING, WEAPON_COUNT};
 use crate::protocol::{ClientMsg, EffectEvent, PlayerSnapshot};
 use crate::room::PlayerConn;
 
@@ -70,8 +70,8 @@ pub fn decode_client_message(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
 
 pub fn encode_welcome(player_id: u64) -> Vec<u8> {
     let mut out = Vec::with_capacity(9);
-    out.push(MSG_WELCOME);
-    push_u64_vec(&mut out, player_id);
+    out.put_u8(MSG_WELCOME);
+    push_u64(&mut out, player_id);
     out
 }
 
@@ -79,17 +79,17 @@ pub fn encode_player_joined(id: u64, username: &str) -> Vec<u8> {
     let name_bytes = username.as_bytes();
     let len = name_bytes.len().min(255);
     let mut out = Vec::with_capacity(10 + len);
-    out.push(MSG_PLAYER_JOINED);
-    push_u64_vec(&mut out, id);
-    out.push(len as u8);
-    out.extend_from_slice(&name_bytes[..len]);
+    out.put_u8(MSG_PLAYER_JOINED);
+    push_u64(&mut out, id);
+    out.put_u8(len as u8);
+    out.put_slice(&name_bytes[..len]);
     out
 }
 
 pub fn encode_player_left(id: u64) -> Vec<u8> {
     let mut out = Vec::with_capacity(9);
-    out.push(MSG_PLAYER_LEFT);
-    push_u64_vec(&mut out, id);
+    out.put_u8(MSG_PLAYER_LEFT);
+    push_u64(&mut out, id);
     out
 }
 
@@ -106,28 +106,36 @@ pub fn encode_room_state(
     let player_count = players.len().min(255) as u8;
 
     let mut out = Vec::with_capacity(4 + room_len + map_len + player_count as usize * 96);
-    out.push(MSG_ROOM_STATE);
-    out.push(room_len as u8);
-    out.push(map_len as u8);
-    out.push(player_count);
-    out.extend_from_slice(&room_id_bytes[..room_len]);
-    out.extend_from_slice(&map_bytes[..map_len]);
+    out.put_u8(MSG_ROOM_STATE);
+    out.put_u8(room_len as u8);
+    out.put_u8(map_len as u8);
+    out.put_u8(player_count);
+    out.put_slice(&room_id_bytes[..room_len]);
+    out.put_slice(&map_bytes[..map_len]);
 
-    for (idx, player) in players.iter().enumerate() {
-        encode_player_info(&mut out, player, &player_states[idx]);
+    debug_assert_eq!(players.len(), player_states.len());
+    for (player, state) in players.iter().zip(player_states.iter()) {
+        encode_player_info(&mut out, player, state);
     }
 
     out
 }
 
 pub struct SnapshotEncoder {
-    buffer: BytesMut,
+    buffers: Vec<BytesMut>,
+    next_buffer: usize,
 }
 
 impl SnapshotEncoder {
     pub fn new() -> Self {
+        let mut buffers = Vec::with_capacity(SNAPSHOT_BUFFER_RING);
+        for _ in 0..SNAPSHOT_BUFFER_RING {
+            buffers.push(BytesMut::with_capacity(4096));
+        }
+
         Self {
-            buffer: BytesMut::with_capacity(4096),
+            buffers,
+            next_buffer: 0,
         }
     }
 
@@ -139,22 +147,26 @@ impl SnapshotEncoder {
         projectiles: &[ProjectileSnapshot],
         events: &[EffectEvent],
     ) -> Bytes {
-        self.buffer.clear();
-        self.buffer.put_u8(MSG_SNAPSHOT);
-        push_u64(&mut self.buffer, tick);
+        let buffer_idx = self.next_buffer;
+        self.next_buffer = (self.next_buffer + 1) % self.buffers.len();
+
+        let buffer = &mut self.buffers[buffer_idx];
+        buffer.clear();
+        buffer.put_u8(MSG_SNAPSHOT);
+        push_u64(buffer, tick);
 
         let player_count = players.len().min(255) as u8;
         let item_count = items.len().min(255) as u8;
         let projectile_count = projectiles.len().min(u16::MAX as usize) as u16;
         let event_count = events.len().min(255) as u8;
 
-        self.buffer.put_u8(player_count);
-        self.buffer.put_u8(item_count);
-        push_u16(&mut self.buffer, projectile_count);
-        self.buffer.put_u8(event_count);
+        buffer.put_u8(player_count);
+        buffer.put_u8(item_count);
+        push_u16(buffer, projectile_count);
+        buffer.put_u8(event_count);
 
         for snapshot in players {
-            encode_player_record(&mut self.buffer, snapshot);
+            encode_player_record(buffer, snapshot);
         }
 
         for item in items {
@@ -162,25 +174,25 @@ impl SnapshotEncoder {
             if item.active {
                 flags |= 0x01;
             }
-            self.buffer.put_u8(flags);
-            push_i16(&mut self.buffer, item.respawn_timer);
+            buffer.put_u8(flags);
+            push_i16(buffer, item.respawn_timer);
         }
 
         for proj in projectiles {
-            push_u64(&mut self.buffer, proj.id);
-            push_f32(&mut self.buffer, proj.x);
-            push_f32(&mut self.buffer, proj.y);
-            push_f32(&mut self.buffer, proj.velocity_x);
-            push_f32(&mut self.buffer, proj.velocity_y);
-            push_i64(&mut self.buffer, proj.owner_id);
-            self.buffer.put_u8(proj.kind);
+            push_u64(buffer, proj.id);
+            push_f32(buffer, proj.x);
+            push_f32(buffer, proj.y);
+            push_f32(buffer, proj.velocity_x);
+            push_f32(buffer, proj.velocity_y);
+            push_i64(buffer, proj.owner_id);
+            buffer.put_u8(proj.kind);
         }
 
         for event in events {
-            encode_event(&mut self.buffer, event);
+            encode_event(buffer, event);
         }
 
-        self.buffer.split().freeze()
+        buffer.split().freeze()
     }
 }
 
@@ -209,9 +221,9 @@ pub fn encode_input_message(msg: &ClientMsg) -> Option<Vec<u8>> {
     };
 
     let mut out = Vec::with_capacity(16);
-    out.push(MSG_INPUT);
-    push_u64_vec(&mut out, *seq);
-    push_f32_vec(&mut out, *aim_angle);
+    out.put_u8(MSG_INPUT);
+    push_u64(&mut out, *seq);
+    push_f32(&mut out, *aim_angle);
 
     let mut flags = 0u8;
     if *key_up {
@@ -232,9 +244,9 @@ pub fn encode_input_message(msg: &ClientMsg) -> Option<Vec<u8>> {
     if *facing_left {
         flags |= 0x20;
     }
-    out.push(flags);
-    out.push(*weapon_switch as i8 as u8);
-    out.push(*weapon_scroll as i8 as u8);
+    out.put_u8(flags);
+    out.put_u8(*weapon_switch as i8 as u8);
+    out.put_u8(*weapon_scroll as i8 as u8);
 
     Some(out)
 }
@@ -307,11 +319,15 @@ fn decode_input(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
     })
 }
 
-fn encode_player_info(out: &mut Vec<u8>, player: &PlayerConn, state: &crate::physics::PlayerState) {
+fn encode_player_info(
+    out: &mut impl BufMut,
+    player: &PlayerConn,
+    state: &crate::physics::PlayerState,
+) {
     let name_bytes = player.username.as_bytes();
     let len = name_bytes.len().min(255);
-    out.push(len as u8);
-    out.extend_from_slice(&name_bytes[..len]);
+    out.put_u8(len as u8);
+    out.put_slice(&name_bytes[..len]);
 
     let snapshot = PlayerSnapshot {
         id: state.id,
@@ -336,64 +352,10 @@ fn encode_player_info(out: &mut Vec<u8>, player: &PlayerConn, state: &crate::phy
         key_down: state.key_down,
     };
 
-    encode_player_record_vec(out, &snapshot);
+    encode_player_record(out, &snapshot);
 }
 
-fn encode_player_record_vec(out: &mut Vec<u8>, snap: &PlayerSnapshot) {
-    push_u64_vec(out, snap.id);
-    push_f32_vec(out, snap.x);
-    push_f32_vec(out, snap.y);
-    push_f32_vec(out, snap.vx);
-    push_f32_vec(out, snap.vy);
-    push_f32_vec(out, snap.aim_angle);
-    push_i16_vec(out, snap.health as i16);
-    push_i16_vec(out, snap.armor as i16);
-    out.push(snap.current_weapon as u8);
-    out.push(snap.fire_cooldown.clamp(0, 255) as u8);
-
-    let mut weapon_bits: u16 = 0;
-    for (idx, has) in snap.weapons.iter().enumerate() {
-        if *has {
-            weapon_bits |= 1 << idx;
-        }
-    }
-    push_u16_vec(out, weapon_bits);
-
-    for idx in 0..WEAPON_COUNT {
-        push_i16_vec(
-            out,
-            snap.ammo[idx].clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-        );
-    }
-
-    push_u64_vec(out, snap.last_input_seq);
-
-    let mut flags = 0u8;
-    if snap.facing_left {
-        flags |= 0x01;
-    }
-    if snap.crouch {
-        flags |= 0x02;
-    }
-    if snap.dead {
-        flags |= 0x04;
-    }
-    if snap.key_left {
-        flags |= 0x08;
-    }
-    if snap.key_right {
-        flags |= 0x10;
-    }
-    if snap.key_up {
-        flags |= 0x20;
-    }
-    if snap.key_down {
-        flags |= 0x40;
-    }
-    out.push(flags);
-}
-
-fn encode_player_record(out: &mut BytesMut, snap: &PlayerSnapshot) {
+fn encode_player_record(out: &mut impl BufMut, snap: &PlayerSnapshot) {
     push_u64(out, snap.id);
     push_f32(out, snap.x);
     push_f32(out, snap.y);
@@ -447,7 +409,7 @@ fn encode_player_record(out: &mut BytesMut, snap: &PlayerSnapshot) {
     out.put_u8(flags);
 }
 
-fn encode_event(out: &mut BytesMut, event: &EffectEvent) {
+fn encode_event(out: &mut impl BufMut, event: &EffectEvent) {
     match event {
         EffectEvent::WeaponFired {
             player_id,
@@ -538,40 +500,24 @@ fn encode_event(out: &mut BytesMut, event: &EffectEvent) {
     }
 }
 
-fn push_u16_vec(out: &mut Vec<u8>, v: u16) {
-    out.extend_from_slice(&v.to_le_bytes());
+fn push_u16(out: &mut impl BufMut, v: u16) {
+    out.put_slice(&v.to_le_bytes());
 }
 
-fn push_i16_vec(out: &mut Vec<u8>, v: i16) {
-    out.extend_from_slice(&v.to_le_bytes());
+fn push_i16(out: &mut impl BufMut, v: i16) {
+    out.put_slice(&v.to_le_bytes());
 }
 
-fn push_u64_vec(out: &mut Vec<u8>, v: u64) {
-    out.extend_from_slice(&v.to_le_bytes());
+fn push_u64(out: &mut impl BufMut, v: u64) {
+    out.put_slice(&v.to_le_bytes());
 }
 
-fn push_f32_vec(out: &mut Vec<u8>, v: f32) {
-    out.extend_from_slice(&v.to_le_bytes());
+fn push_i64(out: &mut impl BufMut, v: i64) {
+    out.put_slice(&v.to_le_bytes());
 }
 
-fn push_u16(out: &mut BytesMut, v: u16) {
-    out.extend_from_slice(&v.to_le_bytes());
-}
-
-fn push_i16(out: &mut BytesMut, v: i16) {
-    out.extend_from_slice(&v.to_le_bytes());
-}
-
-fn push_u64(out: &mut BytesMut, v: u64) {
-    out.extend_from_slice(&v.to_le_bytes());
-}
-
-fn push_i64(out: &mut BytesMut, v: i64) {
-    out.extend_from_slice(&v.to_le_bytes());
-}
-
-fn push_f32(out: &mut BytesMut, v: f32) {
-    out.extend_from_slice(&v.to_le_bytes());
+fn push_f32(out: &mut impl BufMut, v: f32) {
+    out.put_slice(&v.to_le_bytes());
 }
 
 fn read_u64(bytes: &[u8], offset: usize) -> Result<u64, DecodeError> {

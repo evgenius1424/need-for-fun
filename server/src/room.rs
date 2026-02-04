@@ -7,6 +7,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::interval;
+use tracing::{debug, warn};
 
 use crate::binary::{
     encode_player_joined, encode_player_left, encode_room_state, ItemSnapshot, ProjectileSnapshot,
@@ -43,7 +44,7 @@ impl From<String> for RoomId {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Tick(pub u64);
 
-#[derive(Clone, Default)]
+#[derive(Clone, Copy, Default)]
 pub struct PlayerInput {
     pub key_up: bool,
     pub key_down: bool,
@@ -242,8 +243,17 @@ impl RoomTask {
                 tx,
                 response,
             } => {
-                let room_state = self.handle_join(player_id, username, tx);
-                let _ = response.send(room_state);
+                let join_result = self.handle_join(player_id, username, tx);
+                let _ = response.send(join_result.room_state.clone());
+                if join_result.broadcast_join {
+                    self.broadcast_except(
+                        Bytes::from(encode_player_joined(
+                            join_result.player_id.0,
+                            &join_result.joined_name,
+                        )),
+                        join_result.player_id,
+                    );
+                }
             }
             RoomCmd::Leave { player_id } => {
                 if self.remove_player(player_id) {
@@ -278,9 +288,9 @@ impl RoomTask {
         player_id: PlayerId,
         username: String,
         tx: mpsc::Sender<Bytes>,
-    ) -> Bytes {
+    ) -> JoinResult {
         let joined_name = username.clone();
-        let was_new = if let Some(idx) = self.player_index.get(&player_id).copied() {
+        let broadcast_join = if let Some(idx) = self.player_index.get(&player_id).copied() {
             let player = &mut self.players[idx];
             player.username = username;
             player.tx = tx;
@@ -308,18 +318,19 @@ impl RoomTask {
             true
         };
 
-        let room_state = encode_room_state(
+        let room_state = Bytes::from(encode_room_state(
             self.room_id.as_str(),
             self.map.name.as_str(),
             &self.players,
             &self.player_states,
-        );
+        ));
 
-        if was_new {
-            self.broadcast(encode_player_joined(player_id.0, &joined_name).into());
+        JoinResult {
+            player_id,
+            joined_name,
+            room_state,
+            broadcast_join,
         }
-
-        room_state.into()
     }
 
     fn remove_player(&mut self, player_id: PlayerId) -> bool {
@@ -341,6 +352,7 @@ impl RoomTask {
 
     fn simulate_tick(&mut self) {
         if self.players.is_empty() {
+            // Freeze the room while empty. No players means no world progression.
             return;
         }
 
@@ -349,7 +361,7 @@ impl RoomTask {
         self.scratch_hit_actions.clear();
 
         for idx in 0..self.players.len() {
-            let input = self.players[idx].input.clone();
+            let input = self.players[idx].input;
             let state = &mut self.player_states[idx];
             apply_input_to_state(&input, state);
 
@@ -467,27 +479,55 @@ impl RoomTask {
     fn broadcast(&mut self, payload: Bytes) {
         let mut idx = 0;
         while idx < self.players.len() {
-            if self.players[idx].tx.try_send(payload.clone()).is_ok() {
-                idx += 1;
+            match self.players[idx].tx.try_send(payload.clone()) {
+                Ok(()) => idx += 1,
+                Err(err) => {
+                    let disconnected_id = self.players[idx].id;
+                    match err {
+                        mpsc::error::TrySendError::Full(_) => {
+                            warn!(
+                                player_id = disconnected_id.0,
+                                room_id = self.room_id.as_str(),
+                                "dropping slow client: outbound channel full"
+                            );
+                        }
+                        mpsc::error::TrySendError::Closed(_) => {
+                            debug!(
+                                player_id = disconnected_id.0,
+                                room_id = self.room_id.as_str(),
+                                "removing disconnected client: outbound channel closed"
+                            );
+                        }
+                    }
+                    self.remove_player(disconnected_id);
+                    let left_payload = Bytes::from(encode_player_left(disconnected_id.0));
+                    self.broadcast_after_disconnect(left_payload);
+                }
+            }
+        }
+    }
+
+    fn broadcast_after_disconnect(&mut self, payload: Bytes) {
+        for player in &self.players {
+            let _ = player.tx.try_send(payload.clone());
+        }
+    }
+
+    fn broadcast_except(&mut self, payload: Bytes, skip_player_id: PlayerId) {
+        for player in &self.players {
+            if player.id == skip_player_id {
                 continue;
             }
-
-            let disconnected_id = self.players[idx].id;
-            self.remove_player(disconnected_id);
-            let left_payload = Bytes::from(encode_player_left(disconnected_id.0));
-            let _ = self.broadcast_after_disconnect(left_payload);
+            let _ = player.tx.try_send(payload.clone());
         }
     }
+}
 
-    fn broadcast_after_disconnect(&mut self, payload: Bytes) -> usize {
-        let mut sent = 0;
-        for player in &self.players {
-            if player.tx.try_send(payload.clone()).is_ok() {
-                sent += 1;
-            }
-        }
-        sent
-    }
+struct JoinResult {
+    player_id: PlayerId,
+    joined_name: String,
+    room_state: Bytes,
+    broadcast_join: bool,
 }
 
 fn apply_input_to_state(input: &PlayerInput, state: &mut PlayerState) {
