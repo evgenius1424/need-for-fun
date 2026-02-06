@@ -164,6 +164,9 @@ impl WasmProjectile {
     /// Step the projectile forward one tick.
     /// Returns true if the projectile exploded this tick.
     pub fn step(&mut self, map: &WasmMap, cols: i32, rows: i32) -> bool {
+        // Reset explosion state each tick - did_explode() only returns true for ONE tick
+        self.exploded = false;
+
         let bounds = calculate_bounds(cols, rows);
         if let Some(explosion) = step_projectile(&mut self.inner, &map.inner, bounds) {
             self.exploded = true;
@@ -193,32 +196,31 @@ impl WasmProjectile {
         self.inner.velocity_y = velocity_y;
         self.inner.age = age;
         self.inner.active = active;
+        // Reset explosion state on server sync
+        self.exploded = false;
     }
 
-    /// Export state to host array.
-    /// Format: [id_lo, id_hi, kind, x, y, prev_x, prev_y, vx, vy, owner_lo, owner_hi, age, active, exploded, exp_x, exp_y]
+    /// Export state to host array for bulk reads (render data only).
+    /// Format: [kind, x, y, prev_x, prev_y, vx, vy, age, active, exploded, exp_x, exp_y]
+    ///
+    /// IDs are NOT included - use get_id() and get_owner_id() for correct u64/BigInt values.
+    /// This avoids f32 precision loss for IDs > 2^24.
     pub fn export_to_host(&self, out: &mut [f32]) {
-        if out.len() < 16 {
+        if out.len() < 12 {
             return;
         }
-        let id = self.inner.id;
-        out[0] = (id & 0xFFFFFFFF) as f32;
-        out[1] = ((id >> 32) & 0xFFFFFFFF) as f32;
-        out[2] = self.inner.kind.as_u8() as f32;
-        out[3] = self.inner.x;
-        out[4] = self.inner.y;
-        out[5] = self.inner.prev_x;
-        out[6] = self.inner.prev_y;
-        out[7] = self.inner.velocity_x;
-        out[8] = self.inner.velocity_y;
-        let owner = self.inner.owner_id;
-        out[9] = (owner & 0xFFFFFFFF) as f32;
-        out[10] = ((owner >> 32) & 0xFFFFFFFF) as f32;
-        out[11] = self.inner.age as f32;
-        out[12] = if self.inner.active { 1.0 } else { 0.0 };
-        out[13] = if self.exploded { 1.0 } else { 0.0 };
-        out[14] = self.explosion_x;
-        out[15] = self.explosion_y;
+        out[0] = self.inner.kind.as_u8() as f32;
+        out[1] = self.inner.x;
+        out[2] = self.inner.y;
+        out[3] = self.inner.prev_x;
+        out[4] = self.inner.prev_y;
+        out[5] = self.inner.velocity_x;
+        out[6] = self.inner.velocity_y;
+        out[7] = self.inner.age as f32;
+        out[8] = if self.inner.active { 1.0 } else { 0.0 };
+        out[9] = if self.exploded { 1.0 } else { 0.0 };
+        out[10] = self.explosion_x;
+        out[11] = self.explosion_y;
     }
 
     pub fn is_active(&self) -> bool {
@@ -237,12 +239,32 @@ impl WasmProjectile {
         self.inner.y
     }
 
+    pub fn get_prev_x(&self) -> f32 {
+        self.inner.prev_x
+    }
+
+    pub fn get_prev_y(&self) -> f32 {
+        self.inner.prev_y
+    }
+
+    pub fn get_velocity_x(&self) -> f32 {
+        self.inner.velocity_x
+    }
+
+    pub fn get_velocity_y(&self) -> f32 {
+        self.inner.velocity_y
+    }
+
     pub fn get_explosion_x(&self) -> f32 {
         self.explosion_x
     }
 
     pub fn get_explosion_y(&self) -> f32 {
         self.explosion_y
+    }
+
+    pub fn get_id(&self) -> u64 {
+        self.inner.id
     }
 
     pub fn get_kind(&self) -> u8 {
@@ -392,4 +414,15 @@ pub fn get_projectile_speed(weapon_id: u8) -> f32 {
 #[wasm_bindgen]
 pub fn get_fire_rate(weapon_id: u8) -> i32 {
     constants::FIRE_RATE.get(weapon_id as usize).copied().unwrap_or(50)
+}
+
+// Tile size constants - JS should assert these match BRICK_WIDTH/BRICK_HEIGHT
+#[wasm_bindgen]
+pub fn get_tile_w() -> f32 {
+    constants::TILE_W
+}
+
+#[wasm_bindgen]
+pub fn get_tile_h() -> f32 {
+    constants::TILE_H
 }

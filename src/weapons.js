@@ -6,9 +6,9 @@ import { PhysicsConstants } from './engine/core/physics'
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 const { DAMAGE, PROJECTILE_SPEED, FIRE_RATE } = WeaponConstants
 
-// Get weapon constants from WASM (Rust physics_core is the source of truth)
 // Fallback values match physics_core/src/constants.rs
-const getC = () => PhysicsConstants ?? {
+// Object is created once, not per-call
+const FALLBACK = Object.freeze({
     SHAFT_RANGE: 96,
     SHOTGUN_RANGE: 800,
     SHOTGUN_PELLETS: 11,
@@ -17,6 +17,17 @@ const getC = () => PhysicsConstants ?? {
     GRENADE_LOFT: 2,
     MACHINE_RANGE: 1000,
     RAIL_RANGE: 2000,
+})
+
+// Cached constants - resolved once after WASM loads
+let cachedConstants = null
+const getC = () => {
+    if (cachedConstants) return cachedConstants
+    if (PhysicsConstants) {
+        cachedConstants = PhysicsConstants
+        return cachedConstants
+    }
+    return FALLBACK
 }
 
 const getHitscanRange = (weaponId) => {

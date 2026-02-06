@@ -159,8 +159,11 @@ export class WasmProjectile {
         return ret !== 0;
     }
     /**
-     * Export state to host array.
-     * Format: [id_lo, id_hi, kind, x, y, prev_x, prev_y, vx, vy, owner_lo, owner_hi, age, active, exploded, exp_x, exp_y]
+     * Export state to host array for bulk reads (render data only).
+     * Format: [kind, x, y, prev_x, prev_y, vx, vy, age, active, exploded, exp_x, exp_y]
+     *
+     * IDs are NOT included - use get_id() and get_owner_id() for correct u64/BigInt values.
+     * This avoids f32 precision loss for IDs > 2^24.
      * @param {Float32Array} out
      */
     export_to_host(out) {
@@ -190,6 +193,13 @@ export class WasmProjectile {
         return ret;
     }
     /**
+     * @returns {bigint}
+     */
+    get_id() {
+        const ret = wasm.wasmprojectile_get_id(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
      * @returns {number}
      */
     get_kind() {
@@ -202,6 +212,34 @@ export class WasmProjectile {
     get_owner_id() {
         const ret = wasm.wasmprojectile_get_owner_id(this.__wbg_ptr);
         return BigInt.asUintN(64, ret);
+    }
+    /**
+     * @returns {number}
+     */
+    get_prev_x() {
+        const ret = wasm.wasmprojectile_get_prev_x(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_prev_y() {
+        const ret = wasm.wasmprojectile_get_prev_y(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_velocity_x() {
+        const ret = wasm.wasmprojectile_get_velocity_x(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_velocity_y() {
+        const ret = wasm.wasmprojectile_get_velocity_y(this.__wbg_ptr);
+        return ret;
     }
     /**
      * @returns {number}
@@ -451,6 +489,22 @@ export function get_shotgun_range() {
  */
 export function get_shotgun_spread() {
     const ret = wasm.get_shotgun_spread();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
+export function get_tile_h() {
+    const ret = wasm.get_hit_radius_grenade();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
+export function get_tile_w() {
+    const ret = wasm.get_tile_w();
     return ret;
 }
 

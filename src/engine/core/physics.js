@@ -1,3 +1,5 @@
+import { Constants } from '../../helpers'
+
 const FRAME_MS = 16
 const MAX_TICKS_PER_FRAME = 5
 
@@ -58,6 +60,19 @@ async function initKernel() {
         getDamage: module.get_damage,
         getFireRate: module.get_fire_rate,
         getProjectileSpeed: module.get_projectile_speed,
+
+        // Tile sizes (for validation)
+        TILE_W: module.get_tile_w(),
+        TILE_H: module.get_tile_h(),
+    }
+
+    // Assert tile sizes match between JS and WASM to catch configuration drift
+    const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
+    if (PhysicsConstants.TILE_W !== BRICK_WIDTH || PhysicsConstants.TILE_H !== BRICK_HEIGHT) {
+        throw new Error(
+            `Tile size mismatch: WASM has ${PhysicsConstants.TILE_W}x${PhysicsConstants.TILE_H}, ` +
+            `JS has ${BRICK_WIDTH}x${BRICK_HEIGHT}`
+        )
     }
 }
 
@@ -135,6 +150,8 @@ function stepPlayer(player) {
             player.dead,
             runtime.map,
         )
+        // dead is host-owned; sync mirror immediately to avoid stale divergence
+        entry.mirror.dead = player.dead
     }
 
     runtime.scratchInput.set(player.keyUp, player.keyDown, player.keyLeft, player.keyRight)
