@@ -1,21 +1,14 @@
-import { Constants, GameConstants, Sound, Utils, WeaponConstants, WeaponId } from './helpers'
+import { Constants, GameConstants, Sound, WeaponConstants, WeaponId } from './helpers'
 import { Map } from './map'
 import { DEFAULT_MODEL, DEFAULT_SKIN } from './models'
 import { Weapons } from './weapons'
 
-const { trunc } = Utils
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
-const { isBrick, getRows } = Map
 const { MAX_HEALTH, MAX_ARMOR, SELF_DAMAGE_REDUCTION, ARMOR_ABSORPTION, RESPAWN_TIME } =
     GameConstants
 const { AMMO_START } = WeaponConstants
 
-const HALF_WIDTH = 9
 const HALF_HEIGHT = 24
-const CROUCH_HALF_HEIGHT = 8
-const GROUND_PROBE = 25
-const HEAD_PROBE = 25
-const CROUCH_HEAD_PROBE = 9
 const HALF_PI = Math.PI / 2
 const TWO_PI = Math.PI * 2
 
@@ -45,8 +38,6 @@ export class Player {
     cacheOnGround = false
     cacheBrickOnHead = false
     cacheBrickCrouchOnHead = false
-    #lastCacheX = NaN
-    #lastCacheY = NaN
 
     health = MAX_HEALTH
     armor = 0
@@ -71,25 +62,16 @@ export class Player {
     }
 
     setX(newX) {
-        if (newX !== this.x) {
-            this.x = newX
-            this.#updateCaches()
-        }
+        this.x = newX
     }
 
     setY(newY) {
-        if (newY !== this.y) {
-            this.y = newY
-            this.#updateCaches()
-        }
+        this.y = newY
     }
 
     setXY(newX, newY) {
-        if (newX !== this.x || newY !== this.y) {
-            this.x = newX
-            this.y = newY
-            this.#updateCaches()
-        }
+        this.x = newX
+        this.y = newY
     }
 
     isOnGround() {
@@ -220,71 +202,6 @@ export class Player {
         }
     }
 
-    #updateCaches() {
-        const cacheX = trunc(this.x)
-        const cacheY = trunc(this.y)
-        if (cacheX === this.#lastCacheX && cacheY === this.#lastCacheY) return
-        this.#lastCacheX = cacheX
-        this.#lastCacheY = cacheY
-
-        const { x, y } = this
-        const colL = trunc((x - HALF_WIDTH) / BRICK_WIDTH)
-        const colR = trunc((x + HALF_WIDTH) / BRICK_WIDTH)
-        const colLNarrow = trunc((x - CROUCH_HALF_HEIGHT) / BRICK_WIDTH)
-        const colRNarrow = trunc((x + CROUCH_HALF_HEIGHT) / BRICK_WIDTH)
-
-        this.cacheOnGround = this.#checkGround(colL, colR, y)
-        this.cacheBrickOnHead = this.#checkHead(colL, colR, y)
-        this.cacheBrickCrouchOnHead = this.#checkCrouchHead(colLNarrow, colRNarrow, y)
-    }
-
-    #checkGround(colL, colR, y) {
-        const rowProbe = trunc((y + GROUND_PROBE) / BRICK_HEIGHT)
-
-        // Treat map bottom boundary as ground
-        if (rowProbe >= getRows()) return true
-
-        const rowInside = trunc((y + HALF_HEIGHT - 1) / BRICK_HEIGHT)
-        const rowBody = trunc((y + CROUCH_HALF_HEIGHT) / BRICK_HEIGHT)
-
-        return (
-            (isBrick(colL, rowProbe) && !isBrick(colL, rowInside)) ||
-            (isBrick(colR, rowProbe) && !isBrick(colR, rowInside)) ||
-            (isBrick(colL, trunc((y + HALF_HEIGHT) / BRICK_HEIGHT)) && !isBrick(colL, rowBody)) ||
-            (isBrick(colR, trunc((y + HALF_HEIGHT) / BRICK_HEIGHT)) && !isBrick(colR, rowBody))
-        )
-    }
-
-    #checkHead(colL, colR, y) {
-        const rowProbe = trunc((y - HEAD_PROBE) / BRICK_HEIGHT)
-
-        // Treat map top boundary as ceiling
-        if (rowProbe < 0) return true
-
-        const rowInside = trunc((y - HALF_HEIGHT + 1) / BRICK_HEIGHT)
-        const rowBody = trunc((y - CROUCH_HALF_HEIGHT) / BRICK_HEIGHT)
-
-        return (
-            (isBrick(colL, rowProbe) && !isBrick(colL, rowInside)) ||
-            (isBrick(colR, rowProbe) && !isBrick(colR, rowInside)) ||
-            (isBrick(colL, trunc((y - HALF_HEIGHT) / BRICK_HEIGHT)) && !isBrick(colL, rowBody)) ||
-            (isBrick(colR, trunc((y - HALF_HEIGHT) / BRICK_HEIGHT)) && !isBrick(colR, rowBody))
-        )
-    }
-
-    #checkCrouchHead(colL, colR, y) {
-        const rowProbe = trunc((y - CROUCH_HEAD_PROBE) / BRICK_HEIGHT)
-        const rowInside = trunc((y - 7) / BRICK_HEIGHT)
-
-        return (
-            (isBrick(colL, rowProbe) && !isBrick(colL, rowInside)) ||
-            (isBrick(colR, rowProbe) && !isBrick(colR, rowInside)) ||
-            isBrick(colL, trunc((y - 23) / BRICK_HEIGHT)) ||
-            isBrick(colR, trunc((y - 23) / BRICK_HEIGHT)) ||
-            isBrick(colL, trunc((y - 16) / BRICK_HEIGHT)) ||
-            isBrick(colR, trunc((y - 16) / BRICK_HEIGHT))
-        )
-    }
 }
 
 function createAmmoArray() {

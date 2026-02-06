@@ -18,7 +18,7 @@ const ITEM_TOKENS = {
     4: 'weapon_rocket',
 }
 
-const state = { rows: 0, cols: 0, bricks: [], colors: [], respawns: [], items: [] }
+const state = { rows: 0, cols: 0, bricks: [], bricksFlat: [], colors: [], respawns: [], items: [] }
 
 export const Map = {
     async loadFromQuery() {
@@ -55,6 +55,7 @@ export const Map = {
 
     getRows: () => state.rows,
     getCols: () => state.cols,
+    getBricksFlat: () => state.bricksFlat,
     getItems: () => state.items,
 
     getRandomRespawn() {
@@ -97,6 +98,7 @@ function parseMapText(mapText) {
     state.rows = lines.length
     state.cols = Math.max(...lines.map((l) => l.length))
     state.bricks = []
+    state.bricksFlat = Array(state.rows * state.cols).fill(0)
     state.colors = []
     state.respawns = []
     state.items = []
@@ -111,6 +113,7 @@ function parseMapText(mapText) {
 
             const team = BRICK_CHARS[char]
             state.bricks[row][col] = !!team
+            state.bricksFlat[row * state.cols + col] = team ? 1 : 0
             state.colors[row][col] = team ? TEAM_COLORS[team] : null
 
             if (char === 'R') {

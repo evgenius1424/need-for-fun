@@ -49,6 +49,7 @@ const PROJECTILE_WEAPONS = new Set(['rocket', 'grenade', 'plasma', 'bfg'])
 
 await loadAssets()
 await Map.loadFromQuery()
+Physics.setMap(Map.getRows(), Map.getCols(), Map.getBricksFlat())
 
 const localPlayer = new Player()
 const network = new NetworkClient()

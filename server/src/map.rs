@@ -98,6 +98,20 @@ impl GameMap {
     }
 }
 
+impl physics_core::tilemap::TileMap for GameMap {
+    fn rows(&self) -> i32 {
+        self.rows
+    }
+
+    fn cols(&self) -> i32 {
+        self.cols
+    }
+
+    fn is_brick_at(&self, col: i32, row: i32) -> bool {
+        self.is_brick(col, row)
+    }
+}
+
 fn parse_map(map_text: &str, map_name: &str) -> GameMap {
     let rows_vec: Vec<&str> = map_text.trim_end_matches(['\r', '\n']).lines().collect();
     let rows = rows_vec.len() as i32;

@@ -4,6 +4,7 @@
     "description": "Need For Fun - 2D arena deathmatch",
     "type": "module",
     "scripts": {
+        "build:wasm": "wasm-pack build shared/physics_core --target web --out-dir ../../src/engine/wasm --out-name physics_core --features wasm",
         "dev": "vite",
         "build": "vite build",
         "preview": "vite preview",

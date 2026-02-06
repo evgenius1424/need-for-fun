@@ -1,0 +1,13 @@
+#![forbid(unsafe_code)]
+#![deny(rust_2018_idioms)]
+
+pub mod constants;
+pub mod step;
+pub mod test_vectors;
+pub mod tilemap;
+pub mod types;
+
+pub use step::step_player;
+
+#[cfg(feature = "wasm")]
+pub mod wasm;

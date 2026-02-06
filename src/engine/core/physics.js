@@ -1,253 +1,186 @@
-import { Console, Constants, Sound, Utils } from '../../helpers'
-import { Map } from '../../map'
-
-const { BRICK_WIDTH, BRICK_HEIGHT, PLAYER_MAX_VELOCITY_X } = Constants
-const { trunc } = Utils
-const { isBrick } = Map
-
 const FRAME_MS = 16
 const MAX_TICKS_PER_FRAME = 5
 
-const SPEED_JUMP_Y = [0, 0, 0.4, 0.8, 1.0, 1.2, 1.4]
-const SPEED_JUMP_X = [0, 0.33, 0.8, 1.1, 1.4, 1.8, 2.2]
-
-const physics = {
+const runtime = {
     time: 0,
     alpha: 1,
-    lastKeyUp: false,
-    lastWasJump: false,
-    speedJumpDir: 0,
-    logLine: 0,
-    lastLogTime: 0,
+    kernel: null,
+    map: null,
+    scratchInput: null,
+    scratchOutput: null,
+    playerStates: new Map(),
 }
 
-export const Physics = {
-    updateAllPlayers(players, timestamp) {
-        if (physics.time === 0) physics.time = timestamp - FRAME_MS
+async function initKernel() {
+    const module = await import('../wasm/physics_core.js')
+    await module.default()
+    runtime.kernel = new module.WasmPhysicsKernel()
+    runtime.map = null
+    runtime.scratchInput = new module.WasmPlayerInput()
+    runtime.scratchOutput = new Float32Array(12)
+    runtime.WasmMap = module.WasmMap
+    runtime.WasmPlayerState = module.WasmPlayerState
+}
 
-        const delta = timestamp - physics.time
-        let frames = trunc(delta / FRAME_MS)
+await initKernel()
+
+export const Physics = {
+    setMap(rows, cols, bricksFlat) {
+        const map = new runtime.WasmMap(rows, cols)
+        map.upload_bricks(bricksFlat)
+        runtime.map = map
+        runtime.playerStates.clear()
+    },
+
+    updateAllPlayers(players, timestamp) {
+        if (!runtime.map) return false
+        if (runtime.time === 0) runtime.time = timestamp - FRAME_MS
+
+        const delta = timestamp - runtime.time
+        let frames = Math.trunc(delta / FRAME_MS)
         if (frames === 0) {
-            physics.alpha = delta / FRAME_MS
+            runtime.alpha = delta / FRAME_MS
             return false
         }
 
         if (frames > MAX_TICKS_PER_FRAME) {
             frames = MAX_TICKS_PER_FRAME
-            physics.time = timestamp - frames * FRAME_MS
+            runtime.time = timestamp - frames * FRAME_MS
         }
 
-        physics.time += frames * FRAME_MS
+        runtime.time += frames * FRAME_MS
 
-        // Apply same number of physics frames to ALL players
         while (frames-- > 0) {
             for (const player of players) {
-                player.prevX = player.x
-                player.prevY = player.y
-                if (!player.dead) playerMove(player)
+                stepPlayer(player)
             }
         }
-        physics.alpha = (timestamp - physics.time) / FRAME_MS
+
+        runtime.alpha = (timestamp - runtime.time) / FRAME_MS
         return true
     },
+
     stepPlayers(players, frames = 1) {
+        if (!runtime.map) return
         let remaining = Math.max(0, frames | 0)
         while (remaining-- > 0) {
             for (const player of players) {
-                player.prevX = player.x
-                player.prevY = player.y
-                if (!player.dead) playerMove(player)
+                stepPlayer(player)
             }
         }
     },
+
     getAlpha() {
-        return physics.alpha
+        return runtime.alpha
     },
 }
 
-function playerMove(player) {
-    applyPhysics(player)
+function stepPlayer(player) {
+    let entry = runtime.playerStates.get(player.id)
+    if (!entry) {
+        entry = createEntry(player)
+        runtime.playerStates.set(player.id, entry)
+    }
 
-    if (player.doublejumpCountdown > 0) player.doublejumpCountdown--
-    if (player.isOnGround()) player.velocityY = 0
+    if (hasHostDiverged(player, entry.mirror)) {
+        entry.state.import_host_state(
+            player.x,
+            player.y,
+            player.prevX,
+            player.prevY,
+            player.velocityX,
+            player.velocityY,
+            player.crouch,
+            player.doublejumpCountdown,
+            player.speedJump,
+            player.dead,
+            runtime.map,
+        )
+    }
 
-    handleJump(player)
-    handleCrouch(player)
-    handleHorizontalMovement(player)
+    runtime.scratchInput.set(player.keyUp, player.keyDown, player.keyLeft, player.keyRight)
+    runtime.kernel.step_player(entry.state, runtime.scratchInput, runtime.map)
+
+    entry.state.export_to_host(runtime.scratchOutput)
+    applyOutput(player, entry.mirror, runtime.scratchOutput)
 }
 
-function applyPhysics(player) {
-    const startX = player.x
-    const startY = player.y
-
-    player.velocityY += 0.056
-    if (player.velocityY > -1 && player.velocityY < 0) player.velocityY /= 1.11
-    if (player.velocityY > 0 && player.velocityY < 5) player.velocityY *= 1.1
-
-    if (Math.abs(player.velocityX) > 0.2) {
-        if (player.keyLeft === player.keyRight) {
-            player.velocityX /= player.isOnGround() ? 1.14 : 1.025
-        }
-    } else {
-        player.velocityX = 0
-    }
-
-    const speedX = getSpeedX(player)
-    player.setXY(player.x + player.velocityX + speedX, player.y + player.velocityY)
-
-    if (player.crouch) {
-        if (player.isOnGround() && (player.isBrickCrouchOnHead() || player.velocityY > 0)) {
-            player.velocityY = 0
-            player.setY(
-                trunc(Math.round(player.y) / BRICK_HEIGHT) * BRICK_HEIGHT + BRICK_HEIGHT / 2,
-            )
-        } else if (player.isBrickCrouchOnHead() && player.velocityY < 0) {
-            player.velocityY = 0
-            player.doublejumpCountdown = 3
-            player.setY(
-                trunc(Math.round(player.y) / BRICK_HEIGHT) * BRICK_HEIGHT + BRICK_HEIGHT / 2,
-            )
-        }
-    }
-
-    if (player.velocityX !== 0) {
-        const col = trunc(Math.round(startX + (player.velocityX < 0 ? -11 : 11)) / BRICK_WIDTH)
-        const checkY = player.crouch ? player.y : startY
-        const headOff = player.crouch ? 8 : 16
-
-        if (
-            isBrick(col, trunc(Math.round(checkY - headOff) / BRICK_HEIGHT)) ||
-            isBrick(col, trunc(Math.round(checkY) / BRICK_HEIGHT)) ||
-            isBrick(col, trunc(Math.round(checkY + BRICK_HEIGHT) / BRICK_HEIGHT))
-        ) {
-            player.setX(trunc(startX / BRICK_WIDTH) * BRICK_WIDTH + (player.velocityX < 0 ? 9 : 22))
-            player.velocityX = 0
-            player.speedJump = 0
-            if (startX !== player.x) logPhysics('wall', player)
-        }
-    }
-
-    if (player.isOnGround() && (player.isBrickOnHead() || player.velocityY > 0)) {
-        player.velocityY = 0
-        player.setY(trunc(Math.round(player.y) / BRICK_HEIGHT) * BRICK_HEIGHT + BRICK_HEIGHT / 2)
-    } else if (player.isBrickOnHead() && player.velocityY < 0) {
-        player.velocityY = 0
-        player.doublejumpCountdown = 3
-    }
-
-    player.velocityX = clamp(player.velocityX, -5, 5)
-    player.velocityY = clamp(player.velocityY, -5, 5)
-}
-
-function handleJump(player) {
-    const keysChanged =
-        player.keyUp !== physics.lastKeyUp ||
-        (player.keyLeft && physics.speedJumpDir !== -1) ||
-        (player.keyRight && physics.speedJumpDir !== 1)
-
-    if (player.speedJump > 0 && keysChanged) {
-        player.speedJump = 0
-        logPhysics('sj 0 - change keys', player)
-    }
-
-    physics.lastKeyUp = player.keyUp
-    let jumped = false
-
-    if (player.keyUp && player.isOnGround() && !player.isBrickOnHead() && !physics.lastWasJump) {
-        const isDoubleJump = player.doublejumpCountdown > 4 && player.doublejumpCountdown < 11
-
-        if (isDoubleJump) {
-            player.doublejumpCountdown = 14
-            player.velocityY = -3
-
-            const totalSpeedX =
-                player.velocityX !== 0
-                    ? Math.abs(player.velocityX) + SPEED_JUMP_X[player.speedJump]
-                    : 0
-
-            if (totalSpeedX > 3) {
-                const bonus = totalSpeedX - 3
-                player.velocityY -= bonus
-                logPhysics(`dj higher (bonus +${formatNum(bonus)})`, player)
-            } else {
-                logPhysics('dj standard', player)
-            }
-            player.crouch = false
-            Sound.jump(player.model)
-        } else {
-            if (player.doublejumpCountdown === 0) {
-                player.doublejumpCountdown = 14
-                Sound.jump(player.model)
-            }
-            player.velocityY = -2.9 + SPEED_JUMP_Y[player.speedJump]
-            logPhysics('jump', player)
-
-            if (
-                player.speedJump < 6 &&
-                !physics.lastWasJump &&
-                player.keyLeft !== player.keyRight
-            ) {
-                physics.speedJumpDir = player.keyLeft ? -1 : 1
-                player.speedJump++
-                logPhysics('increase sj', player)
-            }
-        }
-        jumped = true
-    } else if (player.isOnGround() && player.speedJump > 0 && !player.keyDown) {
-        player.speedJump = 0
-        logPhysics('sj 0 - on ground', player)
-    }
-
-    physics.lastWasJump = jumped
-}
-
-function handleCrouch(player) {
-    if (!player.keyUp && player.keyDown) {
-        player.crouch = player.isOnGround() || player.isBrickCrouchOnHead()
-    } else {
-        player.crouch = player.isOnGround() && player.isBrickCrouchOnHead()
+function createEntry(player) {
+    const state = new runtime.WasmPlayerState(toWasmPlayerId(player.id))
+    state.import_host_state(
+        player.x,
+        player.y,
+        player.prevX,
+        player.prevY,
+        player.velocityX,
+        player.velocityY,
+        player.crouch,
+        player.doublejumpCountdown,
+        player.speedJump,
+        player.dead,
+        runtime.map,
+    )
+    return {
+        state,
+        mirror: {
+            x: player.x,
+            y: player.y,
+            prevX: player.prevX,
+            prevY: player.prevY,
+            velocityX: player.velocityX,
+            velocityY: player.velocityY,
+            crouch: player.crouch,
+            doublejumpCountdown: player.doublejumpCountdown,
+            speedJump: player.speedJump,
+            dead: player.dead,
+        },
     }
 }
 
-function handleHorizontalMovement(player) {
-    if (player.keyLeft === player.keyRight) return
-
-    let maxVel = PLAYER_MAX_VELOCITY_X
-    if (player.crouch) maxVel--
-
-    const sign = player.keyLeft ? -1 : 1
-    if (player.velocityX * sign < 0) player.velocityX += sign * 0.8
-
-    const absVel = Math.abs(player.velocityX)
-    if (absVel < maxVel) {
-        player.velocityX += sign * 0.35
-    } else if (absVel > maxVel) {
-        player.velocityX = sign * maxVel
-    }
+function toWasmPlayerId(value) {
+    if (typeof value === 'bigint') return value
+    if (typeof value === 'number') return BigInt(Math.trunc(value))
+    if (typeof value === 'string') return BigInt(value)
+    return 0n
 }
 
-function getSpeedX(player) {
-    return player.velocityX !== 0 ? Math.sign(player.velocityX) * SPEED_JUMP_X[player.speedJump] : 0
-}
-
-function logPhysics(text, player) {
-    const now = performance.now()
-    if (now - physics.lastLogTime < 50) return
-    physics.lastLogTime = now
-    physics.logLine++
-
-    const dx = getSpeedX(player)
-    Console.writeText(
-        `${physics.logLine} ${text} (x:${formatNum(player.x)} y:${formatNum(player.y)} ` +
-            `dx:${formatNum(dx)} dy:${formatNum(player.velocityY)} sj:${player.speedJump})`,
+function hasHostDiverged(player, mirror) {
+    return (
+        player.x !== mirror.x ||
+        player.y !== mirror.y ||
+        player.prevX !== mirror.prevX ||
+        player.prevY !== mirror.prevY ||
+        player.velocityX !== mirror.velocityX ||
+        player.velocityY !== mirror.velocityY ||
+        player.crouch !== mirror.crouch ||
+        player.doublejumpCountdown !== mirror.doublejumpCountdown ||
+        player.speedJump !== mirror.speedJump ||
+        player.dead !== mirror.dead
     )
 }
 
-function formatNum(val) {
-    const i = trunc(val)
-    return `${i}.${Math.abs(trunc(val * 10) - i * 10)}`
-}
+function applyOutput(player, mirror, out) {
+    player.x = out[0]
+    player.y = out[1]
+    player.prevX = out[2]
+    player.prevY = out[3]
+    player.velocityX = out[4]
+    player.velocityY = out[5]
+    player.crouch = out[6] !== 0
+    player.doublejumpCountdown = out[7] | 0
+    player.speedJump = out[8] | 0
+    player.cacheOnGround = out[9] !== 0
+    player.cacheBrickOnHead = out[10] !== 0
+    player.cacheBrickCrouchOnHead = out[11] !== 0
 
-function clamp(val, min, max) {
-    return val < min ? min : val > max ? max : val
+    mirror.x = player.x
+    mirror.y = player.y
+    mirror.prevX = player.prevX
+    mirror.prevY = player.prevY
+    mirror.velocityX = player.velocityX
+    mirror.velocityY = player.velocityY
+    mirror.crouch = player.crouch
+    mirror.doublejumpCountdown = player.doublejumpCountdown
+    mirror.speedJump = player.speedJump
+    mirror.dead = player.dead
 }
