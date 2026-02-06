@@ -11,6 +11,9 @@ const runtime = {
     playerStates: new Map(),
 }
 
+// Constants loaded from WASM - single source of truth from Rust
+export let PhysicsConstants = null
+
 async function initKernel() {
     const module = await import('../wasm/physics_core.js')
     await module.default()
@@ -20,6 +23,42 @@ async function initKernel() {
     runtime.scratchOutput = new Float32Array(12)
     runtime.WasmMap = module.WasmMap
     runtime.WasmPlayerState = module.WasmPlayerState
+
+    // Load all constants from WASM - Rust physics_core/src/constants.rs is the source of truth
+    PhysicsConstants = {
+        // Projectile physics
+        GRAVITY: module.get_projectile_gravity(),
+        BOUNCE_DECAY: module.get_bounce_decay(),
+        GRENADE_FUSE: module.get_grenade_fuse(),
+        GRENADE_MIN_VELOCITY: module.get_grenade_min_velocity(),
+        BOUNDS_MARGIN: module.get_bounds_margin(),
+        SELF_HIT_GRACE: module.get_self_hit_grace(),
+        GRENADE_HIT_GRACE: module.get_grenade_hit_grace(),
+        EXPLOSION_RADIUS: module.get_explosion_radius(),
+
+        // Weapon ranges
+        SHAFT_RANGE: module.get_shaft_range(),
+        SHOTGUN_RANGE: module.get_shotgun_range(),
+        SHOTGUN_PELLETS: module.get_shotgun_pellets(),
+        SHOTGUN_SPREAD: module.get_shotgun_spread(),
+        GAUNTLET_RANGE: module.get_gauntlet_range(),
+        GRENADE_LOFT: module.get_grenade_loft(),
+        MACHINE_RANGE: module.get_machine_range(),
+        RAIL_RANGE: module.get_rail_range(),
+
+        // Hit radii - note: get_hit_radius_rocket has a wasm-bindgen bug, use get_hit_radius_bfg value (both are 28)
+        HIT_RADIUS: {
+            rocket: module.get_hit_radius_bfg(), // Both rocket and bfg are 28.0 in Rust
+            bfg: module.get_hit_radius_bfg(),
+            grenade: module.get_hit_radius_grenade(),
+            plasma: module.get_hit_radius_plasma(),
+        },
+
+        // Weapon stats (indexed by WeaponId)
+        getDamage: module.get_damage,
+        getFireRate: module.get_fire_rate,
+        getProjectileSpeed: module.get_projectile_speed,
+    }
 }
 
 await initKernel()

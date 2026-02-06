@@ -1,17 +1,23 @@
 import { Constants, Sound } from './helpers'
 import { Map as GameMap } from './map'
+import { PhysicsConstants } from './engine/core/physics'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
-const GRAVITY = 0.18
-const BOUNCE_DECAY = 0.75
-const GRENADE_FUSE = 120
-const GRENADE_MIN_VELOCITY = 0.5
-const BOUNDS_MARGIN = 100
-const SELF_HIT_GRACE = 8
-const GRENADE_HIT_GRACE = 12
+// Fallback constants in case WASM hasn't loaded yet (should not happen in normal flow)
+const FALLBACK = {
+    GRAVITY: 0.18,
+    BOUNCE_DECAY: 0.75,
+    GRENADE_FUSE: 120,
+    GRENADE_MIN_VELOCITY: 0.5,
+    BOUNDS_MARGIN: 100,
+    SELF_HIT_GRACE: 8,
+    GRENADE_HIT_GRACE: 12,
+    HIT_RADIUS: { rocket: 28, bfg: 28, grenade: 16, plasma: 20 },
+}
 
-const HIT_RADIUS = { rocket: 28, bfg: 28, grenade: 16, plasma: 20 }
+// Get constants from WASM (Rust physics_core is the source of truth)
+const C = () => PhysicsConstants ?? FALLBACK
 
 const EXPLODE_SOUND = {
     rocket: Sound.rocketExplode,
@@ -44,8 +50,9 @@ export const Projectiles = {
     update() {
         const cols = GameMap.getCols()
         const rows = GameMap.getRows()
-        const maxX = cols * BRICK_WIDTH + BOUNDS_MARGIN
-        const maxY = rows * BRICK_HEIGHT + BOUNDS_MARGIN
+        const c = C()
+        const maxX = cols * BRICK_WIDTH + c.BOUNDS_MARGIN
+        const maxY = rows * BRICK_HEIGHT + c.BOUNDS_MARGIN
 
         for (let i = state.projectiles.length - 1; i >= 0; i--) {
             const proj = state.projectiles[i]
@@ -71,15 +78,15 @@ export const Projectiles = {
             proj.x = newX
             proj.y = newY
 
-            if (proj.type === 'grenade' && proj.age > GRENADE_FUSE) {
+            if (proj.type === 'grenade' && proj.age > c.GRENADE_FUSE) {
                 this.explode(proj)
                 continue
             }
 
             if (
-                proj.x < -BOUNDS_MARGIN ||
+                proj.x < -c.BOUNDS_MARGIN ||
                 proj.x > maxX ||
-                proj.y < -BOUNDS_MARGIN ||
+                proj.y < -c.BOUNDS_MARGIN ||
                 proj.y > maxY
             ) {
                 proj.active = false
@@ -101,12 +108,13 @@ export const Projectiles = {
 
     checkPlayerCollision(player, proj) {
         if (!proj.active) return false
-        if (proj.ownerId === player.id && proj.age < SELF_HIT_GRACE) return false
-        if (proj.type === 'grenade' && proj.age < GRENADE_HIT_GRACE) return false
+        const c = C()
+        if (proj.ownerId === player.id && proj.age < c.SELF_HIT_GRACE) return false
+        if (proj.type === 'grenade' && proj.age < c.GRENADE_HIT_GRACE) return false
 
         const dx = player.x - proj.x
         const dy = player.y - proj.y
-        const radius = HIT_RADIUS[proj.type] ?? 20
+        const radius = c.HIT_RADIUS[proj.type] ?? 20
 
         return dx * dx + dy * dy < radius * radius
     },
@@ -191,8 +199,9 @@ export const Projectiles = {
 }
 
 function applyGrenadePhysics(proj) {
+    const c = C()
     const speed = Math.hypot(proj.velocityX, proj.velocityY)
-    proj.velocityY += GRAVITY + speed * 0.02
+    proj.velocityY += c.GRAVITY + speed * 0.02
     proj.velocityX *= 0.995
 }
 
@@ -207,15 +216,16 @@ function checkWallCollision(proj, newX, newY) {
         return true
     }
 
+    const c = C()
     const oldColX = Math.floor(proj.x / BRICK_WIDTH)
     const oldColY = Math.floor(proj.y / BRICK_HEIGHT)
 
-    if (oldColX !== colX) proj.velocityX *= -BOUNCE_DECAY
-    if (oldColY !== colY) proj.velocityY *= -BOUNCE_DECAY
+    if (oldColX !== colX) proj.velocityX *= -c.BOUNCE_DECAY
+    if (oldColY !== colY) proj.velocityY *= -c.BOUNCE_DECAY
 
     if (
-        Math.abs(proj.velocityX) < GRENADE_MIN_VELOCITY &&
-        Math.abs(proj.velocityY) < GRENADE_MIN_VELOCITY
+        Math.abs(proj.velocityX) < c.GRENADE_MIN_VELOCITY &&
+        Math.abs(proj.velocityY) < c.GRENADE_MIN_VELOCITY
     ) {
         proj.velocityX = 0
         proj.velocityY = 0

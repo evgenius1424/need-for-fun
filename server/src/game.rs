@@ -1,10 +1,19 @@
 use rand::Rng;
 
-use crate::constants::{PLAYER_HALF_H, TILE_H, TILE_W};
+use crate::constants::{
+    BOUNCE_DECAY, BOUNDS_MARGIN, DAMAGE, EXPLOSION_RADIUS, FIRE_RATE, GAUNTLET_PLAYER_RADIUS,
+    GAUNTLET_RANGE, GRENADE_FUSE, GRENADE_HIT_GRACE, GRENADE_LOFT, GRENADE_MIN_VELOCITY,
+    HITSCAN_PLAYER_RADIUS, MACHINE_RANGE, PICKUP_RADIUS, PLAYER_HALF_H, PROJECTILE_GRAVITY,
+    PROJECTILE_SPEED, RAIL_RANGE, SELF_HIT_GRACE, SHAFT_RANGE, SHOTGUN_PELLETS, SHOTGUN_RANGE,
+    SHOTGUN_SPREAD, TILE_H, TILE_W,
+};
 use crate::map::GameMap;
 use crate::physics::PlayerState;
 use crate::protocol::EffectEvent;
 use smallvec::SmallVec;
+
+// Re-export Projectile types from physics_core
+pub use physics_core::projectile::{Explosion, Projectile, ProjectileKind};
 
 pub use crate::constants::WEAPON_COUNT;
 pub type EventVec = SmallVec<[EffectEvent; 16]>;
@@ -17,26 +26,6 @@ const SELF_DAMAGE_REDUCTION: f32 = 0.5;
 const QUAD_MULTIPLIER: f32 = 3.0;
 const QUAD_DURATION: i32 = 900;
 const RESPAWN_TIME: i32 = 180;
-
-const EXPLOSION_RADIUS: f32 = 90.0;
-const PICKUP_RADIUS: f32 = 16.0;
-const HITSCAN_PLAYER_RADIUS: f32 = 14.0;
-const GAUNTLET_PLAYER_RADIUS: f32 = 22.0;
-const GAUNTLET_RANGE: f32 = 50.0;
-
-const SHAFT_RANGE: f32 = TILE_W * 3.0;
-const SHOTGUN_RANGE: f32 = 800.0;
-const SHOTGUN_PELLETS: usize = 11;
-const SHOTGUN_SPREAD: f32 = 0.15;
-const GRENADE_LOFT: f32 = 2.0;
-
-const GRAVITY: f32 = 0.18;
-const BOUNCE_DECAY: f32 = 0.75;
-const GRENADE_FUSE: i32 = 120;
-const GRENADE_MIN_VELOCITY: f32 = 0.5;
-const BOUNDS_MARGIN: f32 = 100.0;
-const SELF_HIT_GRACE: i32 = 8;
-const GRENADE_HIT_GRACE: i32 = 12;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WeaponId {
@@ -66,48 +55,6 @@ impl WeaponId {
             _ => None,
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ProjectileKind {
-    Rocket,
-    Grenade,
-    Plasma,
-    Bfg,
-}
-
-impl ProjectileKind {
-    pub fn as_u8(&self) -> u8 {
-        match self {
-            Self::Rocket => 0,
-            Self::Grenade => 1,
-            Self::Plasma => 2,
-            Self::Bfg => 3,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Projectile {
-    pub id: u64,
-    pub kind: ProjectileKind,
-    pub x: f32,
-    pub y: f32,
-    pub prev_x: f32,
-    pub prev_y: f32,
-    pub velocity_x: f32,
-    pub velocity_y: f32,
-    pub owner_id: u64,
-    pub age: i32,
-    pub active: bool,
-}
-
-#[derive(Clone, Debug)]
-pub struct Explosion {
-    pub x: f32,
-    pub y: f32,
-    pub kind: ProjectileKind,
-    pub owner_id: u64,
 }
 
 pub fn can_fire(player: &PlayerState) -> bool {
@@ -181,10 +128,10 @@ pub fn try_fire(
         }
         WeaponId::Machine | WeaponId::Rail | WeaponId::Shaft => {
             let range = match weapon {
-                WeaponId::Machine => 1000.0,
-                WeaponId::Rail => 2000.0,
+                WeaponId::Machine => MACHINE_RANGE,
+                WeaponId::Rail => RAIL_RANGE,
                 WeaponId::Shaft => SHAFT_RANGE,
-                _ => 1000.0,
+                _ => MACHINE_RANGE,
             };
             let (x, y) = get_weapon_origin(player);
             let trace = ray_trace(x, y, player.aim_angle, range, map);
@@ -581,41 +528,15 @@ fn give_weapon(player: &mut PlayerState, weapon: WeaponId, ammo: i32) {
 }
 
 fn damage_for(weapon: WeaponId) -> f32 {
-    match weapon {
-        WeaponId::Gauntlet => 35.0,
-        WeaponId::Machine => 5.0,
-        WeaponId::Shotgun => 7.0,
-        WeaponId::Grenade => 65.0,
-        WeaponId::Rocket => 100.0,
-        WeaponId::Rail => 75.0,
-        WeaponId::Plasma => 14.0,
-        WeaponId::Shaft => 3.0,
-        WeaponId::Bfg => 100.0,
-    }
+    DAMAGE[weapon as usize]
 }
 
 fn fire_rate(weapon: WeaponId) -> i32 {
-    match weapon {
-        WeaponId::Gauntlet => 25,
-        WeaponId::Machine => 5,
-        WeaponId::Shotgun => 50,
-        WeaponId::Grenade => 45,
-        WeaponId::Rocket => 40,
-        WeaponId::Rail => 85,
-        WeaponId::Plasma => 5,
-        WeaponId::Shaft => 1,
-        WeaponId::Bfg => 100,
-    }
+    FIRE_RATE[weapon as usize]
 }
 
 fn projectile_speed(weapon: WeaponId) -> f32 {
-    match weapon {
-        WeaponId::Rocket => 6.0,
-        WeaponId::Plasma => 7.0,
-        WeaponId::Bfg => 7.0,
-        WeaponId::Grenade => 5.0,
-        _ => 6.0,
-    }
+    PROJECTILE_SPEED[weapon as usize]
 }
 
 fn projectile_config(weapon: WeaponId) -> (f32, f32, ProjectileKind) {
@@ -794,18 +715,13 @@ fn find_melee_target(
 fn check_player_collision(player: &PlayerState, proj: &Projectile) -> bool {
     let dx = player.x - proj.x;
     let dy = player.y - proj.y;
-    let radius = match proj.kind {
-        ProjectileKind::Rocket => 28.0,
-        ProjectileKind::Bfg => 28.0,
-        ProjectileKind::Grenade => 16.0,
-        ProjectileKind::Plasma => 20.0,
-    };
+    let radius = proj.kind.hit_radius();
     dx * dx + dy * dy < radius * radius
 }
 
 fn apply_grenade_physics(proj: &mut Projectile) {
     let speed = (proj.velocity_x * proj.velocity_x + proj.velocity_y * proj.velocity_y).sqrt();
-    proj.velocity_y += GRAVITY + speed * 0.02;
+    proj.velocity_y += PROJECTILE_GRAVITY + speed * 0.02;
     proj.velocity_x *= 0.995;
 }
 

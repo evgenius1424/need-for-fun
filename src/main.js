@@ -11,7 +11,7 @@ import {
 } from './helpers'
 import { Map } from './map'
 import { Player } from './player'
-import { Physics } from './engine/core/physics'
+import { Physics, PhysicsConstants } from './engine/core/physics'
 import { Render } from './engine/render'
 import { Projectiles } from './projectiles'
 import { loadAssets, ensureModelLoaded } from './assets'
@@ -23,8 +23,10 @@ const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 const { DAMAGE, AMMO_PICKUP } = WeaponConstants
 const { MAX_HEALTH, MEGA_HEALTH, QUAD_MULTIPLIER, QUAD_DURATION } = GameConstants
 
+// Get constants from WASM (Rust physics_core is the source of truth)
+const getExplosionRadius = () => PhysicsConstants?.EXPLOSION_RADIUS ?? 90
+
 const AIM_INPUT_SCALE = 0.5
-const EXPLOSION_RADIUS = 90
 const PICKUP_RADIUS = 16
 const MAX_AIM_DELTA = 12
 const HITSCAN_PLAYER_RADIUS = 14
@@ -101,6 +103,7 @@ function setupExplosionHandlers() {
     Projectiles.onExplosion((x, y, type, proj) => {
         if (type !== 'rocket') return
 
+        const explosionRadius = getExplosionRadius()
         for (const player of BotManager.getAllPlayers()) {
             if (player.dead) continue
 
@@ -108,9 +111,9 @@ function setupExplosionHandlers() {
             const dy = player.y - y
             const distance = Math.hypot(dx, dy)
 
-            if (distance >= EXPLOSION_RADIUS) continue
+            if (distance >= explosionRadius) continue
 
-            const falloff = 1 - distance / EXPLOSION_RADIUS
+            const falloff = 1 - distance / explosionRadius
             const damage = DAMAGE[WeaponId.ROCKET] * falloff
 
             if (damage > 0) {

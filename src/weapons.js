@@ -1,27 +1,43 @@
 import { Constants, Sound, WeaponConstants, WeaponId } from './helpers'
 import { Map } from './map'
 import { Projectiles } from './projectiles'
+import { PhysicsConstants } from './engine/core/physics'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 const { DAMAGE, PROJECTILE_SPEED, FIRE_RATE } = WeaponConstants
 
-const SHAFT_RANGE = BRICK_WIDTH * 3
-const HITSCAN_RANGE = {
-    [WeaponId.MACHINE]: 1000,
-    [WeaponId.RAIL]: 2000,
-    [WeaponId.SHAFT]: SHAFT_RANGE,
+// Get weapon constants from WASM (Rust physics_core is the source of truth)
+// Fallback values match physics_core/src/constants.rs
+const getC = () => PhysicsConstants ?? {
+    SHAFT_RANGE: 96,
+    SHOTGUN_RANGE: 800,
+    SHOTGUN_PELLETS: 11,
+    SHOTGUN_SPREAD: 0.15,
+    GAUNTLET_RANGE: 50,
+    GRENADE_LOFT: 2,
+    MACHINE_RANGE: 1000,
+    RAIL_RANGE: 2000,
 }
-const SHOTGUN_RANGE = 800
-const SHOTGUN_PELLETS = 11
-const SHOTGUN_SPREAD = 0.15
-const GAUNTLET_RANGE = 50
-const GRENADE_LOFT = 2
 
-const PROJECTILE_CONFIG = {
-    [WeaponId.GRENADE]: { type: 'grenade', offset: 14, loft: GRENADE_LOFT, sound: Sound.grenade },
-    [WeaponId.ROCKET]: { type: 'rocket', offset: 18, loft: 0, sound: Sound.rocket },
-    [WeaponId.PLASMA]: { type: 'plasma', offset: 12, loft: 0, sound: Sound.plasma },
-    [WeaponId.BFG]: { type: 'bfg', offset: 12, loft: 0, sound: Sound.bfg },
+const getHitscanRange = (weaponId) => {
+    const c = getC()
+    switch (weaponId) {
+        case WeaponId.MACHINE: return c.MACHINE_RANGE
+        case WeaponId.RAIL: return c.RAIL_RANGE
+        case WeaponId.SHAFT: return c.SHAFT_RANGE
+        default: return c.MACHINE_RANGE
+    }
+}
+
+const getProjectileConfig = (weaponId) => {
+    const c = getC()
+    switch (weaponId) {
+        case WeaponId.GRENADE: return { type: 'grenade', offset: 14, loft: c.GRENADE_LOFT, sound: Sound.grenade }
+        case WeaponId.ROCKET: return { type: 'rocket', offset: 18, loft: 0, sound: Sound.rocket }
+        case WeaponId.PLASMA: return { type: 'plasma', offset: 12, loft: 0, sound: Sound.plasma }
+        case WeaponId.BFG: return { type: 'bfg', offset: 12, loft: 0, sound: Sound.bfg }
+        default: return null
+    }
 }
 
 const HITSCAN_CONFIG = {
@@ -35,7 +51,7 @@ export const Weapons = {
         if (weaponId === WeaponId.GAUNTLET) return fireGauntlet(player)
         if (weaponId === WeaponId.SHOTGUN) return fireShotgun(player)
 
-        const projCfg = PROJECTILE_CONFIG[weaponId]
+        const projCfg = getProjectileConfig(weaponId)
         if (projCfg) return fireProjectile(player, weaponId, projCfg)
 
         const hitCfg = HITSCAN_CONFIG[weaponId]
@@ -50,28 +66,30 @@ export const Weapons = {
 }
 
 function fireGauntlet(player) {
+    const c = getC()
     const { cos, sin } = Math
     const angle = player.aimAngle
     const { x, y } = getWeaponOrigin(player)
     return {
         type: 'gauntlet',
         damage: DAMAGE[WeaponId.GAUNTLET],
-        hitX: x + cos(angle) * GAUNTLET_RANGE,
-        hitY: y + sin(angle) * GAUNTLET_RANGE,
+        hitX: x + cos(angle) * c.GAUNTLET_RANGE,
+        hitY: y + sin(angle) * c.GAUNTLET_RANGE,
         angle,
     }
 }
 
 function fireShotgun(player) {
+    const c = getC()
     Sound.shotgun()
     const { aimAngle } = player
     const { x, y } = getWeaponOrigin(player)
     const pellets = []
 
-    for (let i = 0; i < SHOTGUN_PELLETS; i++) {
-        const angle = aimAngle + (Math.random() - 0.5) * SHOTGUN_SPREAD
+    for (let i = 0; i < c.SHOTGUN_PELLETS; i++) {
+        const angle = aimAngle + (Math.random() - 0.5) * c.SHOTGUN_SPREAD
         pellets.push({
-            trace: rayTrace(x, y, angle, SHOTGUN_RANGE),
+            trace: rayTrace(x, y, angle, c.SHOTGUN_RANGE),
             damage: DAMAGE[WeaponId.SHOTGUN],
         })
     }
@@ -113,7 +131,7 @@ function fireHitscan(player, weaponId, cfg) {
     const { x, y } = getWeaponOrigin(player)
     return {
         type: cfg.type,
-        trace: rayTrace(x, y, aimAngle, HITSCAN_RANGE[weaponId]),
+        trace: rayTrace(x, y, aimAngle, getHitscanRange(weaponId)),
         damage: DAMAGE[weaponId],
         startX: x,
         startY: y,
