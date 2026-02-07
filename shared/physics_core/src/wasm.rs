@@ -362,6 +362,7 @@ pub fn get_plasma_splash_damage() -> f32 {
 }
 
 #[wasm_bindgen]
+#[inline(never)]
 pub fn get_plasma_splash_radius() -> f32 {
     constants::PLASMA_SPLASH_RADIUS
 }
@@ -412,6 +413,7 @@ pub fn get_rail_range() -> f32 {
 }
 
 #[wasm_bindgen]
+#[inline(never)]
 pub fn get_hit_radius_rocket() -> f32 {
     constants::HIT_RADIUS_ROCKET
 }
@@ -473,11 +475,13 @@ pub fn get_tile_w() -> f32 {
 }
 
 #[wasm_bindgen]
+#[inline(never)]
 pub fn get_tile_h() -> f32 {
     constants::TILE_H
 }
 
 #[wasm_bindgen]
+#[inline(never)]
 pub fn get_max_health() -> i32 {
     constants::MAX_HEALTH
 }
@@ -488,6 +492,7 @@ pub fn get_max_armor() -> i32 {
 }
 
 #[wasm_bindgen]
+#[inline(never)]
 pub fn get_mega_health() -> i32 {
     constants::MEGA_HEALTH
 }
@@ -498,6 +503,7 @@ pub fn get_armor_absorption() -> f32 {
 }
 
 #[wasm_bindgen]
+#[inline(never)]
 pub fn get_self_damage_reduction() -> f32 {
     constants::SELF_DAMAGE_REDUCTION
 }
