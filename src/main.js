@@ -415,6 +415,95 @@ function setupConsoleCommands() {
         },
         'add/remove bots',
     )
+
+    Console.registerCommand(
+        'rail_width',
+        (args) => {
+            if (!args[0]) {
+                Console.writeText(`Rail width: ${Settings.railWidth}`)
+                return
+            }
+            const val = Number.parseInt(args[0], 10)
+            if (!Number.isFinite(val)) {
+                Console.writeText('Usage: rail_width <number>')
+                return
+            }
+            Console.writeText(`Rail width set to ${Settings.setRailWidth(val)}`)
+        },
+        'get/set rail width',
+    )
+
+    Console.registerCommand(
+        'rail_trail',
+        (args) => {
+            if (!args[0]) {
+                Console.writeText(`Rail trail: ${Settings.railTrailTime}`)
+                return
+            }
+            const val = Number.parseInt(args[0], 10)
+            if (!Number.isFinite(val)) {
+                Console.writeText('Usage: rail_trail <ticks>')
+                return
+            }
+            Console.writeText(`Rail trail set to ${Settings.setRailTrailTime(val)}`)
+        },
+        'get/set rail trail time',
+    )
+
+    Console.registerCommand(
+        'rail_alpha',
+        (args) => {
+            if (!args[0]) {
+                Console.writeText(
+                    `Rail progressive alpha: ${Settings.railProgressiveAlpha ? 'on' : 'off'}`,
+                )
+                return
+            }
+            const val = args[0] === '1' || args[0]?.toLowerCase() === 'on'
+            Console.writeText(
+                `Rail progressive alpha set to ${Settings.setRailProgressiveAlpha(val) ? 'on' : 'off'}`,
+            )
+        },
+        'toggle rail progressive alpha',
+    )
+
+    Console.registerCommand(
+        'rail_color',
+        (args) => {
+            if (args.length < 3) {
+                const color = Settings.railColor.toString(16).padStart(6, '0')
+                Console.writeText(`Rail color: #${color} (usage: rail_color <r> <g> <b>)`)
+                return
+            }
+            const r = Number.parseInt(args[0], 10)
+            const g = Number.parseInt(args[1], 10)
+            const b = Number.parseInt(args[2], 10)
+            if (![r, g, b].every(Number.isFinite)) {
+                Console.writeText('Usage: rail_color <r> <g> <b>')
+                return
+            }
+            const next = Settings.setRailColor(r, g, b)
+            Console.writeText(`Rail color set to #${next.toString(16).padStart(6, '0')}`)
+        },
+        'get/set rail color',
+    )
+
+    Console.registerCommand(
+        'rail_type',
+        (args) => {
+            if (!args[0]) {
+                Console.writeText(`Rail type: ${Settings.railType}`)
+                return
+            }
+            const val = Number.parseInt(args[0], 10)
+            if (!Number.isFinite(val)) {
+                Console.writeText('Usage: rail_type <0|1|2>')
+                return
+            }
+            Console.writeText(`Rail type set to ${Settings.setRailType(val)}`)
+        },
+        'get/set rail type',
+    )
 }
 
 function enableMultiplayer() {

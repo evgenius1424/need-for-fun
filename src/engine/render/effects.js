@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js'
-import { Constants } from '../../helpers'
+import { Constants, Settings } from '../../helpers'
 import { Projectiles } from '../../projectiles'
 import { getProjectileTexture, getTexture } from '../../assets'
 import {
@@ -65,7 +65,7 @@ export function addRailShot(shot) {
         x2: shot.trace.x,
         y2: shot.trace.y,
         age: 0,
-        maxAge: 10,
+        maxAge: Math.max(1, Settings.railTrailTime),
     })
 }
 
@@ -211,23 +211,46 @@ function renderExplosion(exp) {
 }
 
 function renderRailShot(shot) {
-    const alpha = 1 - shot.age / shot.maxAge
-    const { nx, ny } = getNormal(shot, 1.5 + Math.random() * 1.5)
+    const progress = shot.age / shot.maxAge
+    const alpha = Settings.railProgressiveAlpha ? 1 - progress : 1
+    const width = Math.max(2, Settings.railWidth)
+    const baseColor = Settings.railColor
+    const glowColor = tintColor(baseColor, 0.6)
+    const coreColor = tintColor(baseColor, 0.85)
 
-    drawLine(railLines, shot.x1, shot.y1, shot.x2, shot.y2, 6, 0x66ddff, alpha * 0.35)
-    drawLine(
-        railLines,
-        shot.x1 + nx,
-        shot.y1 + ny,
-        shot.x2 + nx,
-        shot.y2 + ny,
-        3,
-        0x9ff0ff,
-        alpha * 0.55,
-    )
-    drawLine(railLines, shot.x1, shot.y1, shot.x2, shot.y2, 2, 0xffffff, alpha)
-    railLines.beginFill(0x9ff0ff, alpha * 0.6)
-    railLines.drawCircle(shot.x2, shot.y2, 6)
+    const jitter = 1.5 + Math.random() * 1.5
+    const { nx, ny } = getNormal(shot, jitter)
+    const type = Settings.railType
+
+    drawLine(railLines, shot.x1, shot.y1, shot.x2, shot.y2, width, glowColor, alpha * 0.35)
+
+    if (type === 1) {
+        drawLine(
+            railLines,
+            shot.x1 - nx,
+            shot.y1 - ny,
+            shot.x2 - nx,
+            shot.y2 - ny,
+            width * 0.5,
+            coreColor,
+            alpha * 0.7,
+        )
+    } else if (type === 2) {
+        drawLine(
+            railLines,
+            shot.x1 + nx * 0.6,
+            shot.y1 + ny * 0.6,
+            shot.x2 + nx * 0.6,
+            shot.y2 + ny * 0.6,
+            width * 0.6,
+            coreColor,
+            alpha * 0.8,
+        )
+    }
+
+    drawLine(railLines, shot.x1, shot.y1, shot.x2, shot.y2, Math.max(2, width * 0.25), 0xffffff, alpha)
+    railLines.beginFill(coreColor, alpha * 0.6)
+    railLines.drawCircle(shot.x2, shot.y2, Math.max(4, width * 0.75))
     railLines.endFill()
 }
 
@@ -248,6 +271,17 @@ function renderShaftShot(shot) {
         alpha * 0.65,
     )
     drawLine(shaftLines, shot.x1, shot.y1, shot.x2, shot.y2, 2, 0xe8fbff, alpha)
+}
+
+function tintColor(color, amount) {
+    const r = ((color >> 16) & 0xff) / 255
+    const g = ((color >> 8) & 0xff) / 255
+    const b = (color & 0xff) / 255
+    const mix = (v) => Math.min(1, v * (0.7 + amount * 0.3))
+    const rr = Math.round(mix(r) * 255)
+    const gg = Math.round(mix(g) * 255)
+    const bb = Math.round(mix(b) * 255)
+    return (rr << 16) | (gg << 8) | bb
 }
 
 function renderBulletHit(hit) {

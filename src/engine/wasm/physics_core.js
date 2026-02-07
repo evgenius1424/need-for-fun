@@ -308,14 +308,6 @@ if (Symbol.dispose) WasmProjectile.prototype[Symbol.dispose] = WasmProjectile.pr
 /**
  * @returns {number}
  */
-export function get_bounce_decay() {
-    const ret = wasm.get_bounce_decay();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
 export function get_bounds_margin() {
     const ret = wasm.get_bounds_margin();
     return ret;
@@ -358,6 +350,22 @@ export function get_gauntlet_range() {
 /**
  * @returns {number}
  */
+export function get_grenade_air_friction() {
+    const ret = wasm.get_grenade_air_friction();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
+export function get_grenade_bounce_friction() {
+    const ret = wasm.get_grenade_bounce_friction();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
 export function get_grenade_fuse() {
     const ret = wasm.get_grenade_fuse();
     return ret;
@@ -382,8 +390,24 @@ export function get_grenade_loft() {
 /**
  * @returns {number}
  */
+export function get_grenade_max_fall_speed() {
+    const ret = wasm.get_grenade_max_fall_speed();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
 export function get_grenade_min_velocity() {
     const ret = wasm.get_grenade_min_velocity();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
+export function get_grenade_rise_damping() {
+    const ret = wasm.get_grenade_rise_damping();
     return ret;
 }
 
@@ -424,6 +448,30 @@ export function get_hit_radius_rocket() {
  */
 export function get_machine_range() {
     const ret = wasm.get_machine_range();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
+export function get_plasma_splash_damage() {
+    const ret = wasm.get_plasma_splash_damage();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
+export function get_plasma_splash_push() {
+    const ret = wasm.get_plasma_splash_push();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
+export function get_plasma_splash_radius() {
+    const ret = wasm.get_plasma_splash_damage();
     return ret;
 }
 
@@ -493,6 +541,15 @@ export function get_shotgun_spread() {
 }
 
 /**
+ * @param {number} weapon_id
+ * @returns {number}
+ */
+export function get_splash_radius(weapon_id) {
+    const ret = wasm.get_splash_radius(weapon_id);
+    return ret;
+}
+
+/**
  * @returns {number}
  */
 export function get_tile_h() {
@@ -505,6 +562,15 @@ export function get_tile_h() {
  */
 export function get_tile_w() {
     const ret = wasm.get_tile_w();
+    return ret;
+}
+
+/**
+ * @param {number} weapon_id
+ * @returns {number}
+ */
+export function get_weapon_push(weapon_id) {
+    const ret = wasm.get_weapon_push(weapon_id);
     return ret;
 }
 

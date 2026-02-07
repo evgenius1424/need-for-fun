@@ -184,9 +184,14 @@ export const Projectiles = {
 }
 
 function applyGrenadePhysics(proj, c) {
-    const speed = Math.hypot(proj.velocityX, proj.velocityY)
-    proj.velocityY += c.GRAVITY + speed * 0.02
-    proj.velocityX *= 0.995
+    proj.velocityY += c.GRAVITY
+    if (proj.velocityY < 0) {
+        proj.velocityY /= c.GRENADE_RISE_DAMPING
+    }
+    proj.velocityX /= c.GRENADE_AIR_FRICTION
+    if (proj.velocityY > c.GRENADE_MAX_FALL_SPEED) {
+        proj.velocityY = c.GRENADE_MAX_FALL_SPEED
+    }
 }
 
 function checkWallCollision(proj, newX, newY, c) {
@@ -203,8 +208,8 @@ function checkWallCollision(proj, newX, newY, c) {
     const oldColX = Math.floor(proj.x / BRICK_WIDTH)
     const oldColY = Math.floor(proj.y / BRICK_HEIGHT)
 
-    if (oldColX !== colX) proj.velocityX *= -c.BOUNCE_DECAY
-    if (oldColY !== colY) proj.velocityY *= -c.BOUNCE_DECAY
+    if (oldColX !== colX) proj.velocityX = -proj.velocityX / c.GRENADE_BOUNCE_FRICTION
+    if (oldColY !== colY) proj.velocityY = -proj.velocityY / c.GRENADE_BOUNCE_FRICTION
 
     if (
         Math.abs(proj.velocityX) < c.GRENADE_MIN_VELOCITY &&

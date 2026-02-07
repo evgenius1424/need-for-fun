@@ -1,11 +1,13 @@
 use rand::Rng;
 
 use crate::constants::{
-    BOUNCE_DECAY, BOUNDS_MARGIN, DAMAGE, EXPLOSION_RADIUS, FIRE_RATE, GAUNTLET_PLAYER_RADIUS,
-    GAUNTLET_RANGE, GRENADE_FUSE, GRENADE_HIT_GRACE, GRENADE_LOFT, GRENADE_MIN_VELOCITY,
-    HITSCAN_PLAYER_RADIUS, MACHINE_RANGE, PICKUP_RADIUS, PLAYER_HALF_H, PROJECTILE_GRAVITY,
-    PROJECTILE_SPEED, RAIL_RANGE, SELF_HIT_GRACE, SHAFT_RANGE, SHOTGUN_PELLETS, SHOTGUN_RANGE,
-    SHOTGUN_SPREAD, TILE_H, TILE_W,
+    BOUNDS_MARGIN, DAMAGE, FIRE_RATE, GAUNTLET_PLAYER_RADIUS,
+    GAUNTLET_RANGE, GRENADE_AIR_FRICTION, GRENADE_BOUNCE_FRICTION, GRENADE_FUSE,
+    GRENADE_HIT_GRACE, GRENADE_LOFT, GRENADE_MAX_FALL_SPEED, GRENADE_MIN_VELOCITY,
+    GRENADE_RISE_DAMPING, HITSCAN_PLAYER_RADIUS, MACHINE_RANGE, PICKUP_RADIUS,
+    PLASMA_SPLASH_DMG, PLASMA_SPLASH_PUSH, PLASMA_SPLASH_RADIUS, PLAYER_HALF_H,
+    PROJECTILE_GRAVITY, PROJECTILE_SPEED, RAIL_RANGE, SELF_HIT_GRACE, SHAFT_RANGE,
+    SHOTGUN_PELLETS, SHOTGUN_RANGE, SHOTGUN_SPREAD, SPLASH_RADIUS, TILE_H, TILE_W, WEAPON_PUSH,
 };
 use crate::map::GameMap;
 use crate::physics::PlayerState;
@@ -26,6 +28,7 @@ const SELF_DAMAGE_REDUCTION: f32 = 0.5;
 const QUAD_MULTIPLIER: f32 = 3.0;
 const QUAD_DURATION: i32 = 900;
 const RESPAWN_TIME: i32 = 180;
+const PUSH_LATERAL_FACTOR: f32 = 5.0 / 6.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WeaponId {
@@ -100,6 +103,7 @@ pub fn try_fire(
             let hit_y = y + player.aim_angle.sin() * GAUNTLET_RANGE;
             hitscan_actions.push(HitAction::Melee {
                 attacker_id: player.id,
+                weapon_id: weapon,
                 hit_x,
                 hit_y,
                 damage: damage_for(weapon),
@@ -113,6 +117,7 @@ pub fn try_fire(
                 let trace = ray_trace(x, y, angle, SHOTGUN_RANGE, map);
                 hitscan_actions.push(HitAction::Hitscan {
                     attacker_id: player.id,
+                    weapon_id: weapon,
                     start_x: x,
                     start_y: y,
                     trace_x: trace.x,
@@ -137,6 +142,7 @@ pub fn try_fire(
             let trace = ray_trace(x, y, player.aim_angle, range, map);
             hitscan_actions.push(HitAction::Hitscan {
                 attacker_id: player.id,
+                weapon_id: weapon,
                 start_x: x,
                 start_y: y,
                 trace_x: trace.x,
@@ -209,6 +215,7 @@ pub fn try_fire(
 pub enum HitAction {
     Hitscan {
         attacker_id: u64,
+        weapon_id: WeaponId,
         start_x: f32,
         start_y: f32,
         trace_x: f32,
@@ -217,6 +224,7 @@ pub enum HitAction {
     },
     Melee {
         attacker_id: u64,
+        weapon_id: WeaponId,
         hit_x: f32,
         hit_y: f32,
         damage: f32,
@@ -232,6 +240,7 @@ pub fn apply_hit_actions(
         match *action {
             HitAction::Hitscan {
                 attacker_id,
+                weapon_id,
                 start_x,
                 start_y,
                 trace_x,
@@ -242,16 +251,23 @@ pub fn apply_hit_actions(
                     find_hitscan_target(attacker_id, start_x, start_y, trace_x, trace_y, players)
                 {
                     apply_damage(attacker_id, target_id, damage, players, events);
+                    if let Some((sx, sy)) = get_player_pos(attacker_id, players) {
+                        apply_push_on_hit(attacker_id, target_id, weapon_id, sx, sy, players);
+                    }
                 }
             }
             HitAction::Melee {
                 attacker_id,
+                weapon_id,
                 hit_x,
                 hit_y,
                 damage,
             } => {
                 if let Some(target_id) = find_melee_target(attacker_id, hit_x, hit_y, players) {
                     apply_damage(attacker_id, target_id, damage, players, events);
+                    if let Some((sx, sy)) = get_player_pos(attacker_id, players) {
+                        apply_push_on_hit(attacker_id, target_id, weapon_id, sx, sy, players);
+                    }
                 }
             }
         }
@@ -312,7 +328,8 @@ pub fn apply_projectile_hits(
         if !proj.active {
             continue;
         }
-        for player in players.iter_mut() {
+        let mut target_id: Option<u64> = None;
+        for player in players.iter() {
             if player.dead {
                 continue;
             }
@@ -325,15 +342,30 @@ pub fn apply_projectile_hits(
             if !check_player_collision(player, proj) {
                 continue;
             }
-            let damage = match proj.kind {
-                ProjectileKind::Rocket => damage_for(WeaponId::Rocket),
-                ProjectileKind::Grenade => damage_for(WeaponId::Grenade),
-                ProjectileKind::Plasma => damage_for(WeaponId::Plasma),
-                ProjectileKind::Bfg => damage_for(WeaponId::Bfg),
-            };
-            apply_damage(proj.owner_id, player.id, damage, players, events);
-            explode(proj, &mut explosions);
+            target_id = Some(player.id);
             break;
+        }
+
+        if let Some(target_id) = target_id {
+            // Direct damage is 0 — all damage comes from splash explosion.
+            let damage = match proj.kind {
+                ProjectileKind::Rocket => 0.0,
+                ProjectileKind::Grenade => 0.0,
+                ProjectileKind::Plasma => damage_for(WeaponId::Plasma),
+                ProjectileKind::Bfg => 0.0,
+            };
+            if damage > 0.0 {
+                apply_damage(proj.owner_id, target_id, damage, players, events);
+                apply_push_on_hit(
+                    proj.owner_id,
+                    target_id,
+                    WeaponId::Plasma,
+                    proj.x,
+                    proj.y,
+                    players,
+                );
+            }
+            explode(proj, &mut explosions);
         }
     }
 
@@ -348,9 +380,40 @@ pub fn apply_explosions(
 ) {
     let mut pending_hits: Vec<(u64, u64, f32)> = Vec::new();
     for explosion in explosions {
-        if explosion.kind != ProjectileKind::Rocket {
+        let (radius, base_damage, push) = match explosion.kind {
+            ProjectileKind::Rocket => (
+                SPLASH_RADIUS[WeaponId::Rocket as usize],
+                damage_for(WeaponId::Rocket),
+                WEAPON_PUSH[WeaponId::Rocket as usize],
+            ),
+            ProjectileKind::Grenade => (
+                SPLASH_RADIUS[WeaponId::Grenade as usize],
+                damage_for(WeaponId::Grenade),
+                WEAPON_PUSH[WeaponId::Grenade as usize],
+            ),
+            ProjectileKind::Plasma => (
+                PLASMA_SPLASH_RADIUS,
+                PLASMA_SPLASH_DMG,
+                PLASMA_SPLASH_PUSH,
+            ),
+            ProjectileKind::Bfg => (
+                SPLASH_RADIUS[WeaponId::Bfg as usize],
+                damage_for(WeaponId::Bfg),
+                WEAPON_PUSH[WeaponId::Bfg as usize],
+            ),
+        };
+
+        if radius <= 0.0 {
             continue;
         }
+
+        let attacker_quad = players
+            .iter()
+            .find(|p| p.id == explosion.owner_id)
+            .map(|p| p.quad_damage)
+            .unwrap_or(false);
+        let push_scale = if attacker_quad { push * QUAD_MULTIPLIER } else { push };
+
         for player in players.iter_mut() {
             if player.dead {
                 continue;
@@ -358,19 +421,16 @@ pub fn apply_explosions(
             let dx = player.x - explosion.x;
             let dy = player.y - explosion.y;
             let distance = (dx * dx + dy * dy).sqrt();
-            if distance >= EXPLOSION_RADIUS {
+            if distance >= radius {
                 continue;
             }
-            let falloff = 1.0 - distance / EXPLOSION_RADIUS;
-            let damage = damage_for(WeaponId::Rocket) * falloff;
+
+            let damage = explosion_falloff_damage(base_damage, radius, distance);
             if damage > 0.0 {
                 pending_hits.push((explosion.owner_id, player.id, damage));
             }
-            if distance > 0.0 {
-                let knockback = (4.0 * falloff) / distance;
-                player.velocity_x += dx * knockback;
-                player.velocity_y += dy * knockback;
-            }
+
+            apply_push_explosion(player, explosion.x, explosion.y, push_scale);
         }
     }
     for (attacker_id, target_id, damage) in pending_hits {
@@ -476,6 +536,74 @@ fn apply_damage(
         }
         break;
     }
+}
+
+fn get_player_pos(player_id: u64, players: &[PlayerState]) -> Option<(f32, f32)> {
+    players.iter().find(|p| p.id == player_id).map(|p| (p.x, p.y))
+}
+
+fn apply_push_on_hit(
+    attacker_id: u64,
+    target_id: u64,
+    weapon_id: WeaponId,
+    source_x: f32,
+    source_y: f32,
+    players: &mut [PlayerState],
+) {
+    let mut strength = WEAPON_PUSH[weapon_id as usize];
+    if strength <= 0.0 {
+        return;
+    }
+    let attacker_quad = players.iter().any(|p| p.id == attacker_id && p.quad_damage);
+    if attacker_quad {
+        strength *= QUAD_MULTIPLIER;
+    }
+    if let Some(target) = players.iter_mut().find(|p| p.id == target_id && !p.dead) {
+        apply_push_impulse(target, source_x, source_y, strength);
+    }
+}
+
+fn apply_push_explosion(player: &mut PlayerState, source_x: f32, source_y: f32, strength: f32) {
+    if strength <= 0.0 {
+        return;
+    }
+    apply_push_impulse(player, source_x, source_y, strength);
+}
+
+fn apply_push_impulse(player: &mut PlayerState, source_x: f32, source_y: f32, strength: f32) {
+    // Asymmetry: stronger when source is left/below; only upward kick from explosions below.
+    let dx = source_x - player.x;
+    let dy = source_y - player.y;
+    if dx < -0.01 {
+        player.velocity_x += strength;
+    } else if dx > 0.01 {
+        player.velocity_x -= strength * PUSH_LATERAL_FACTOR;
+    }
+    if dy > 0.01 {
+        player.velocity_y -= strength * PUSH_LATERAL_FACTOR;
+    }
+}
+
+fn explosion_falloff_damage(base: f32, radius: f32, distance: f32) -> f32 {
+    // Splash curve: piecewise falloff with small additive bias.
+    const MID_BIAS: f32 = 40.0;
+    const MID_SCALE: f32 = 100.0;
+    const FAR_SCALE: f32 = 60.0;
+    const FAR_BIAS: f32 = 20.0;
+
+    if radius <= 0.0 || distance <= 0.0 {
+        return base.max(0.0);
+    }
+    let r3 = radius / 3.0;
+    if distance <= r3 {
+        return base;
+    }
+    if distance < 2.0 * r3 {
+        let scaled = (2.0 * radius - distance * 3.0 + MID_BIAS) / MID_SCALE;
+        return (base * scaled).max(0.0);
+    }
+    let scaled = ((radius - distance) * FAR_SCALE / radius + FAR_BIAS) / MID_SCALE;
+    (base * scaled).max(0.0)
 }
 
 fn is_player_near_item(player: &PlayerState, item: &crate::map::MapItem) -> bool {
@@ -720,9 +848,14 @@ fn check_player_collision(player: &PlayerState, proj: &Projectile) -> bool {
 }
 
 fn apply_grenade_physics(proj: &mut Projectile) {
-    let speed = (proj.velocity_x * proj.velocity_x + proj.velocity_y * proj.velocity_y).sqrt();
-    proj.velocity_y += PROJECTILE_GRAVITY + speed * 0.02;
-    proj.velocity_x *= 0.995;
+    proj.velocity_y += PROJECTILE_GRAVITY;
+    if proj.velocity_y < 0.0 {
+        proj.velocity_y /= GRENADE_RISE_DAMPING;
+    }
+    proj.velocity_x /= GRENADE_AIR_FRICTION;
+    if proj.velocity_y > GRENADE_MAX_FALL_SPEED {
+        proj.velocity_y = GRENADE_MAX_FALL_SPEED;
+    }
 }
 
 fn check_wall_collision(
@@ -746,10 +879,10 @@ fn check_wall_collision(
     let old_col_x = (proj.x / TILE_W).floor() as i32;
     let old_col_y = (proj.y / TILE_H).floor() as i32;
     if old_col_x != col_x {
-        proj.velocity_x *= -BOUNCE_DECAY;
+        proj.velocity_x = -proj.velocity_x / GRENADE_BOUNCE_FRICTION;
     }
     if old_col_y != col_y {
-        proj.velocity_y *= -BOUNCE_DECAY;
+        proj.velocity_y = -proj.velocity_y / GRENADE_BOUNCE_FRICTION;
     }
     if proj.velocity_x.abs() < GRENADE_MIN_VELOCITY && proj.velocity_y.abs() < GRENADE_MIN_VELOCITY
     {

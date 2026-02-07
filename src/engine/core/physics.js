@@ -30,13 +30,19 @@ async function initKernel() {
     PhysicsConstants = {
         // Projectile physics
         GRAVITY: module.get_projectile_gravity(),
-        BOUNCE_DECAY: module.get_bounce_decay(),
         GRENADE_FUSE: module.get_grenade_fuse(),
         GRENADE_MIN_VELOCITY: module.get_grenade_min_velocity(),
+        GRENADE_AIR_FRICTION: module.get_grenade_air_friction(),
+        GRENADE_BOUNCE_FRICTION: module.get_grenade_bounce_friction(),
+        GRENADE_RISE_DAMPING: module.get_grenade_rise_damping(),
+        GRENADE_MAX_FALL_SPEED: module.get_grenade_max_fall_speed(),
         BOUNDS_MARGIN: module.get_bounds_margin(),
         SELF_HIT_GRACE: module.get_self_hit_grace(),
         GRENADE_HIT_GRACE: module.get_grenade_hit_grace(),
         EXPLOSION_RADIUS: module.get_explosion_radius(),
+        PLASMA_SPLASH_DMG: module.get_plasma_splash_damage(),
+        PLASMA_SPLASH_RADIUS: module.get_plasma_splash_radius(),
+        PLASMA_SPLASH_PUSH: module.get_plasma_splash_push(),
 
         // Weapon ranges
         SHAFT_RANGE: module.get_shaft_range(),
@@ -60,6 +66,8 @@ async function initKernel() {
         getDamage: module.get_damage,
         getFireRate: module.get_fire_rate,
         getProjectileSpeed: module.get_projectile_speed,
+        getWeaponPush: module.get_weapon_push,
+        getSplashRadius: module.get_splash_radius,
 
         // Tile sizes (for validation)
         TILE_W: module.get_tile_w(),

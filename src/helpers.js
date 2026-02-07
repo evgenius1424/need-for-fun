@@ -99,12 +99,77 @@ function createSettings() {
     const stored = Number.parseFloat(localStorage.getItem(KEY))
     const initial = Number.isFinite(stored) ? clamp(stored) : DEFAULT
 
+    const railDefaults = {
+        width: 8,
+        trailTime: 11,
+        progressiveAlpha: true,
+        color: 0xff0000,
+        type: 0,
+    }
+
+    const readInt = (key, fallback) => {
+        const val = Number.parseInt(localStorage.getItem(key) ?? '', 10)
+        return Number.isFinite(val) ? val : fallback
+    }
+
+    const readBool = (key, fallback) => {
+        const val = localStorage.getItem(key)
+        if (val === null) return fallback
+        return val === '1' || val === 'true'
+    }
+
+    const readColor = (key, fallback) => {
+        const val = localStorage.getItem(key)
+        if (!val) return fallback
+        const parsed = Number.parseInt(val, 16)
+        return Number.isFinite(parsed) ? parsed : fallback
+    }
+
     return {
         aimSensitivity: initial,
         setAimSensitivity(value) {
             this.aimSensitivity = clamp(value)
             localStorage.setItem(KEY, String(this.aimSensitivity))
             return this.aimSensitivity
+        },
+        railWidth: readInt('railWidth', railDefaults.width),
+        railTrailTime: readInt('railTrailTime', railDefaults.trailTime),
+        railProgressiveAlpha: readBool('railProgressiveAlpha', railDefaults.progressiveAlpha),
+        railColor: readColor('railColor', railDefaults.color),
+        railType: readInt('railType', railDefaults.type),
+        setRailWidth(value) {
+            const next = Math.max(1, Math.min(32, Math.trunc(value)))
+            this.railWidth = next
+            localStorage.setItem('railWidth', String(next))
+            return this.railWidth
+        },
+        setRailTrailTime(value) {
+            const next = Math.max(1, Math.min(1000, Math.trunc(value)))
+            this.railTrailTime = next
+            localStorage.setItem('railTrailTime', String(next))
+            return this.railTrailTime
+        },
+        setRailProgressiveAlpha(value) {
+            const next = Boolean(value)
+            this.railProgressiveAlpha = next
+            localStorage.setItem('railProgressiveAlpha', next ? '1' : '0')
+            return this.railProgressiveAlpha
+        },
+        setRailColor(r, g, b) {
+            const clamp8 = (v) => Math.max(0, Math.min(255, Math.trunc(v)))
+            const rr = clamp8(r)
+            const gg = clamp8(g)
+            const bb = clamp8(b)
+            const color = (rr << 16) | (gg << 8) | bb
+            this.railColor = color
+            localStorage.setItem('railColor', color.toString(16).padStart(6, '0'))
+            return this.railColor
+        },
+        setRailType(value) {
+            const next = Math.max(0, Math.min(2, Math.trunc(value)))
+            this.railType = next
+            localStorage.setItem('railType', String(next))
+            return this.railType
         },
     }
 }

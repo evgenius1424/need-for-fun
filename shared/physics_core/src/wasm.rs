@@ -307,11 +307,6 @@ pub fn get_projectile_gravity() -> f32 {
 }
 
 #[wasm_bindgen]
-pub fn get_bounce_decay() -> f32 {
-    constants::BOUNCE_DECAY
-}
-
-#[wasm_bindgen]
 pub fn get_grenade_fuse() -> i32 {
     constants::GRENADE_FUSE
 }
@@ -319,6 +314,26 @@ pub fn get_grenade_fuse() -> i32 {
 #[wasm_bindgen]
 pub fn get_grenade_min_velocity() -> f32 {
     constants::GRENADE_MIN_VELOCITY
+}
+
+#[wasm_bindgen]
+pub fn get_grenade_air_friction() -> f32 {
+    constants::GRENADE_AIR_FRICTION
+}
+
+#[wasm_bindgen]
+pub fn get_grenade_bounce_friction() -> f32 {
+    constants::GRENADE_BOUNCE_FRICTION
+}
+
+#[wasm_bindgen]
+pub fn get_grenade_rise_damping() -> f32 {
+    constants::GRENADE_RISE_DAMPING
+}
+
+#[wasm_bindgen]
+pub fn get_grenade_max_fall_speed() -> f32 {
+    constants::GRENADE_MAX_FALL_SPEED
 }
 
 #[wasm_bindgen]
@@ -339,6 +354,21 @@ pub fn get_grenade_hit_grace() -> i32 {
 #[wasm_bindgen]
 pub fn get_explosion_radius() -> f32 {
     constants::EXPLOSION_RADIUS
+}
+
+#[wasm_bindgen]
+pub fn get_plasma_splash_damage() -> f32 {
+    constants::PLASMA_SPLASH_DMG
+}
+
+#[wasm_bindgen]
+pub fn get_plasma_splash_radius() -> f32 {
+    constants::PLASMA_SPLASH_RADIUS
+}
+
+#[wasm_bindgen]
+pub fn get_plasma_splash_push() -> f32 {
+    constants::PLASMA_SPLASH_PUSH
 }
 
 #[wasm_bindgen]
@@ -404,6 +434,16 @@ pub fn get_hit_radius_plasma() -> f32 {
 #[wasm_bindgen]
 pub fn get_damage(weapon_id: u8) -> f32 {
     constants::DAMAGE.get(weapon_id as usize).copied().unwrap_or(0.0)
+}
+
+#[wasm_bindgen]
+pub fn get_weapon_push(weapon_id: u8) -> f32 {
+    constants::WEAPON_PUSH.get(weapon_id as usize).copied().unwrap_or(0.0)
+}
+
+#[wasm_bindgen]
+pub fn get_splash_radius(weapon_id: u8) -> f32 {
+    constants::SPLASH_RADIUS.get(weapon_id as usize).copied().unwrap_or(0.0)
 }
 
 #[wasm_bindgen]

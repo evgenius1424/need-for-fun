@@ -1,5 +1,6 @@
 use crate::constants::{
-    BOUNCE_DECAY, BOUNDS_MARGIN, GRENADE_FUSE, GRENADE_MIN_VELOCITY, HIT_RADIUS_BFG,
+    BOUNDS_MARGIN, GRENADE_AIR_FRICTION, GRENADE_BOUNCE_FRICTION, GRENADE_FUSE,
+    GRENADE_MAX_FALL_SPEED, GRENADE_MIN_VELOCITY, GRENADE_RISE_DAMPING, HIT_RADIUS_BFG,
     HIT_RADIUS_GRENADE, HIT_RADIUS_PLASMA, HIT_RADIUS_ROCKET, PROJECTILE_GRAVITY, TILE_H, TILE_W,
 };
 use crate::tilemap::TileMap;
@@ -130,11 +131,16 @@ pub fn step_projectile(proj: &mut Projectile, map: &impl TileMap, bounds: (f32, 
     None
 }
 
-/// Apply grenade-specific physics (gravity with speed-based bonus, air resistance).
+/// Apply grenade-specific physics (inertia and gravity).
 pub fn apply_grenade_physics(proj: &mut Projectile) {
-    let speed = (proj.velocity_x * proj.velocity_x + proj.velocity_y * proj.velocity_y).sqrt();
-    proj.velocity_y += PROJECTILE_GRAVITY + speed * 0.02;
-    proj.velocity_x *= 0.995;
+    proj.velocity_y += PROJECTILE_GRAVITY;
+    if proj.velocity_y < 0.0 {
+        proj.velocity_y /= GRENADE_RISE_DAMPING;
+    }
+    proj.velocity_x /= GRENADE_AIR_FRICTION;
+    if proj.velocity_y > GRENADE_MAX_FALL_SPEED {
+        proj.velocity_y = GRENADE_MAX_FALL_SPEED;
+    }
 }
 
 /// Check for wall collision and handle bouncing for grenades.
@@ -157,10 +163,10 @@ fn check_wall_collision(proj: &mut Projectile, new_x: f32, new_y: f32, map: &imp
     let old_col_y = (proj.y / TILE_H).floor() as i32;
 
     if old_col_x != col_x {
-        proj.velocity_x *= -BOUNCE_DECAY;
+        proj.velocity_x = -proj.velocity_x / GRENADE_BOUNCE_FRICTION;
     }
     if old_col_y != col_y {
-        proj.velocity_y *= -BOUNCE_DECAY;
+        proj.velocity_y = -proj.velocity_y / GRENADE_BOUNCE_FRICTION;
     }
 
     // Stop if velocity is too low

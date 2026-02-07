@@ -28,14 +28,22 @@ pub const SPEED_JUMP_X: [f32; 7] = [0.0, 0.33, 0.8, 1.1, 1.4, 1.8, 2.2];
 pub const DEFAULT_AMMO: [i32; WEAPON_COUNT] = [-1, 100, 10, 5, 20, 10, 30, 50, 10];
 
 // Projectile physics
-pub const PROJECTILE_GRAVITY: f32 = 0.18;
-pub const BOUNCE_DECAY: f32 = 0.75;
-pub const GRENADE_FUSE: i32 = 120;
+pub const PROJECTILE_GRAVITY: f32 = 0.05;
+pub const GRENADE_FUSE: i32 = 100;
 pub const GRENADE_MIN_VELOCITY: f32 = 0.5;
 pub const BOUNDS_MARGIN: f32 = 100.0;
 pub const SELF_HIT_GRACE: i32 = 8;
 pub const GRENADE_HIT_GRACE: i32 = 12;
 pub const EXPLOSION_RADIUS: f32 = 90.0;
+
+pub const GRENADE_AIR_FRICTION: f32 = 1.003;
+pub const GRENADE_BOUNCE_FRICTION: f32 = 1.07;
+pub const GRENADE_RISE_DAMPING: f32 = 1.025;
+pub const GRENADE_MAX_FALL_SPEED: f32 = 5.0;
+
+pub const PLASMA_SPLASH_DMG: f32 = 10.0;
+pub const PLASMA_SPLASH_RADIUS: f32 = 10.0;
+pub const PLASMA_SPLASH_PUSH: f32 = 1.5;
 
 // Weapon constants
 pub const GRENADE_LOFT: f32 = 2.0;
@@ -57,10 +65,16 @@ pub const HIT_RADIUS_GRENADE: f32 = 16.0;
 pub const HIT_RADIUS_PLASMA: f32 = 20.0;
 
 // Weapon damage values (Gauntlet, Machine, Shotgun, Grenade, Rocket, Rail, Plasma, Shaft, Bfg)
-pub const DAMAGE: [f32; WEAPON_COUNT] = [35.0, 5.0, 7.0, 65.0, 100.0, 75.0, 14.0, 3.0, 100.0];
+pub const DAMAGE: [f32; WEAPON_COUNT] = [50.0, 7.0, 7.0, 100.0, 100.0, 100.0, 20.0, 8.0, 100.0];
+
+// Splash radius per weapon (Gauntlet, Machine, Shotgun, Grenade, Rocket, Rail, Plasma, Shaft, Bfg)
+pub const SPLASH_RADIUS: [f32; WEAPON_COUNT] = [0.0, 0.0, 0.0, 60.0, 60.0, 0.0, 0.0, 0.0, 50.0];
+
+// Per-weapon push (Gauntlet, Machine, Shotgun, Grenade, Rocket, Rail, Plasma, Shaft, Bfg)
+pub const WEAPON_PUSH: [f32; WEAPON_COUNT] = [0.0, 0.3, 0.05, 3.0, 3.0, 1.04, 0.45, 0.54, 3.0];
 
 // Projectile speeds (only for projectile weapons, others are 0)
-pub const PROJECTILE_SPEED: [f32; WEAPON_COUNT] = [0.0, 0.0, 0.0, 5.0, 6.0, 0.0, 7.0, 0.0, 7.0];
+pub const PROJECTILE_SPEED: [f32; WEAPON_COUNT] = [0.0, 0.0, 0.0, 4.5, 7.0, 0.0, 8.0, 0.0, 8.0];
 
 // Fire rate in ticks
-pub const FIRE_RATE: [i32; WEAPON_COUNT] = [25, 5, 50, 45, 40, 85, 5, 1, 100];
+pub const FIRE_RATE: [i32; WEAPON_COUNT] = [20, 5, 50, 40, 40, 75, 5, 3, 10];
