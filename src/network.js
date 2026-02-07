@@ -1,12 +1,7 @@
 import { ensureModelLoaded } from './assets'
 import { Player } from './player'
 import { SkinId } from './models'
-import {
-    decodeServerMessage,
-    encodeHello,
-    encodeInput,
-    encodeJoinRoom,
-} from './binaryProtocol'
+import { decodeServerMessage, encodeHello, encodeInput, encodeJoinRoom } from './binaryProtocol'
 
 const DEFAULT_SERVER_URL = 'ws://localhost:3001/ws'
 const DEFAULT_MAP = 'dm2'

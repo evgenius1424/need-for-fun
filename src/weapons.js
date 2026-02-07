@@ -8,21 +8,30 @@ const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 const getHitscanRange = (weaponId) => {
     const c = PhysicsConstants
     switch (weaponId) {
-        case WeaponId.MACHINE: return c.MACHINE_RANGE
-        case WeaponId.RAIL: return c.RAIL_RANGE
-        case WeaponId.SHAFT: return c.SHAFT_RANGE
-        default: return c.MACHINE_RANGE
+        case WeaponId.MACHINE:
+            return c.MACHINE_RANGE
+        case WeaponId.RAIL:
+            return c.RAIL_RANGE
+        case WeaponId.SHAFT:
+            return c.SHAFT_RANGE
+        default:
+            return c.MACHINE_RANGE
     }
 }
 
 const getProjectileConfig = (weaponId) => {
     const c = PhysicsConstants
     switch (weaponId) {
-        case WeaponId.GRENADE: return { type: 'grenade', offset: 14, loft: c.GRENADE_LOFT, sound: Sound.grenade }
-        case WeaponId.ROCKET: return { type: 'rocket', offset: 18, loft: 0, sound: Sound.rocket }
-        case WeaponId.PLASMA: return { type: 'plasma', offset: 12, loft: 0, sound: Sound.plasma }
-        case WeaponId.BFG: return { type: 'bfg', offset: 12, loft: 0, sound: Sound.bfg }
-        default: return null
+        case WeaponId.GRENADE:
+            return { type: 'grenade', offset: 14, loft: c.GRENADE_LOFT, sound: Sound.grenade }
+        case WeaponId.ROCKET:
+            return { type: 'rocket', offset: 18, loft: 0, sound: Sound.rocket }
+        case WeaponId.PLASMA:
+            return { type: 'plasma', offset: 12, loft: 0, sound: Sound.plasma }
+        case WeaponId.BFG:
+            return { type: 'bfg', offset: 12, loft: 0, sound: Sound.bfg }
+        default:
+            return null
     }
 }
 

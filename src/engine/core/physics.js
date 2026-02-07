@@ -95,7 +95,7 @@ async function initKernel() {
     if (PhysicsConstants.TILE_W !== BRICK_WIDTH || PhysicsConstants.TILE_H !== BRICK_HEIGHT) {
         throw new Error(
             `Tile size mismatch: WASM has ${PhysicsConstants.TILE_W}x${PhysicsConstants.TILE_H}, ` +
-            `JS has ${BRICK_WIDTH}x${BRICK_HEIGHT}`
+                `JS has ${BRICK_WIDTH}x${BRICK_HEIGHT}`,
         )
     }
 }

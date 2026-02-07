@@ -1,12 +1,5 @@
 import { Howler } from 'howler'
-import {
-    Constants,
-    Input,
-    Settings,
-    Sound,
-    WeaponId,
-    Console,
-} from './helpers'
+import { Constants, Input, Settings, Sound, WeaponId, Console } from './helpers'
 import { Map } from './map'
 import { Player } from './player'
 import { Physics, PhysicsConstants } from './engine/core/physics'

@@ -202,7 +202,6 @@ export class Player {
             this.aimAngle = normalizeAngle(clamp(this.aimAngle + delta, -HALF_PI, HALF_PI))
         }
     }
-
 }
 
 function createAmmoArray() {

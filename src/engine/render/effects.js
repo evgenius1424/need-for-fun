@@ -248,7 +248,16 @@ function renderRailShot(shot) {
         )
     }
 
-    drawLine(railLines, shot.x1, shot.y1, shot.x2, shot.y2, Math.max(2, width * 0.25), 0xffffff, alpha)
+    drawLine(
+        railLines,
+        shot.x1,
+        shot.y1,
+        shot.x2,
+        shot.y2,
+        Math.max(2, width * 0.25),
+        0xffffff,
+        alpha,
+    )
     railLines.beginFill(coreColor, alpha * 0.6)
     railLines.drawCircle(shot.x2, shot.y2, Math.max(4, width * 0.75))
     railLines.endFill()
