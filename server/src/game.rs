@@ -2,14 +2,13 @@ use rand::Rng;
 
 use crate::constants::{
     ARMOR_ABSORPTION, BOUNDS_MARGIN, DAMAGE, DEFAULT_AMMO, FIRE_RATE, GAUNTLET_PLAYER_RADIUS,
-    GAUNTLET_RANGE, GRENADE_AIR_FRICTION, GRENADE_BOUNCE_FRICTION, GRENADE_FUSE,
-    GRENADE_HIT_GRACE, GRENADE_LOFT, GRENADE_MAX_FALL_SPEED, GRENADE_MIN_VELOCITY,
-    GRENADE_RISE_DAMPING, HITSCAN_PLAYER_RADIUS, MACHINE_RANGE, MAX_ARMOR, MAX_HEALTH,
-    MEGA_HEALTH, PICKUP_AMMO, PICKUP_RADIUS, PLASMA_SPLASH_DMG, PLASMA_SPLASH_PUSH,
-    PLASMA_SPLASH_RADIUS, PLAYER_HALF_H, PROJECTILE_GRAVITY, PROJECTILE_SPEED, QUAD_DURATION,
-    QUAD_MULTIPLIER, RAIL_RANGE, RESPAWN_TIME, SELF_DAMAGE_REDUCTION, SELF_HIT_GRACE,
-    SHAFT_RANGE, SHOTGUN_PELLETS, SHOTGUN_RANGE, SHOTGUN_SPREAD, SPAWN_PROTECTION,
-    SPLASH_RADIUS, TILE_H, TILE_W, WEAPON_PUSH,
+    GAUNTLET_RANGE, GRENADE_AIR_FRICTION, GRENADE_BOUNCE_FRICTION, GRENADE_FUSE, GRENADE_HIT_GRACE,
+    GRENADE_LOFT, GRENADE_MAX_FALL_SPEED, GRENADE_MIN_VELOCITY, GRENADE_RISE_DAMPING,
+    HITSCAN_PLAYER_RADIUS, MACHINE_RANGE, MAX_ARMOR, MAX_HEALTH, MEGA_HEALTH, PICKUP_AMMO,
+    PICKUP_RADIUS, PLASMA_SPLASH_DMG, PLASMA_SPLASH_PUSH, PLASMA_SPLASH_RADIUS, PLAYER_HALF_H,
+    PROJECTILE_GRAVITY, PROJECTILE_SPEED, QUAD_DURATION, QUAD_MULTIPLIER, RAIL_RANGE, RESPAWN_TIME,
+    SELF_DAMAGE_REDUCTION, SELF_HIT_GRACE, SHAFT_RANGE, SHOTGUN_PELLETS, SHOTGUN_RANGE,
+    SHOTGUN_SPREAD, SPAWN_PROTECTION, SPLASH_RADIUS, TILE_H, TILE_W, WEAPON_PUSH,
 };
 use crate::map::GameMap;
 use crate::physics::PlayerState;
@@ -385,11 +384,7 @@ pub fn apply_explosions(
                 damage_for(WeaponId::Grenade),
                 WEAPON_PUSH[WeaponId::Grenade as usize],
             ),
-            ProjectileKind::Plasma => (
-                PLASMA_SPLASH_RADIUS,
-                PLASMA_SPLASH_DMG,
-                PLASMA_SPLASH_PUSH,
-            ),
+            ProjectileKind::Plasma => (PLASMA_SPLASH_RADIUS, PLASMA_SPLASH_DMG, PLASMA_SPLASH_PUSH),
             ProjectileKind::Bfg => (
                 SPLASH_RADIUS[WeaponId::Bfg as usize],
                 damage_for(WeaponId::Bfg),
@@ -406,7 +401,11 @@ pub fn apply_explosions(
             .find(|p| p.id == explosion.owner_id)
             .map(|p| p.quad_damage)
             .unwrap_or(false);
-        let push_scale = if attacker_quad { push * QUAD_MULTIPLIER } else { push };
+        let push_scale = if attacker_quad {
+            push * QUAD_MULTIPLIER
+        } else {
+            push
+        };
 
         for player in players.iter_mut() {
             if player.dead {
@@ -533,7 +532,10 @@ fn apply_damage(
 }
 
 fn get_player_pos(player_id: u64, players: &[PlayerState]) -> Option<(f32, f32)> {
-    players.iter().find(|p| p.id == player_id).map(|p| (p.x, p.y))
+    players
+        .iter()
+        .find(|p| p.id == player_id)
+        .map(|p| (p.x, p.y))
 }
 
 fn apply_push_on_hit(
@@ -634,18 +636,26 @@ fn apply_item_effect(player: &mut PlayerState, item: &crate::map::MapItem) {
             player.quad_damage = true;
             player.quad_timer = QUAD_DURATION;
         }
-        ItemKind::WeaponMachine => {
-            give_weapon(player, WeaponId::Machine, PICKUP_AMMO[WeaponId::Machine as usize])
-        }
-        ItemKind::WeaponShotgun => {
-            give_weapon(player, WeaponId::Shotgun, PICKUP_AMMO[WeaponId::Shotgun as usize])
-        }
-        ItemKind::WeaponGrenade => {
-            give_weapon(player, WeaponId::Grenade, PICKUP_AMMO[WeaponId::Grenade as usize])
-        }
-        ItemKind::WeaponRocket => {
-            give_weapon(player, WeaponId::Rocket, PICKUP_AMMO[WeaponId::Rocket as usize])
-        }
+        ItemKind::WeaponMachine => give_weapon(
+            player,
+            WeaponId::Machine,
+            PICKUP_AMMO[WeaponId::Machine as usize],
+        ),
+        ItemKind::WeaponShotgun => give_weapon(
+            player,
+            WeaponId::Shotgun,
+            PICKUP_AMMO[WeaponId::Shotgun as usize],
+        ),
+        ItemKind::WeaponGrenade => give_weapon(
+            player,
+            WeaponId::Grenade,
+            PICKUP_AMMO[WeaponId::Grenade as usize],
+        ),
+        ItemKind::WeaponRocket => give_weapon(
+            player,
+            WeaponId::Rocket,
+            PICKUP_AMMO[WeaponId::Rocket as usize],
+        ),
     }
 }
 
