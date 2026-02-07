@@ -1,37 +1,12 @@
-import { Constants, Sound, WeaponConstants, WeaponId } from './helpers'
+import { Constants, Sound, WeaponId } from './helpers'
 import { Map } from './map'
 import { Projectiles } from './projectiles'
 import { PhysicsConstants } from './engine/core/physics'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
-const { DAMAGE, PROJECTILE_SPEED, FIRE_RATE } = WeaponConstants
-
-// Fallback values match physics_core/src/constants.rs
-// Object is created once, not per-call
-const FALLBACK = Object.freeze({
-    SHAFT_RANGE: 96,
-    SHOTGUN_RANGE: 800,
-    SHOTGUN_PELLETS: 11,
-    SHOTGUN_SPREAD: 0.15,
-    GAUNTLET_RANGE: 50,
-    GRENADE_LOFT: 2,
-    MACHINE_RANGE: 1000,
-    RAIL_RANGE: 2000,
-})
-
-// Cached constants - resolved once after WASM loads
-let cachedConstants = null
-const getC = () => {
-    if (cachedConstants) return cachedConstants
-    if (PhysicsConstants) {
-        cachedConstants = PhysicsConstants
-        return cachedConstants
-    }
-    return FALLBACK
-}
 
 const getHitscanRange = (weaponId) => {
-    const c = getC()
+    const c = PhysicsConstants
     switch (weaponId) {
         case WeaponId.MACHINE: return c.MACHINE_RANGE
         case WeaponId.RAIL: return c.RAIL_RANGE
@@ -41,7 +16,7 @@ const getHitscanRange = (weaponId) => {
 }
 
 const getProjectileConfig = (weaponId) => {
-    const c = getC()
+    const c = PhysicsConstants
     switch (weaponId) {
         case WeaponId.GRENADE: return { type: 'grenade', offset: 14, loft: c.GRENADE_LOFT, sound: Sound.grenade }
         case WeaponId.ROCKET: return { type: 'rocket', offset: 18, loft: 0, sound: Sound.rocket }
@@ -71,19 +46,19 @@ export const Weapons = {
         return null
     },
 
-    getFireRate: (weaponId) => FIRE_RATE[weaponId] ?? 50,
+    getFireRate: (weaponId) => PhysicsConstants.getFireRate(weaponId),
 
     rayTrace,
 }
 
 function fireGauntlet(player) {
-    const c = getC()
+    const c = PhysicsConstants
     const { cos, sin } = Math
     const angle = player.aimAngle
     const { x, y } = getWeaponOrigin(player)
     return {
         type: 'gauntlet',
-        damage: DAMAGE[WeaponId.GAUNTLET],
+        damage: PhysicsConstants.getDamage(WeaponId.GAUNTLET),
         hitX: x + cos(angle) * c.GAUNTLET_RANGE,
         hitY: y + sin(angle) * c.GAUNTLET_RANGE,
         angle,
@@ -91,7 +66,7 @@ function fireGauntlet(player) {
 }
 
 function fireShotgun(player) {
-    const c = getC()
+    const c = PhysicsConstants
     Sound.shotgun()
     const { aimAngle } = player
     const { x, y } = getWeaponOrigin(player)
@@ -101,7 +76,7 @@ function fireShotgun(player) {
         const angle = aimAngle + (Math.random() - 0.5) * c.SHOTGUN_SPREAD
         pellets.push({
             trace: rayTrace(x, y, angle, c.SHOTGUN_RANGE),
-            damage: DAMAGE[WeaponId.SHOTGUN],
+            damage: PhysicsConstants.getDamage(WeaponId.SHOTGUN),
         })
     }
 
@@ -112,7 +87,7 @@ function fireProjectile(player, weaponId, cfg) {
     cfg.sound()
     const { aimAngle, id } = player
     const { x, y } = getWeaponOrigin(player)
-    const speed = PROJECTILE_SPEED[weaponId]
+    const speed = PhysicsConstants.getProjectileSpeed(weaponId)
     const cos = Math.cos(aimAngle)
     const sin = Math.sin(aimAngle)
 
@@ -143,7 +118,7 @@ function fireHitscan(player, weaponId, cfg) {
     return {
         type: cfg.type,
         trace: rayTrace(x, y, aimAngle, getHitscanRange(weaponId)),
-        damage: DAMAGE[weaponId],
+        damage: PhysicsConstants.getDamage(weaponId),
         startX: x,
         startY: y,
     }

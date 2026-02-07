@@ -20,11 +20,8 @@ import { SkinId } from './models'
 import { NetworkClient } from './network'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
-const { DAMAGE, AMMO_PICKUP } = WeaponConstants
+const { AMMO_PICKUP } = WeaponConstants
 const { MAX_HEALTH, MEGA_HEALTH, QUAD_MULTIPLIER, QUAD_DURATION } = GameConstants
-
-// Get constants from WASM (Rust physics_core is the source of truth)
-const getExplosionRadius = () => PhysicsConstants?.EXPLOSION_RADIUS ?? 90
 
 const AIM_INPUT_SCALE = 0.5
 const PICKUP_RADIUS = 16
@@ -103,7 +100,7 @@ function setupExplosionHandlers() {
     Projectiles.onExplosion((x, y, type, proj) => {
         if (type !== 'rocket') return
 
-        const explosionRadius = getExplosionRadius()
+        const explosionRadius = PhysicsConstants.EXPLOSION_RADIUS
         for (const player of BotManager.getAllPlayers()) {
             if (player.dead) continue
 
@@ -114,7 +111,7 @@ function setupExplosionHandlers() {
             if (distance >= explosionRadius) continue
 
             const falloff = 1 - distance / explosionRadius
-            const damage = DAMAGE[WeaponId.ROCKET] * falloff
+            const damage = PhysicsConstants.getDamage(WeaponId.ROCKET) * falloff
 
             if (damage > 0) {
                 player.takeDamage(damage, proj?.ownerId ?? player.id)
@@ -637,7 +634,7 @@ function processProjectileHits(player) {
         if (!proj.active || !Projectiles.checkPlayerCollision(player, proj)) continue
 
         const baseDamage = PROJECTILE_WEAPONS.has(proj.type)
-            ? DAMAGE[weaponIdFromType(proj.type)]
+            ? PhysicsConstants.getDamage(weaponIdFromType(proj.type))
             : 0
         if (baseDamage > 0) {
             const multiplier =

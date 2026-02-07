@@ -4,30 +4,6 @@ import { PhysicsConstants } from './engine/core/physics'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
-// Fallback constants in case WASM hasn't loaded yet (should not happen in normal flow)
-// Object is created once, not per-call
-const FALLBACK = Object.freeze({
-    GRAVITY: 0.18,
-    BOUNCE_DECAY: 0.75,
-    GRENADE_FUSE: 120,
-    GRENADE_MIN_VELOCITY: 0.5,
-    BOUNDS_MARGIN: 100,
-    SELF_HIT_GRACE: 8,
-    GRENADE_HIT_GRACE: 12,
-    HIT_RADIUS: Object.freeze({ rocket: 28, bfg: 28, grenade: 16, plasma: 20 }),
-})
-
-// Cached constants - resolved once after WASM loads
-let cachedConstants = null
-const getConstants = () => {
-    if (cachedConstants) return cachedConstants
-    if (PhysicsConstants) {
-        cachedConstants = PhysicsConstants
-        return cachedConstants
-    }
-    return FALLBACK
-}
-
 const EXPLODE_SOUND = {
     rocket: Sound.rocketExplode,
     grenade: Sound.grenadeExplode,
@@ -59,7 +35,7 @@ export const Projectiles = {
     update() {
         const cols = GameMap.getCols()
         const rows = GameMap.getRows()
-        const c = getConstants() // Capture once per frame
+        const c = PhysicsConstants // Capture once per frame
         const maxX = cols * BRICK_WIDTH + c.BOUNDS_MARGIN
         const maxY = rows * BRICK_HEIGHT + c.BOUNDS_MARGIN
 
@@ -117,7 +93,7 @@ export const Projectiles = {
 
     checkPlayerCollision(player, proj) {
         if (!proj.active) return false
-        const c = getConstants()
+        const c = PhysicsConstants
         if (proj.ownerId === player.id && proj.age < c.SELF_HIT_GRACE) return false
         if (proj.type === 'grenade' && proj.age < c.GRENADE_HIT_GRACE) return false
 

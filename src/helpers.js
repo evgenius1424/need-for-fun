@@ -31,24 +31,9 @@ export const GameConstants = {
     RESPAWN_TIME: 180,
 }
 
-// NOTE: Projectile physics constants are now loaded from WASM in engine/core/physics.js
-// Import PhysicsConstants from there for GRAVITY, BOUNCE_DECAY, HIT_RADIUS, etc.
-// This ensures Rust physics_core/src/constants.rs is the single source of truth.
-
 export const WeaponConstants = {
-    // NOTE: DAMAGE, FIRE_RATE, PROJECTILE_SPEED are also available from WASM via PhysicsConstants
-    // These are kept for backwards compatibility but WASM values should be preferred
-    DAMAGE: weaponMap(35, 5, 7, 65, 100, 75, 14, 3, 100),
-    FIRE_RATE: weaponMap(25, 5, 50, 45, 40, 85, 5, 1, 100),
     AMMO_START: weaponMap(-1, 100, 10, 5, 20, 10, 30, 50, 10),
     AMMO_PICKUP: weaponMap(-1, 50, 10, 5, 5, 10, 30, 50, 10),
-    PROJECTILE_SPEED: {
-        [WeaponId.ROCKET]: 6,
-        [WeaponId.PLASMA]: 7,
-        [WeaponId.BFG]: 7,
-        [WeaponId.GRENADE]: 5,
-    },
-    // Weapon ranges now come from WASM - see PhysicsConstants in engine/core/physics.js
     NAMES: [
         'Gauntlet',
         'Machinegun',
