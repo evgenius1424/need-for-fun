@@ -16,24 +16,9 @@ export const WeaponId = {
 export const Constants = {
     BRICK_WIDTH: 32,
     BRICK_HEIGHT: 16,
-    PLAYER_MAX_VELOCITY_X: 3,
-}
-
-export const GameConstants = {
-    MAX_HEALTH: 100,
-    MAX_ARMOR: 200,
-    MEGA_HEALTH: 200,
-    ARMOR_ABSORPTION: 0.67,
-    SELF_DAMAGE_REDUCTION: 0.5,
-    QUAD_MULTIPLIER: 3,
-    QUAD_DURATION: 900,
-    GIB_THRESHOLD: -40,
-    RESPAWN_TIME: 180,
 }
 
 export const WeaponConstants = {
-    AMMO_START: weaponMap(-1, 100, 10, 5, 20, 10, 30, 50, 10),
-    AMMO_PICKUP: weaponMap(-1, 50, 10, 5, 5, 10, 30, 50, 10),
     NAMES: [
         'Gauntlet',
         'Machinegun',
@@ -73,20 +58,6 @@ export const MapEditor = { show() {}, setContent() {} }
 export const Sound = createSoundSystem()
 
 initInputHandlers()
-
-function weaponMap(gauntlet, machine, shotgun, grenade, rocket, rail, plasma, shaft, bfg) {
-    return {
-        [WeaponId.GAUNTLET]: gauntlet,
-        [WeaponId.MACHINE]: machine,
-        [WeaponId.SHOTGUN]: shotgun,
-        [WeaponId.GRENADE]: grenade,
-        [WeaponId.ROCKET]: rocket,
-        [WeaponId.RAIL]: rail,
-        [WeaponId.PLASMA]: plasma,
-        [WeaponId.SHAFT]: shaft,
-        [WeaponId.BFG]: bfg,
-    }
-}
 
 function createSettings() {
     const KEY = 'aimSensitivity'

@@ -1,13 +1,10 @@
-import { Constants, GameConstants, Sound, WeaponConstants, WeaponId } from './helpers'
+import { Constants, Sound, WeaponId } from './helpers'
+import { PhysicsConstants } from './engine/core/physics'
 import { Map } from './map'
 import { DEFAULT_MODEL, DEFAULT_SKIN } from './models'
 import { Weapons } from './weapons'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
-const { MAX_HEALTH, MAX_ARMOR, SELF_DAMAGE_REDUCTION, ARMOR_ABSORPTION, RESPAWN_TIME } =
-    GameConstants
-const { AMMO_START } = WeaponConstants
-
 const HALF_HEIGHT = 24
 const HALF_PI = Math.PI / 2
 const TWO_PI = Math.PI * 2
@@ -39,7 +36,7 @@ export class Player {
     cacheBrickOnHead = false
     cacheBrickCrouchOnHead = false
 
-    health = MAX_HEALTH
+    health = PhysicsConstants.MAX_HEALTH
     armor = 0
     dead = false
     respawnTimer = 0
@@ -136,21 +133,25 @@ export class Player {
         }
     }
 
-    giveHealth(amount, max = MAX_HEALTH) {
+    giveHealth(amount, max = PhysicsConstants.MAX_HEALTH) {
         this.health = Math.min(this.health + amount, max)
     }
 
     giveArmor(amount) {
-        this.armor = Math.min(this.armor + amount, MAX_ARMOR)
+        this.armor = Math.min(this.armor + amount, PhysicsConstants.MAX_ARMOR)
     }
 
     takeDamage(damage, attackerId) {
         if (this.dead || this.spawnProtection > 0) return
 
-        let actual = attackerId === this.id ? damage * SELF_DAMAGE_REDUCTION : damage
+        let actual =
+            attackerId === this.id ? damage * PhysicsConstants.SELF_DAMAGE_REDUCTION : damage
 
         if (this.armor > 0) {
-            const armorDamage = Math.min(Math.floor(actual * ARMOR_ABSORPTION), this.armor)
+            const armorDamage = Math.min(
+                Math.floor(actual * PhysicsConstants.ARMOR_ABSORPTION),
+                this.armor,
+            )
             this.armor -= armorDamage
             actual -= armorDamage
         }
@@ -167,7 +168,7 @@ export class Player {
 
     die() {
         this.dead = true
-        this.respawnTimer = RESPAWN_TIME
+        this.respawnTimer = PhysicsConstants.RESPAWN_TIME
         Sound.death(this.model)
     }
 
@@ -180,7 +181,7 @@ export class Player {
         this.prevY = this.y
         this.prevAimAngle = this.aimAngle
 
-        this.health = MAX_HEALTH
+        this.health = PhysicsConstants.MAX_HEALTH
         this.armor = 0
         this.dead = false
         this.velocityX = 0
@@ -190,7 +191,7 @@ export class Player {
         this.currentWeapon = WeaponId.ROCKET
         this.quadDamage = false
         this.quadTimer = 0
-        this.spawnProtection = 120 // ~2 seconds of spawn protection
+        this.spawnProtection = PhysicsConstants.SPAWN_PROTECTION // ~2 seconds of spawn protection
     }
 
     updateAimAngle(delta, facingLeft) {
@@ -206,15 +207,15 @@ export class Player {
 
 function createAmmoArray() {
     return [
-        AMMO_START[WeaponId.GAUNTLET],
-        AMMO_START[WeaponId.MACHINE],
-        AMMO_START[WeaponId.SHOTGUN],
-        AMMO_START[WeaponId.GRENADE],
-        AMMO_START[WeaponId.ROCKET],
-        AMMO_START[WeaponId.RAIL],
-        AMMO_START[WeaponId.PLASMA],
-        AMMO_START[WeaponId.SHAFT],
-        AMMO_START[WeaponId.BFG],
+        PhysicsConstants.DEFAULT_AMMO[WeaponId.GAUNTLET],
+        PhysicsConstants.DEFAULT_AMMO[WeaponId.MACHINE],
+        PhysicsConstants.DEFAULT_AMMO[WeaponId.SHOTGUN],
+        PhysicsConstants.DEFAULT_AMMO[WeaponId.GRENADE],
+        PhysicsConstants.DEFAULT_AMMO[WeaponId.ROCKET],
+        PhysicsConstants.DEFAULT_AMMO[WeaponId.RAIL],
+        PhysicsConstants.DEFAULT_AMMO[WeaponId.PLASMA],
+        PhysicsConstants.DEFAULT_AMMO[WeaponId.SHAFT],
+        PhysicsConstants.DEFAULT_AMMO[WeaponId.BFG],
     ]
 }
 

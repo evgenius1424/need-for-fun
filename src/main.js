@@ -1,11 +1,9 @@
 import { Howler } from 'howler'
 import {
     Constants,
-    GameConstants,
     Input,
     Settings,
     Sound,
-    WeaponConstants,
     WeaponId,
     Console,
 } from './helpers'
@@ -20,8 +18,6 @@ import { SkinId } from './models'
 import { NetworkClient } from './network'
 
 const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
-const { AMMO_PICKUP } = WeaponConstants
-const { MAX_HEALTH, MEGA_HEALTH, QUAD_MULTIPLIER, QUAD_DURATION } = GameConstants
 
 const AIM_INPUT_SCALE = 0.5
 const PICKUP_RADIUS = 16
@@ -30,11 +26,17 @@ const HITSCAN_PLAYER_RADIUS = 14
 const GAUNTLET_PLAYER_RADIUS = 22
 const GAUNTLET_SPARK_OFFSET = BRICK_WIDTH * 0.55
 
+const PROJECTILE_WEAPONS = new Set(['rocket', 'grenade', 'plasma', 'bfg'])
+
+await loadAssets()
+await Map.loadFromQuery()
+Physics.setMap(Map.getRows(), Map.getCols(), Map.getBricksFlat())
+
 const ITEM_DEFS = {
-    health5: { kind: 'health', amount: 5, max: MAX_HEALTH, respawn: 300 },
-    health25: { kind: 'health', amount: 25, max: MAX_HEALTH, respawn: 300 },
-    health50: { kind: 'health', amount: 50, max: MAX_HEALTH, respawn: 600 },
-    health100: { kind: 'health', amount: 100, max: MEGA_HEALTH, respawn: 900 },
+    health5: { kind: 'health', amount: 5, max: PhysicsConstants.MAX_HEALTH, respawn: 300 },
+    health25: { kind: 'health', amount: 25, max: PhysicsConstants.MAX_HEALTH, respawn: 300 },
+    health50: { kind: 'health', amount: 50, max: PhysicsConstants.MAX_HEALTH, respawn: 600 },
+    health100: { kind: 'health', amount: 100, max: PhysicsConstants.MEGA_HEALTH, respawn: 900 },
     armor50: { kind: 'armor', amount: 50, respawn: 600 },
     armor100: { kind: 'armor', amount: 100, respawn: 900 },
     quad: { kind: 'quad', respawn: 1200 },
@@ -43,12 +45,6 @@ const ITEM_DEFS = {
     weapon_grenade: { kind: 'weapon', weaponId: WeaponId.GRENADE, respawn: 600 },
     weapon_rocket: { kind: 'weapon', weaponId: WeaponId.ROCKET, respawn: 600 },
 }
-
-const PROJECTILE_WEAPONS = new Set(['rocket', 'grenade', 'plasma', 'bfg'])
-
-await loadAssets()
-await Map.loadFromQuery()
-Physics.setMap(Map.getRows(), Map.getCols(), Map.getBricksFlat())
 
 const localPlayer = new Player()
 const network = new NetworkClient()
@@ -81,7 +77,7 @@ function spawnPlayer(player) {
     player.aimAngle = 0
     player.prevAimAngle = 0
     player.facingLeft = false
-    player.spawnProtection = 120
+    player.spawnProtection = PhysicsConstants.SPAWN_PROTECTION
 }
 
 function setupPointerLock() {
@@ -727,7 +723,9 @@ function processProjectileHits(player) {
             : 0
         if (baseDamage > 0) {
             const multiplier =
-                proj.ownerId === localPlayer.id && localPlayer.quadDamage ? QUAD_MULTIPLIER : 1
+                proj.ownerId === localPlayer.id && localPlayer.quadDamage
+                    ? PhysicsConstants.QUAD_MULTIPLIER
+                    : 1
             player.takeDamage(baseDamage * multiplier, proj.ownerId)
         }
 
@@ -775,10 +773,10 @@ function applyItemEffect(player, item) {
             break
         case 'quad':
             player.quadDamage = true
-            player.quadTimer = QUAD_DURATION
+            player.quadTimer = PhysicsConstants.QUAD_DURATION
             break
         case 'weapon':
-            player.giveWeapon(def.weaponId, AMMO_PICKUP[def.weaponId] ?? 0)
+            player.giveWeapon(def.weaponId, PhysicsConstants.PICKUP_AMMO[def.weaponId] ?? 0)
             break
     }
 }
@@ -789,7 +787,7 @@ function applyHitscanDamage(attacker, shot, targets) {
     const hit = findHitscanTarget(attacker, shot, targets)
     if (!hit) return
 
-    const multiplier = attacker.quadDamage ? QUAD_MULTIPLIER : 1
+    const multiplier = attacker.quadDamage ? PhysicsConstants.QUAD_MULTIPLIER : 1
     hit.target.takeDamage(shot.damage * multiplier, attacker.id)
 }
 
@@ -799,7 +797,7 @@ function applyMeleeDamage(attacker, hit, targets) {
     const target = findMeleeTarget(attacker, hit, targets)
     if (!target) return
 
-    const multiplier = attacker.quadDamage ? QUAD_MULTIPLIER : 1
+    const multiplier = attacker.quadDamage ? PhysicsConstants.QUAD_MULTIPLIER : 1
     target.takeDamage(hit.damage * multiplier, attacker.id)
 }
 

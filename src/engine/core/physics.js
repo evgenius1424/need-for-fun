@@ -54,9 +54,9 @@ async function initKernel() {
         MACHINE_RANGE: module.get_machine_range(),
         RAIL_RANGE: module.get_rail_range(),
 
-        // Hit radii - note: get_hit_radius_rocket has a wasm-bindgen bug, use get_hit_radius_bfg value (both are 28)
+        // Hit radii
         HIT_RADIUS: {
-            rocket: module.get_hit_radius_bfg(), // Both rocket and bfg are 28.0 in Rust
+            rocket: module.get_hit_radius_rocket(),
             bfg: module.get_hit_radius_bfg(),
             grenade: module.get_hit_radius_grenade(),
             plasma: module.get_hit_radius_plasma(),
@@ -68,6 +68,22 @@ async function initKernel() {
         getProjectileSpeed: module.get_projectile_speed,
         getWeaponPush: module.get_weapon_push,
         getSplashRadius: module.get_splash_radius,
+        getDefaultAmmo: module.get_default_ammo,
+        getPickupAmmo: module.get_pickup_ammo,
+        DEFAULT_AMMO: Array.from({ length: 9 }, (_, i) => module.get_default_ammo(i)),
+        PICKUP_AMMO: Array.from({ length: 9 }, (_, i) => module.get_pickup_ammo(i)),
+
+        // Game constants
+        MAX_HEALTH: module.get_max_health(),
+        MAX_ARMOR: module.get_max_armor(),
+        MEGA_HEALTH: module.get_mega_health(),
+        ARMOR_ABSORPTION: module.get_armor_absorption(),
+        SELF_DAMAGE_REDUCTION: module.get_self_damage_reduction(),
+        QUAD_MULTIPLIER: module.get_quad_multiplier(),
+        QUAD_DURATION: module.get_quad_duration(),
+        GIB_THRESHOLD: -40,
+        RESPAWN_TIME: module.get_respawn_time(),
+        SPAWN_PROTECTION: module.get_spawn_protection(),
 
         // Tile sizes (for validation)
         TILE_W: module.get_tile_w(),
