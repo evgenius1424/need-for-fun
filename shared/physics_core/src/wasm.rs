@@ -437,6 +437,16 @@ pub fn get_damage(weapon_id: u8) -> f32 {
 }
 
 #[wasm_bindgen]
+pub fn get_default_ammo(weapon_id: u8) -> i32 {
+    constants::DEFAULT_AMMO.get(weapon_id as usize).copied().unwrap_or(0)
+}
+
+#[wasm_bindgen]
+pub fn get_pickup_ammo(weapon_id: u8) -> i32 {
+    constants::PICKUP_AMMO.get(weapon_id as usize).copied().unwrap_or(0)
+}
+
+#[wasm_bindgen]
 pub fn get_weapon_push(weapon_id: u8) -> f32 {
     constants::WEAPON_PUSH.get(weapon_id as usize).copied().unwrap_or(0.0)
 }
@@ -465,4 +475,49 @@ pub fn get_tile_w() -> f32 {
 #[wasm_bindgen]
 pub fn get_tile_h() -> f32 {
     constants::TILE_H
+}
+
+#[wasm_bindgen]
+pub fn get_max_health() -> i32 {
+    constants::MAX_HEALTH
+}
+
+#[wasm_bindgen]
+pub fn get_max_armor() -> i32 {
+    constants::MAX_ARMOR
+}
+
+#[wasm_bindgen]
+pub fn get_mega_health() -> i32 {
+    constants::MEGA_HEALTH
+}
+
+#[wasm_bindgen]
+pub fn get_armor_absorption() -> f32 {
+    constants::ARMOR_ABSORPTION
+}
+
+#[wasm_bindgen]
+pub fn get_self_damage_reduction() -> f32 {
+    constants::SELF_DAMAGE_REDUCTION
+}
+
+#[wasm_bindgen]
+pub fn get_quad_multiplier() -> f32 {
+    constants::QUAD_MULTIPLIER
+}
+
+#[wasm_bindgen]
+pub fn get_quad_duration() -> i32 {
+    constants::QUAD_DURATION
+}
+
+#[wasm_bindgen]
+pub fn get_respawn_time() -> i32 {
+    constants::RESPAWN_TIME
+}
+
+#[wasm_bindgen]
+pub fn get_spawn_protection() -> i32 {
+    constants::SPAWN_PROTECTION
 }

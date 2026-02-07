@@ -1,13 +1,15 @@
 use rand::Rng;
 
 use crate::constants::{
-    BOUNDS_MARGIN, DAMAGE, FIRE_RATE, GAUNTLET_PLAYER_RADIUS,
+    ARMOR_ABSORPTION, BOUNDS_MARGIN, DAMAGE, DEFAULT_AMMO, FIRE_RATE, GAUNTLET_PLAYER_RADIUS,
     GAUNTLET_RANGE, GRENADE_AIR_FRICTION, GRENADE_BOUNCE_FRICTION, GRENADE_FUSE,
     GRENADE_HIT_GRACE, GRENADE_LOFT, GRENADE_MAX_FALL_SPEED, GRENADE_MIN_VELOCITY,
-    GRENADE_RISE_DAMPING, HITSCAN_PLAYER_RADIUS, MACHINE_RANGE, PICKUP_RADIUS,
-    PLASMA_SPLASH_DMG, PLASMA_SPLASH_PUSH, PLASMA_SPLASH_RADIUS, PLAYER_HALF_H,
-    PROJECTILE_GRAVITY, PROJECTILE_SPEED, RAIL_RANGE, SELF_HIT_GRACE, SHAFT_RANGE,
-    SHOTGUN_PELLETS, SHOTGUN_RANGE, SHOTGUN_SPREAD, SPLASH_RADIUS, TILE_H, TILE_W, WEAPON_PUSH,
+    GRENADE_RISE_DAMPING, HITSCAN_PLAYER_RADIUS, MACHINE_RANGE, MAX_ARMOR, MAX_HEALTH,
+    MEGA_HEALTH, PICKUP_AMMO, PICKUP_RADIUS, PLASMA_SPLASH_DMG, PLASMA_SPLASH_PUSH,
+    PLASMA_SPLASH_RADIUS, PLAYER_HALF_H, PROJECTILE_GRAVITY, PROJECTILE_SPEED, QUAD_DURATION,
+    QUAD_MULTIPLIER, RAIL_RANGE, RESPAWN_TIME, SELF_DAMAGE_REDUCTION, SELF_HIT_GRACE,
+    SHAFT_RANGE, SHOTGUN_PELLETS, SHOTGUN_RANGE, SHOTGUN_SPREAD, SPAWN_PROTECTION,
+    SPLASH_RADIUS, TILE_H, TILE_W, WEAPON_PUSH,
 };
 use crate::map::GameMap;
 use crate::physics::PlayerState;
@@ -20,14 +22,6 @@ pub use physics_core::projectile::{Explosion, Projectile, ProjectileKind};
 pub use crate::constants::WEAPON_COUNT;
 pub type EventVec = SmallVec<[EffectEvent; 16]>;
 
-const MAX_HEALTH: i32 = 100;
-const MAX_ARMOR: i32 = 200;
-const MEGA_HEALTH: i32 = 200;
-const ARMOR_ABSORPTION: f32 = 0.67;
-const SELF_DAMAGE_REDUCTION: f32 = 0.5;
-const QUAD_MULTIPLIER: f32 = 3.0;
-const QUAD_DURATION: i32 = 900;
-const RESPAWN_TIME: i32 = 180;
 const PUSH_LATERAL_FACTOR: f32 = 5.0 / 6.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -479,11 +473,11 @@ pub fn respawn_if_ready_with_rng(player: &mut PlayerState, map: &GameMap, rng: &
     player.velocity_x = 0.0;
     player.velocity_y = 0.0;
     player.weapons = [true; WEAPON_COUNT];
-    player.ammo = [-1, 100, 10, 5, 20, 10, 30, 50, 10];
+    player.ammo = DEFAULT_AMMO;
     player.current_weapon = WeaponId::Rocket as i32;
     player.quad_damage = false;
     player.quad_timer = 0;
-    player.spawn_protection = 120;
+    player.spawn_protection = SPAWN_PROTECTION;
 }
 
 fn apply_damage(
@@ -640,10 +634,18 @@ fn apply_item_effect(player: &mut PlayerState, item: &crate::map::MapItem) {
             player.quad_damage = true;
             player.quad_timer = QUAD_DURATION;
         }
-        ItemKind::WeaponMachine => give_weapon(player, WeaponId::Machine, 50),
-        ItemKind::WeaponShotgun => give_weapon(player, WeaponId::Shotgun, 10),
-        ItemKind::WeaponGrenade => give_weapon(player, WeaponId::Grenade, 5),
-        ItemKind::WeaponRocket => give_weapon(player, WeaponId::Rocket, 5),
+        ItemKind::WeaponMachine => {
+            give_weapon(player, WeaponId::Machine, PICKUP_AMMO[WeaponId::Machine as usize])
+        }
+        ItemKind::WeaponShotgun => {
+            give_weapon(player, WeaponId::Shotgun, PICKUP_AMMO[WeaponId::Shotgun as usize])
+        }
+        ItemKind::WeaponGrenade => {
+            give_weapon(player, WeaponId::Grenade, PICKUP_AMMO[WeaponId::Grenade as usize])
+        }
+        ItemKind::WeaponRocket => {
+            give_weapon(player, WeaponId::Rocket, PICKUP_AMMO[WeaponId::Rocket as usize])
+        }
     }
 }
 

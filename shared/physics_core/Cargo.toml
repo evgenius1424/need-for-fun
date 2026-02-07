@@ -11,7 +11,7 @@ default = []
 wasm = ["dep:wasm-bindgen"]
 
 [dependencies]
-wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen = { version = "=0.2.93", optional = true }
 
 [dev-dependencies]
 approx = "0.5"

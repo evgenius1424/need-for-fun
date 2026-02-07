@@ -14,6 +14,26 @@ function getArrayU8FromWasm0(ptr, len) {
     return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
 }
 
+const heap = new Array(128).fill(undefined);
+
+heap.push(undefined, null, true, false);
+
+function getObject(idx) { return heap[idx]; }
+
+let heap_next = heap.length;
+
+function dropObject(idx) {
+    if (idx < 132) return;
+    heap[idx] = heap_next;
+    heap_next = idx;
+}
+
+function takeObject(idx) {
+    const ret = getObject(idx);
+    dropObject(idx);
+    return ret;
+}
+
 const cachedTextDecoder = (typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8', { ignoreBOM: true, fatal: true }) : { decode: () => { throw Error('TextDecoder not available') } } );
 
 if (typeof TextDecoder !== 'undefined') { cachedTextDecoder.decode(); };
@@ -41,290 +61,160 @@ function passArrayF32ToWasm0(arg, malloc) {
     return ptr;
 }
 
+function addHeapObject(obj) {
+    if (heap_next === heap.length) heap.push(heap.length + 1);
+    const idx = heap_next;
+    heap_next = heap[idx];
+
+    heap[idx] = obj;
+    return idx;
+}
+
 function _assertClass(instance, klass) {
     if (!(instance instanceof klass)) {
         throw new Error(`expected instance of ${klass.name}`);
     }
+    return instance.ptr;
 }
 /**
- * @returns {number}
- */
-export function get_self_damage_reduction() {
-    const ret = wasm.get_self_damage_reduction();
+* @returns {number}
+*/
+export function get_armor_absorption() {
+    const ret = wasm.get_armor_absorption();
     return ret;
 }
 
 /**
- * @returns {number}
- */
+* @returns {number}
+*/
 export function get_grenade_hit_grace() {
     const ret = wasm.get_grenade_hit_grace();
     return ret;
 }
 
 /**
- * @returns {number}
- */
-export function get_shotgun_spread() {
-    const ret = wasm.get_shotgun_spread();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_explosion_radius() {
-    const ret = wasm.get_explosion_radius();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_tile_w() {
-    const ret = wasm.get_tile_w();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_mega_health() {
-    const ret = wasm.get_mega_health();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_hit_radius_bfg() {
-    const ret = wasm.get_hit_radius_bfg();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_plasma_splash_radius() {
-    const ret = wasm.get_plasma_splash_radius();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_grenade_max_fall_speed() {
-    const ret = wasm.get_grenade_max_fall_speed();
-    return ret;
-}
-
-/**
- * @param {number} weapon_id
- * @returns {number}
- */
-export function get_pickup_ammo(weapon_id) {
-    const ret = wasm.get_pickup_ammo(weapon_id);
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_grenade_min_velocity() {
-    const ret = wasm.get_grenade_min_velocity();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_grenade_air_friction() {
-    const ret = wasm.get_grenade_air_friction();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_projectile_gravity() {
-    const ret = wasm.get_projectile_gravity();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_grenade_fuse() {
-    const ret = wasm.get_grenade_fuse();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_quad_duration() {
-    const ret = wasm.get_quad_duration();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_shaft_range() {
-    const ret = wasm.get_shaft_range();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_plasma_splash_damage() {
-    const ret = wasm.get_plasma_splash_damage();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_max_health() {
-    const ret = wasm.get_max_health();
-    return ret;
-}
-
-/**
- * @param {number} weapon_id
- * @returns {number}
- */
-export function get_splash_radius(weapon_id) {
-    const ret = wasm.get_splash_radius(weapon_id);
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_rail_range() {
-    const ret = wasm.get_rail_range();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_respawn_time() {
-    const ret = wasm.get_respawn_time();
-    return ret;
-}
-
-/**
- * @param {number} weapon_id
- * @returns {number}
- */
-export function get_damage(weapon_id) {
-    const ret = wasm.get_damage(weapon_id);
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_plasma_splash_push() {
-    const ret = wasm.get_plasma_splash_push();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_self_hit_grace() {
-    const ret = wasm.get_self_hit_grace();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_spawn_protection() {
-    const ret = wasm.get_spawn_protection();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_hit_radius_rocket() {
-    const ret = wasm.get_hit_radius_rocket();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
-export function get_grenade_rise_damping() {
-    const ret = wasm.get_grenade_rise_damping();
-    return ret;
-}
-
-/**
- * @returns {number}
- */
+* @returns {number}
+*/
 export function get_hit_radius_grenade() {
     const ret = wasm.get_hit_radius_grenade();
     return ret;
 }
 
 /**
- * @returns {number}
- */
-export function get_max_armor() {
-    const ret = wasm.get_max_armor();
+* @returns {number}
+*/
+export function get_spawn_protection() {
+    const ret = wasm.get_spawn_protection();
     return ret;
 }
 
 /**
- * @param {number} weapon_id
- * @returns {number}
- */
-export function get_weapon_push(weapon_id) {
-    const ret = wasm.get_weapon_push(weapon_id);
+* @returns {number}
+*/
+export function get_plasma_splash_push() {
+    const ret = wasm.get_plasma_splash_push();
     return ret;
 }
 
 /**
- * @returns {number}
- */
-export function get_bounds_margin() {
-    const ret = wasm.get_bounds_margin();
+* @returns {number}
+*/
+export function get_grenade_min_velocity() {
+    const ret = wasm.get_grenade_min_velocity();
     return ret;
 }
 
 /**
- * @param {number} weapon_id
- * @returns {number}
- */
+* @returns {number}
+*/
+export function get_self_hit_grace() {
+    const ret = wasm.get_self_hit_grace();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_self_damage_reduction() {
+    const ret = wasm.get_grenade_min_velocity();
+    return ret;
+}
+
+/**
+* @param {number} weapon_id
+* @returns {number}
+*/
 export function get_fire_rate(weapon_id) {
     const ret = wasm.get_fire_rate(weapon_id);
     return ret;
 }
 
 /**
- * @returns {number}
- */
-export function get_shotgun_pellets() {
-    const ret = wasm.get_shotgun_pellets();
-    return ret >>> 0;
+* @returns {number}
+*/
+export function get_grenade_air_friction() {
+    const ret = wasm.get_grenade_air_friction();
+    return ret;
 }
 
 /**
- * Apply explosion knockback to a player state.
- * Returns the damage falloff (0.0-1.0) if player was in radius, -1.0 otherwise.
- * @param {WasmPlayerState} player
- * @param {number} explosion_x
- * @param {number} explosion_y
- * @param {number} explosion_kind
- * @param {bigint} owner_id
- * @returns {number}
- */
+* @returns {number}
+*/
+export function get_grenade_loft() {
+    const ret = wasm.get_grenade_loft();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_max_health() {
+    const ret = wasm.get_grenade_fuse();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_machine_range() {
+    const ret = wasm.get_machine_range();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_shotgun_spread() {
+    const ret = wasm.get_shotgun_spread();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_shotgun_range() {
+    const ret = wasm.get_shotgun_range();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_gauntlet_range() {
+    const ret = wasm.get_gauntlet_range();
+    return ret;
+}
+
+/**
+* Apply explosion knockback to a player state.
+* Returns the damage falloff (0.0-1.0) if player was in radius, -1.0 otherwise.
+* @param {WasmPlayerState} player
+* @param {number} explosion_x
+* @param {number} explosion_y
+* @param {number} explosion_kind
+* @param {bigint} owner_id
+* @returns {number}
+*/
 export function wasm_apply_knockback(player, explosion_x, explosion_y, explosion_kind, owner_id) {
     _assertClass(player, WasmPlayerState);
     const ret = wasm.wasm_apply_knockback(player.__wbg_ptr, explosion_x, explosion_y, explosion_kind, owner_id);
@@ -332,92 +222,232 @@ export function wasm_apply_knockback(player, explosion_x, explosion_y, explosion
 }
 
 /**
- * @param {number} weapon_id
- * @returns {number}
- */
-export function get_default_ammo(weapon_id) {
-    const ret = wasm.get_default_ammo(weapon_id);
+* @returns {number}
+*/
+export function get_shaft_range() {
+    const ret = wasm.get_shaft_range();
     return ret;
 }
 
 /**
- * @returns {number}
- */
-export function get_armor_absorption() {
-    const ret = wasm.get_armor_absorption();
+* @returns {number}
+*/
+export function get_hit_radius_rocket() {
+    const ret = wasm.get_hit_radius_bfg();
     return ret;
 }
 
 /**
- * @returns {number}
- */
-export function get_hit_radius_plasma() {
-    const ret = wasm.get_hit_radius_plasma();
+* @returns {number}
+*/
+export function get_plasma_splash_radius() {
+    const ret = wasm.get_plasma_splash_damage();
     return ret;
 }
 
 /**
- * @returns {number}
- */
-export function get_gauntlet_range() {
-    const ret = wasm.get_gauntlet_range();
+* @returns {number}
+*/
+export function get_explosion_radius() {
+    const ret = wasm.get_explosion_radius();
     return ret;
 }
 
 /**
- * @returns {number}
- */
-export function get_grenade_loft() {
-    const ret = wasm.get_grenade_loft();
+* @returns {number}
+*/
+export function get_grenade_fuse() {
+    const ret = wasm.get_grenade_fuse();
     return ret;
 }
 
 /**
- * @returns {number}
- */
-export function get_quad_multiplier() {
-    const ret = wasm.get_quad_multiplier();
+* @param {number} weapon_id
+* @returns {number}
+*/
+export function get_pickup_ammo(weapon_id) {
+    const ret = wasm.get_pickup_ammo(weapon_id);
     return ret;
 }
 
 /**
- * @param {number} weapon_id
- * @returns {number}
- */
+* @param {number} weapon_id
+* @returns {number}
+*/
+export function get_weapon_push(weapon_id) {
+    const ret = wasm.get_weapon_push(weapon_id);
+    return ret;
+}
+
+/**
+* @param {number} weapon_id
+* @returns {number}
+*/
 export function get_projectile_speed(weapon_id) {
     const ret = wasm.get_projectile_speed(weapon_id);
     return ret;
 }
 
 /**
- * @returns {number}
- */
-export function get_shotgun_range() {
-    const ret = wasm.get_shotgun_range();
+* @returns {number}
+*/
+export function get_max_armor() {
+    const ret = wasm.get_max_armor();
     return ret;
 }
 
 /**
- * @returns {number}
- */
-export function get_machine_range() {
-    const ret = wasm.get_machine_range();
+* @returns {number}
+*/
+export function get_quad_multiplier() {
+    const ret = wasm.get_quad_multiplier();
     return ret;
 }
 
 /**
- * @returns {number}
- */
+* @returns {number}
+*/
+export function get_grenade_rise_damping() {
+    const ret = wasm.get_grenade_rise_damping();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_shotgun_pellets() {
+    const ret = wasm.get_shotgun_pellets();
+    return ret >>> 0;
+}
+
+/**
+* @returns {number}
+*/
 export function get_tile_h() {
-    const ret = wasm.get_tile_h();
+    const ret = wasm.get_hit_radius_grenade();
     return ret;
 }
 
 /**
- * @returns {number}
- */
+* @returns {number}
+*/
+export function get_tile_w() {
+    const ret = wasm.get_tile_w();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_projectile_gravity() {
+    const ret = wasm.get_projectile_gravity();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_hit_radius_bfg() {
+    const ret = wasm.get_hit_radius_bfg();
+    return ret;
+}
+
+/**
+* @param {number} weapon_id
+* @returns {number}
+*/
+export function get_damage(weapon_id) {
+    const ret = wasm.get_damage(weapon_id);
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_bounds_margin() {
+    const ret = wasm.get_bounds_margin();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_rail_range() {
+    const ret = wasm.get_rail_range();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_mega_health() {
+    const ret = wasm.get_max_armor();
+    return ret;
+}
+
+/**
+* @param {number} weapon_id
+* @returns {number}
+*/
+export function get_splash_radius(weapon_id) {
+    const ret = wasm.get_splash_radius(weapon_id);
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_hit_radius_plasma() {
+    const ret = wasm.get_hit_radius_plasma();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
 export function get_grenade_bounce_friction() {
     const ret = wasm.get_grenade_bounce_friction();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_plasma_splash_damage() {
+    const ret = wasm.get_plasma_splash_damage();
+    return ret;
+}
+
+/**
+* @param {number} weapon_id
+* @returns {number}
+*/
+export function get_default_ammo(weapon_id) {
+    const ret = wasm.get_default_ammo(weapon_id);
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_quad_duration() {
+    const ret = wasm.get_quad_duration();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_grenade_max_fall_speed() {
+    const ret = wasm.get_grenade_max_fall_speed();
+    return ret;
+}
+
+/**
+* @returns {number}
+*/
+export function get_respawn_time() {
+    const ret = wasm.get_respawn_time();
     return ret;
 }
 
@@ -431,7 +461,8 @@ function passArray8ToWasm0(arg, malloc) {
 const WasmMapFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmmap_free(ptr >>> 0, 1));
-
+/**
+*/
 export class WasmMap {
 
     __destroy_into_raw() {
@@ -446,17 +477,17 @@ export class WasmMap {
         wasm.__wbg_wasmmap_free(ptr, 0);
     }
     /**
-     * @param {Uint8Array} bricks
-     */
+    * @param {Uint8Array} bricks
+    */
     upload_bricks(bricks) {
         const ptr0 = passArray8ToWasm0(bricks, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         wasm.wasmmap_upload_bricks(this.__wbg_ptr, ptr0, len0);
     }
     /**
-     * @param {number} rows
-     * @param {number} cols
-     */
+    * @param {number} rows
+    * @param {number} cols
+    */
     constructor(rows, cols) {
         const ret = wasm.wasmmap_new(rows, cols);
         this.__wbg_ptr = ret >>> 0;
@@ -468,7 +499,8 @@ export class WasmMap {
 const WasmPhysicsKernelFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmphysicskernel_free(ptr >>> 0, 1));
-
+/**
+*/
 export class WasmPhysicsKernel {
 
     __destroy_into_raw() {
@@ -483,16 +515,18 @@ export class WasmPhysicsKernel {
         wasm.__wbg_wasmphysicskernel_free(ptr, 0);
     }
     /**
-     * @param {WasmPlayerState} state
-     * @param {WasmPlayerInput} input
-     * @param {WasmMap} map
-     */
+    * @param {WasmPlayerState} state
+    * @param {WasmPlayerInput} input
+    * @param {WasmMap} map
+    */
     step_player(state, input, map) {
         _assertClass(state, WasmPlayerState);
         _assertClass(input, WasmPlayerInput);
         _assertClass(map, WasmMap);
         wasm.wasmphysicskernel_step_player(this.__wbg_ptr, state.__wbg_ptr, input.__wbg_ptr, map.__wbg_ptr);
     }
+    /**
+    */
     constructor() {
         const ret = wasm.wasmphysicskernel_new();
         this.__wbg_ptr = ret >>> 0;
@@ -504,7 +538,8 @@ export class WasmPhysicsKernel {
 const WasmPlayerInputFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmplayerinput_free(ptr >>> 0, 1));
-
+/**
+*/
 export class WasmPlayerInput {
 
     __destroy_into_raw() {
@@ -518,6 +553,8 @@ export class WasmPlayerInput {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_wasmplayerinput_free(ptr, 0);
     }
+    /**
+    */
     constructor() {
         const ret = wasm.wasmplayerinput_new();
         this.__wbg_ptr = ret >>> 0;
@@ -525,11 +562,11 @@ export class WasmPlayerInput {
         return this;
     }
     /**
-     * @param {boolean} key_up
-     * @param {boolean} key_down
-     * @param {boolean} key_left
-     * @param {boolean} key_right
-     */
+    * @param {boolean} key_up
+    * @param {boolean} key_down
+    * @param {boolean} key_left
+    * @param {boolean} key_right
+    */
     set(key_up, key_down, key_left, key_right) {
         wasm.wasmplayerinput_set(this.__wbg_ptr, key_up, key_down, key_left, key_right);
     }
@@ -538,7 +575,8 @@ export class WasmPlayerInput {
 const WasmPlayerStateFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmplayerstate_free(ptr >>> 0, 1));
-
+/**
+*/
 export class WasmPlayerState {
 
     __destroy_into_raw() {
@@ -553,33 +591,33 @@ export class WasmPlayerState {
         wasm.__wbg_wasmplayerstate_free(ptr, 0);
     }
     /**
-     * @param {Float32Array} out
-     */
+    * @param {Float32Array} out
+    */
     export_to_host(out) {
         var ptr0 = passArrayF32ToWasm0(out, wasm.__wbindgen_malloc);
         var len0 = WASM_VECTOR_LEN;
-        wasm.wasmplayerstate_export_to_host(this.__wbg_ptr, ptr0, len0, out);
+        wasm.wasmplayerstate_export_to_host(this.__wbg_ptr, ptr0, len0, addHeapObject(out));
     }
     /**
-     * @param {number} x
-     * @param {number} y
-     * @param {number} prev_x
-     * @param {number} prev_y
-     * @param {number} velocity_x
-     * @param {number} velocity_y
-     * @param {boolean} crouch
-     * @param {number} doublejump_countdown
-     * @param {number} speed_jump
-     * @param {boolean} dead
-     * @param {WasmMap} map
-     */
+    * @param {number} x
+    * @param {number} y
+    * @param {number} prev_x
+    * @param {number} prev_y
+    * @param {number} velocity_x
+    * @param {number} velocity_y
+    * @param {boolean} crouch
+    * @param {number} doublejump_countdown
+    * @param {number} speed_jump
+    * @param {boolean} dead
+    * @param {WasmMap} map
+    */
     import_host_state(x, y, prev_x, prev_y, velocity_x, velocity_y, crouch, doublejump_countdown, speed_jump, dead, map) {
         _assertClass(map, WasmMap);
         wasm.wasmplayerstate_import_host_state(this.__wbg_ptr, x, y, prev_x, prev_y, velocity_x, velocity_y, crouch, doublejump_countdown, speed_jump, dead, map.__wbg_ptr);
     }
     /**
-     * @param {bigint} id
-     */
+    * @param {bigint} id
+    */
     constructor(id) {
         const ret = wasm.wasmplayerstate_new(id);
         this.__wbg_ptr = ret >>> 0;
@@ -591,7 +629,8 @@ export class WasmPlayerState {
 const WasmProjectileFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmprojectile_free(ptr >>> 0, 1));
-
+/**
+*/
 export class WasmProjectile {
 
     __destroy_into_raw() {
@@ -606,95 +645,95 @@ export class WasmProjectile {
         wasm.__wbg_wasmprojectile_free(ptr, 0);
     }
     /**
-     * @returns {number}
-     */
+    * @returns {number}
+    */
     get_prev_x() {
         const ret = wasm.wasmprojectile_get_prev_x(this.__wbg_ptr);
         return ret;
     }
     /**
-     * @returns {number}
-     */
+    * @returns {number}
+    */
     get_prev_y() {
         const ret = wasm.wasmprojectile_get_prev_y(this.__wbg_ptr);
         return ret;
     }
     /**
-     * @returns {boolean}
-     */
+    * @returns {boolean}
+    */
     did_explode() {
         const ret = wasm.wasmprojectile_did_explode(this.__wbg_ptr);
         return ret !== 0;
     }
     /**
-     * @returns {bigint}
-     */
+    * @returns {bigint}
+    */
     get_owner_id() {
         const ret = wasm.wasmprojectile_get_owner_id(this.__wbg_ptr);
         return BigInt.asUintN(64, ret);
     }
     /**
-     * Export state to host array for bulk reads (render data only).
-     * Format: [kind, x, y, prev_x, prev_y, vx, vy, age, active, exploded, exp_x, exp_y]
-     *
-     * IDs are NOT included - use get_id() and get_owner_id() for correct u64/BigInt values.
-     * This avoids f32 precision loss for IDs > 2^24.
-     * @param {Float32Array} out
-     */
+    * Export state to host array for bulk reads (render data only).
+    * Format: [kind, x, y, prev_x, prev_y, vx, vy, age, active, exploded, exp_x, exp_y]
+    *
+    * IDs are NOT included - use get_id() and get_owner_id() for correct u64/BigInt values.
+    * This avoids f32 precision loss for IDs > 2^24.
+    * @param {Float32Array} out
+    */
     export_to_host(out) {
         var ptr0 = passArrayF32ToWasm0(out, wasm.__wbindgen_malloc);
         var len0 = WASM_VECTOR_LEN;
-        wasm.wasmprojectile_export_to_host(this.__wbg_ptr, ptr0, len0, out);
+        wasm.wasmprojectile_export_to_host(this.__wbg_ptr, ptr0, len0, addHeapObject(out));
     }
     /**
-     * @returns {number}
-     */
+    * @returns {number}
+    */
     get_velocity_x() {
         const ret = wasm.wasmprojectile_get_velocity_x(this.__wbg_ptr);
         return ret;
     }
     /**
-     * @returns {number}
-     */
+    * @returns {number}
+    */
     get_velocity_y() {
         const ret = wasm.wasmprojectile_get_velocity_y(this.__wbg_ptr);
         return ret;
     }
     /**
-     * @returns {number}
-     */
+    * @returns {number}
+    */
     get_explosion_x() {
         const ret = wasm.wasmprojectile_get_explosion_x(this.__wbg_ptr);
         return ret;
     }
     /**
-     * @returns {number}
-     */
+    * @returns {number}
+    */
     get_explosion_y() {
         const ret = wasm.wasmprojectile_get_explosion_y(this.__wbg_ptr);
         return ret;
     }
     /**
-     * Import state from host (for sync with server).
-     * @param {number} x
-     * @param {number} y
-     * @param {number} velocity_x
-     * @param {number} velocity_y
-     * @param {number} age
-     * @param {boolean} active
-     */
+    * Import state from host (for sync with server).
+    * @param {number} x
+    * @param {number} y
+    * @param {number} velocity_x
+    * @param {number} velocity_y
+    * @param {number} age
+    * @param {boolean} active
+    */
     import_host_state(x, y, velocity_x, velocity_y, age, active) {
         wasm.wasmprojectile_import_host_state(this.__wbg_ptr, x, y, velocity_x, velocity_y, age, active);
     }
     /**
-     * @param {bigint} id
-     * @param {number} kind
-     * @param {number} x
-     * @param {number} y
-     * @param {number} velocity_x
-     * @param {number} velocity_y
-     * @param {bigint} owner_id
-     */
+    * @param {bigint} id
+    * @param {number} kind
+    * @param {number} x
+    * @param {number} y
+    * @param {number} velocity_x
+    * @param {number} velocity_y
+    * @param {bigint} owner_id
+    */
     constructor(id, kind, x, y, velocity_x, velocity_y, owner_id) {
         const ret = wasm.wasmprojectile_new(id, kind, x, y, velocity_x, velocity_y, owner_id);
         this.__wbg_ptr = ret >>> 0;
@@ -702,56 +741,56 @@ export class WasmProjectile {
         return this;
     }
     /**
-     * Step the projectile forward one tick.
-     * Returns true if the projectile exploded this tick.
-     * @param {WasmMap} map
-     * @param {number} cols
-     * @param {number} rows
-     * @returns {boolean}
-     */
+    * Step the projectile forward one tick.
+    * Returns true if the projectile exploded this tick.
+    * @param {WasmMap} map
+    * @param {number} cols
+    * @param {number} rows
+    * @returns {boolean}
+    */
     step(map, cols, rows) {
         _assertClass(map, WasmMap);
         const ret = wasm.wasmprojectile_step(this.__wbg_ptr, map.__wbg_ptr, cols, rows);
         return ret !== 0;
     }
     /**
-     * @returns {number}
-     */
+    * @returns {number}
+    */
     get_x() {
         const ret = wasm.wasmprojectile_get_x(this.__wbg_ptr);
         return ret;
     }
     /**
-     * @returns {number}
-     */
+    * @returns {number}
+    */
     get_y() {
         const ret = wasm.wasmprojectile_get_y(this.__wbg_ptr);
         return ret;
     }
     /**
-     * @returns {bigint}
-     */
+    * @returns {bigint}
+    */
     get_id() {
         const ret = wasm.wasmprojectile_get_id(this.__wbg_ptr);
         return BigInt.asUintN(64, ret);
     }
     /**
-     * @returns {number}
-     */
+    * @returns {number}
+    */
     get_age() {
         const ret = wasm.wasmprojectile_get_age(this.__wbg_ptr);
         return ret;
     }
     /**
-     * @returns {number}
-     */
+    * @returns {number}
+    */
     get_kind() {
         const ret = wasm.wasmprojectile_get_kind(this.__wbg_ptr);
         return ret;
     }
     /**
-     * @returns {boolean}
-     */
+    * @returns {boolean}
+    */
     is_active() {
         const ret = wasm.wasmprojectile_is_active(this.__wbg_ptr);
         return ret !== 0;
@@ -766,7 +805,7 @@ async function __wbg_load(module, imports) {
 
             } catch (e) {
                 if (module.headers.get('Content-Type') != 'application/wasm') {
-                    console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve Wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n", e);
+                    console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n", e);
 
                 } else {
                     throw e;
@@ -793,17 +832,10 @@ function __wbg_get_imports() {
     const imports = {};
     imports.wbg = {};
     imports.wbg.__wbindgen_copy_to_typed_array = function(arg0, arg1, arg2) {
-        new Uint8Array(arg2.buffer, arg2.byteOffset, arg2.byteLength).set(getArrayU8FromWasm0(arg0, arg1));
+        new Uint8Array(getObject(arg2).buffer, getObject(arg2).byteOffset, getObject(arg2).byteLength).set(getArrayU8FromWasm0(arg0, arg1));
     };
-    imports.wbg.__wbindgen_init_externref_table = function() {
-        const table = wasm.__wbindgen_export_0;
-        const offset = table.grow(4);
-        table.set(0, undefined);
-        table.set(offset + 0, undefined);
-        table.set(offset + 1, null);
-        table.set(offset + 2, true);
-        table.set(offset + 3, false);
-        ;
+    imports.wbg.__wbindgen_object_drop_ref = function(arg0) {
+        takeObject(arg0);
     };
     imports.wbg.__wbindgen_throw = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
@@ -823,7 +855,7 @@ function __wbg_finalize_init(instance, module) {
     cachedUint8ArrayMemory0 = null;
 
 
-    wasm.__wbindgen_start();
+
     return wasm;
 }
 
@@ -831,13 +863,10 @@ function initSync(module) {
     if (wasm !== undefined) return wasm;
 
 
-    if (typeof module !== 'undefined') {
-        if (Object.getPrototypeOf(module) === Object.prototype) {
-            ({module} = module)
-        } else {
-            console.warn('using deprecated parameters for `initSync()`; pass a single object instead')
-        }
-    }
+    if (typeof module !== 'undefined' && Object.getPrototypeOf(module) === Object.prototype)
+    ({module} = module)
+    else
+    console.warn('using deprecated parameters for `initSync()`; pass a single object instead')
 
     const imports = __wbg_get_imports();
 
@@ -856,13 +885,10 @@ async function __wbg_init(module_or_path) {
     if (wasm !== undefined) return wasm;
 
 
-    if (typeof module_or_path !== 'undefined') {
-        if (Object.getPrototypeOf(module_or_path) === Object.prototype) {
-            ({module_or_path} = module_or_path)
-        } else {
-            console.warn('using deprecated parameters for the initialization function; pass a single object instead')
-        }
-    }
+    if (typeof module_or_path !== 'undefined' && Object.getPrototypeOf(module_or_path) === Object.prototype)
+    ({module_or_path} = module_or_path)
+    else
+    console.warn('using deprecated parameters for the initialization function; pass a single object instead')
 
     if (typeof module_or_path === 'undefined') {
         module_or_path = new URL('physics_core_bg.wasm', import.meta.url);

@@ -26,6 +26,17 @@ pub const SPEED_JUMP_Y: [f32; 7] = [0.0, 0.0, 0.4, 0.8, 1.0, 1.2, 1.4];
 pub const SPEED_JUMP_X: [f32; 7] = [0.0, 0.33, 0.8, 1.1, 1.4, 1.8, 2.2];
 
 pub const DEFAULT_AMMO: [i32; WEAPON_COUNT] = [-1, 100, 10, 5, 20, 10, 30, 50, 10];
+pub const PICKUP_AMMO: [i32; WEAPON_COUNT] = [-1, 50, 10, 5, 5, 10, 30, 50, 10];
+
+pub const MAX_HEALTH: i32 = 100;
+pub const MAX_ARMOR: i32 = 200;
+pub const MEGA_HEALTH: i32 = 200;
+pub const ARMOR_ABSORPTION: f32 = 0.67;
+pub const SELF_DAMAGE_REDUCTION: f32 = 0.5;
+pub const QUAD_MULTIPLIER: f32 = 3.0;
+pub const QUAD_DURATION: i32 = 900;
+pub const RESPAWN_TIME: i32 = 180;
+pub const SPAWN_PROTECTION: i32 = 120;
 
 // Projectile physics
 pub const PROJECTILE_GRAVITY: f32 = 0.05;
