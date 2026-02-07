@@ -6,9 +6,10 @@ use crate::constants::{
     GRENADE_LOFT, GRENADE_MAX_FALL_SPEED, GRENADE_MIN_VELOCITY, GRENADE_RISE_DAMPING,
     HITSCAN_PLAYER_RADIUS, MACHINE_RANGE, MAX_ARMOR, MAX_HEALTH, MEGA_HEALTH, PICKUP_AMMO,
     PICKUP_RADIUS, PLASMA_SPLASH_DMG, PLASMA_SPLASH_PUSH, PLASMA_SPLASH_RADIUS, PLAYER_HALF_H,
-    PROJECTILE_GRAVITY, PROJECTILE_SPEED, QUAD_DURATION, QUAD_MULTIPLIER, RAIL_RANGE, RESPAWN_TIME,
-    SELF_DAMAGE_REDUCTION, SELF_HIT_GRACE, SHAFT_RANGE, SHOTGUN_PELLETS, SHOTGUN_RANGE,
-    SHOTGUN_SPREAD, SPAWN_PROTECTION, SPLASH_RADIUS, TILE_H, TILE_W, WEAPON_PUSH,
+    PROJECTILE_GRAVITY, PROJECTILE_OFFSET, PROJECTILE_SPEED, QUAD_DURATION, QUAD_MULTIPLIER,
+    RAIL_RANGE, RESPAWN_TIME, SELF_DAMAGE_REDUCTION, SELF_HIT_GRACE, SHAFT_RANGE, SHOTGUN_PELLETS,
+    SHOTGUN_RANGE, SHOTGUN_SPREAD, SPAWN_OFFSET_X, SPAWN_PROTECTION, SPLASH_RADIUS, TILE_H, TILE_W,
+    WEAPON_ORIGIN_CROUCH_LIFT, WEAPON_PUSH,
 };
 use crate::map::GameMap;
 use crate::physics::PlayerState;
@@ -460,7 +461,7 @@ pub fn respawn_if_ready_with_rng(player: &mut PlayerState, map: &GameMap, rng: &
         return;
     }
     if let Some((row, col)) = map.random_respawn_with_rng(rng) {
-        let x = col as f32 * TILE_W + 10.0;
+        let x = col as f32 * TILE_W + SPAWN_OFFSET_X;
         let y = row as f32 * TILE_H - PLAYER_HALF_H;
         player.set_xy(x, y, map);
         player.prev_x = player.x;
@@ -680,19 +681,19 @@ fn projectile_speed(weapon: WeaponId) -> f32 {
 }
 
 fn projectile_config(weapon: WeaponId) -> (f32, f32, ProjectileKind) {
+    let offset = PROJECTILE_OFFSET[weapon as usize];
     match weapon {
-        WeaponId::Grenade => (14.0, GRENADE_LOFT, ProjectileKind::Grenade),
-        WeaponId::Rocket => (18.0, 0.0, ProjectileKind::Rocket),
-        WeaponId::Plasma => (12.0, 0.0, ProjectileKind::Plasma),
-        WeaponId::Bfg => (12.0, 0.0, ProjectileKind::Bfg),
-        _ => (12.0, 0.0, ProjectileKind::Rocket),
+        WeaponId::Grenade => (offset, GRENADE_LOFT, ProjectileKind::Grenade),
+        WeaponId::Rocket => (offset, 0.0, ProjectileKind::Rocket),
+        WeaponId::Plasma => (offset, 0.0, ProjectileKind::Plasma),
+        WeaponId::Bfg => (offset, 0.0, ProjectileKind::Bfg),
+        _ => (offset, 0.0, ProjectileKind::Rocket),
     }
 }
 
 fn get_weapon_origin(player: &PlayerState) -> (f32, f32) {
-    let crouch_lift = 4.0;
     let y = if player.crouch {
-        player.y + crouch_lift
+        player.y + WEAPON_ORIGIN_CROUCH_LIFT
     } else {
         player.y
     };

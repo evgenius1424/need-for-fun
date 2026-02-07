@@ -3,11 +3,13 @@ pub const WEAPON_COUNT: usize = 9;
 
 pub const TILE_W: f32 = 32.0;
 pub const TILE_H: f32 = 16.0;
+pub const SPAWN_OFFSET_X: f32 = 10.0;
 
 pub const PLAYER_HALF_W: f32 = 9.0;
 pub const PLAYER_HALF_H: f32 = 24.0;
 pub const PLAYER_CROUCH_HALF_W: f32 = 8.0;
 pub const PLAYER_CROUCH_HALF_H: f32 = 8.0;
+pub const WEAPON_ORIGIN_CROUCH_LIFT: f32 = 4.0;
 
 pub const PLAYER_MAX_VELOCITY_X: f32 = 3.0;
 pub const PLAYER_VELOCITY_CLAMP: f32 = 5.0;
@@ -86,6 +88,10 @@ pub const WEAPON_PUSH: [f32; WEAPON_COUNT] = [0.0, 0.3, 0.05, 3.0, 3.0, 1.04, 0.
 
 // Projectile speeds (only for projectile weapons, others are 0)
 pub const PROJECTILE_SPEED: [f32; WEAPON_COUNT] = [0.0, 0.0, 0.0, 4.5, 7.0, 0.0, 8.0, 0.0, 8.0];
+
+// Projectile spawn offsets from weapon origin (indexed by WeaponId)
+pub const PROJECTILE_OFFSET: [f32; WEAPON_COUNT] =
+    [0.0, 0.0, 0.0, 14.0, 18.0, 0.0, 12.0, 0.0, 12.0];
 
 // Fire rate in ticks
 pub const FIRE_RATE: [i32; WEAPON_COUNT] = [20, 5, 50, 40, 40, 75, 5, 3, 10];

@@ -1,12 +1,10 @@
 import { Bot } from './bot'
 import { Map } from './map'
-import { Constants } from './helpers'
 import { Render } from './engine/render'
-import { PLAYER_HALF_HEIGHT } from './engine/render/constants.js'
+import { PhysicsConstants } from './engine/core/physics'
 
-const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 const MIN_SPAWN_DISTANCE = 100
-const SPAWN_PROTECTION_FRAMES = 120
+const SPAWN_PROTECTION_FRAMES = PhysicsConstants.SPAWN_PROTECTION
 const TOP_SPAWN_CANDIDATES = 5
 
 class BotManagerClass {
@@ -68,7 +66,7 @@ class BotManagerClass {
             velocityY: 0,
             spawnProtection: SPAWN_PROTECTION_FRAMES,
             dead: false,
-            health: 100,
+            health: PhysicsConstants.MAX_HEALTH,
             armor: 0,
         })
         bot.stuckTimer = 0
@@ -149,7 +147,7 @@ class BotManagerClass {
         if (localPlayer) {
             return { x: localPlayer.x, y: localPlayer.y }
         }
-        return { x: BRICK_WIDTH * 2, y: BRICK_HEIGHT * 2 }
+        return { x: PhysicsConstants.TILE_W * 2, y: PhysicsConstants.TILE_H * 2 }
     }
 
     isValidSpawnCell(col, row) {
@@ -175,8 +173,8 @@ class BotManagerClass {
     cellToWorldPosition(col, row) {
         const groundRow = row + 2
         return {
-            x: col * BRICK_WIDTH + BRICK_WIDTH / 2,
-            y: groundRow * BRICK_HEIGHT - PLAYER_HALF_HEIGHT,
+            x: col * PhysicsConstants.TILE_W + PhysicsConstants.TILE_W / 2,
+            y: groundRow * PhysicsConstants.TILE_H - PhysicsConstants.PLAYER_HALF_H,
         }
     }
 

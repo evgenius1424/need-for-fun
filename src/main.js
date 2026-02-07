@@ -1,5 +1,5 @@
 import { Howler } from 'howler'
-import { Constants, Input, Settings, Sound, WeaponId, Console } from './helpers'
+import { Input, Settings, Sound, WeaponId, Console } from './helpers'
 import { Map } from './map'
 import { Player } from './player'
 import { Physics, PhysicsConstants } from './engine/core/physics'
@@ -10,14 +10,12 @@ import { BotManager } from './botManager'
 import { SkinId } from './models'
 import { NetworkClient } from './network'
 
-const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
-
 const AIM_INPUT_SCALE = 0.5
-const PICKUP_RADIUS = 16
+const PICKUP_RADIUS = PhysicsConstants.PICKUP_RADIUS
 const MAX_AIM_DELTA = 12
-const HITSCAN_PLAYER_RADIUS = 14
-const GAUNTLET_PLAYER_RADIUS = 22
-const GAUNTLET_SPARK_OFFSET = BRICK_WIDTH * 0.55
+const HITSCAN_PLAYER_RADIUS = PhysicsConstants.HITSCAN_PLAYER_RADIUS
+const GAUNTLET_PLAYER_RADIUS = PhysicsConstants.GAUNTLET_PLAYER_RADIUS
+const GAUNTLET_SPARK_OFFSET = PhysicsConstants.TILE_W * 0.55
 
 const PROJECTILE_WEAPONS = new Set(['rocket', 'grenade', 'plasma', 'bfg'])
 
@@ -64,7 +62,10 @@ requestAnimationFrame((ts) => gameLoop(ts, localPlayer))
 
 function spawnPlayer(player) {
     const { col, row } = Map.getRandomRespawn()
-    player.setXY(col * BRICK_WIDTH + 10, row * BRICK_HEIGHT - 24)
+    player.setXY(
+        col * PhysicsConstants.TILE_W + PhysicsConstants.SPAWN_OFFSET_X,
+        row * PhysicsConstants.TILE_H - PhysicsConstants.PLAYER_HALF_H,
+    )
     player.prevX = player.x
     player.prevY = player.y
     player.aimAngle = 0
@@ -748,8 +749,8 @@ function tickItemRespawn(item) {
 }
 
 function isPlayerNearItem(player, item) {
-    const x = item.col * BRICK_WIDTH + BRICK_WIDTH / 2
-    const y = item.row * BRICK_HEIGHT + BRICK_HEIGHT / 2
+    const x = item.col * PhysicsConstants.TILE_W + PhysicsConstants.TILE_W / 2
+    const y = item.row * PhysicsConstants.TILE_H + PhysicsConstants.TILE_H / 2
     return Math.hypot(player.x - x, player.y - y) <= PICKUP_RADIUS
 }
 

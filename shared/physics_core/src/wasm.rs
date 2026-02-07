@@ -468,6 +468,19 @@ pub fn get_fire_rate(weapon_id: u8) -> i32 {
     constants::FIRE_RATE.get(weapon_id as usize).copied().unwrap_or(50)
 }
 
+#[wasm_bindgen]
+pub fn get_projectile_offset(weapon_id: u8) -> f32 {
+    constants::PROJECTILE_OFFSET
+        .get(weapon_id as usize)
+        .copied()
+        .unwrap_or(0.0)
+}
+
+#[wasm_bindgen]
+pub fn get_weapon_count() -> u32 {
+    constants::WEAPON_COUNT as u32
+}
+
 // Tile size constants - JS should assert these match BRICK_WIDTH/BRICK_HEIGHT
 #[wasm_bindgen]
 pub fn get_tile_w() -> f32 {
@@ -478,6 +491,36 @@ pub fn get_tile_w() -> f32 {
 #[inline(never)]
 pub fn get_tile_h() -> f32 {
     constants::TILE_H
+}
+
+#[wasm_bindgen]
+pub fn get_spawn_offset_x() -> f32 {
+    constants::SPAWN_OFFSET_X
+}
+
+#[wasm_bindgen]
+pub fn get_player_half_h() -> f32 {
+    constants::PLAYER_HALF_H
+}
+
+#[wasm_bindgen]
+pub fn get_weapon_origin_crouch_lift() -> f32 {
+    constants::WEAPON_ORIGIN_CROUCH_LIFT
+}
+
+#[wasm_bindgen]
+pub fn get_hitscan_player_radius() -> f32 {
+    constants::HITSCAN_PLAYER_RADIUS
+}
+
+#[wasm_bindgen]
+pub fn get_gauntlet_player_radius() -> f32 {
+    constants::GAUNTLET_PLAYER_RADIUS
+}
+
+#[wasm_bindgen]
+pub fn get_pickup_radius() -> f32 {
+    constants::PICKUP_RADIUS
 }
 
 #[wasm_bindgen]

@@ -397,6 +397,14 @@ export function get_fire_rate(weapon_id) {
 /**
  * @returns {number}
  */
+export function get_gauntlet_player_radius() {
+    const ret = wasm.get_gauntlet_player_radius()
+    return ret
+}
+
+/**
+ * @returns {number}
+ */
 export function get_gauntlet_range() {
     const ret = wasm.get_gauntlet_range()
     return ret
@@ -501,6 +509,14 @@ export function get_hit_radius_rocket() {
 /**
  * @returns {number}
  */
+export function get_hitscan_player_radius() {
+    const ret = wasm.get_hitscan_player_radius()
+    return ret
+}
+
+/**
+ * @returns {number}
+ */
 export function get_machine_range() {
     const ret = wasm.get_machine_range()
     return ret
@@ -542,6 +558,14 @@ export function get_pickup_ammo(weapon_id) {
 /**
  * @returns {number}
  */
+export function get_pickup_radius() {
+    const ret = wasm.get_hit_radius_grenade()
+    return ret
+}
+
+/**
+ * @returns {number}
+ */
 export function get_plasma_splash_damage() {
     const ret = wasm.get_plasma_splash_damage()
     return ret
@@ -566,8 +590,25 @@ export function get_plasma_splash_radius() {
 /**
  * @returns {number}
  */
+export function get_player_half_h() {
+    const ret = wasm.get_player_half_h()
+    return ret
+}
+
+/**
+ * @returns {number}
+ */
 export function get_projectile_gravity() {
     const ret = wasm.get_projectile_gravity()
+    return ret
+}
+
+/**
+ * @param {number} weapon_id
+ * @returns {number}
+ */
+export function get_projectile_offset(weapon_id) {
+    const ret = wasm.get_projectile_offset(weapon_id)
     return ret
 }
 
@@ -663,6 +704,14 @@ export function get_shotgun_spread() {
 /**
  * @returns {number}
  */
+export function get_spawn_offset_x() {
+    const ret = wasm.get_plasma_splash_damage()
+    return ret
+}
+
+/**
+ * @returns {number}
+ */
 export function get_spawn_protection() {
     const ret = wasm.get_spawn_protection()
     return ret
@@ -690,6 +739,22 @@ export function get_tile_h() {
  */
 export function get_tile_w() {
     const ret = wasm.get_tile_w()
+    return ret
+}
+
+/**
+ * @returns {number}
+ */
+export function get_weapon_count() {
+    const ret = wasm.get_weapon_count()
+    return ret >>> 0
+}
+
+/**
+ * @returns {number}
+ */
+export function get_weapon_origin_crouch_lift() {
+    const ret = wasm.get_weapon_origin_crouch_lift()
     return ret
 }
 

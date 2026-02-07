@@ -1,8 +1,6 @@
-import { Constants, Sound } from './helpers'
+import { Sound } from './helpers'
 import { Map as GameMap } from './map'
 import { PhysicsConstants } from './engine/core/physics'
-
-const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
 const EXPLODE_SOUND = {
     rocket: Sound.rocketExplode,
@@ -36,8 +34,8 @@ export const Projectiles = {
         const cols = GameMap.getCols()
         const rows = GameMap.getRows()
         const c = PhysicsConstants // Capture once per frame
-        const maxX = cols * BRICK_WIDTH + c.BOUNDS_MARGIN
-        const maxY = rows * BRICK_HEIGHT + c.BOUNDS_MARGIN
+        const maxX = cols * PhysicsConstants.TILE_W + c.BOUNDS_MARGIN
+        const maxY = rows * PhysicsConstants.TILE_H + c.BOUNDS_MARGIN
 
         for (let i = state.projectiles.length - 1; i >= 0; i--) {
             const proj = state.projectiles[i]
@@ -195,8 +193,8 @@ function applyGrenadePhysics(proj, c) {
 }
 
 function checkWallCollision(proj, newX, newY, c) {
-    const colX = Math.floor(newX / BRICK_WIDTH)
-    const colY = Math.floor(newY / BRICK_HEIGHT)
+    const colX = Math.floor(newX / PhysicsConstants.TILE_W)
+    const colY = Math.floor(newY / PhysicsConstants.TILE_H)
 
     if (!GameMap.isBrick(colX, colY)) return false
 
@@ -205,8 +203,8 @@ function checkWallCollision(proj, newX, newY, c) {
         return true
     }
 
-    const oldColX = Math.floor(proj.x / BRICK_WIDTH)
-    const oldColY = Math.floor(proj.y / BRICK_HEIGHT)
+    const oldColX = Math.floor(proj.x / PhysicsConstants.TILE_W)
+    const oldColY = Math.floor(proj.y / PhysicsConstants.TILE_H)
 
     if (oldColX !== colX) proj.velocityX = -proj.velocityX / c.GRENADE_BOUNCE_FRICTION
     if (oldColY !== colY) proj.velocityY = -proj.velocityY / c.GRENADE_BOUNCE_FRICTION

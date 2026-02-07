@@ -1,9 +1,9 @@
 import { Player } from './player'
 import { Map } from './map'
-import { Constants, WeaponId } from './helpers'
+import { WeaponId } from './helpers'
 import { DEFAULT_MODEL, SkinId } from './models'
+import { PhysicsConstants } from './engine/core/physics'
 
-const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 const HALF_PI = Math.PI / 2
 const TWO_PI = Math.PI * 2
 
@@ -150,8 +150,8 @@ export class Bot {
         const stepY = dy / steps
 
         for (let i = 1; i < steps; i++) {
-            const col = Math.floor((this.player.x + stepX * i) / BRICK_WIDTH)
-            const row = Math.floor((this.player.y + stepY * i) / BRICK_HEIGHT)
+            const col = Math.floor((this.player.x + stepX * i) / PhysicsConstants.TILE_W)
+            const row = Math.floor((this.player.y + stepY * i) / PhysicsConstants.TILE_H)
             if (Map.isBrick(col, row)) return false
         }
 
@@ -240,7 +240,7 @@ export class Bot {
 
     decideJump(dy) {
         this.wantsToJump =
-            dy < -BRICK_HEIGHT / 2 ||
+            dy < -PhysicsConstants.TILE_H / 2 ||
             this.isBlockedAhead() ||
             this.stuckTimer > 10 ||
             Math.random() < this.config.jumpChance
@@ -248,8 +248,11 @@ export class Bot {
 
     isBlockedAhead() {
         if (this.moveDirection === 0) return false
-        const col = Math.floor((this.player.x + this.moveDirection * BRICK_WIDTH) / BRICK_WIDTH)
-        const row = Math.floor(this.player.y / BRICK_HEIGHT)
+        const col = Math.floor(
+            (this.player.x + this.moveDirection * PhysicsConstants.TILE_W) /
+                PhysicsConstants.TILE_W,
+        )
+        const row = Math.floor(this.player.y / PhysicsConstants.TILE_H)
         return Map.isBrick(col, row)
     }
 

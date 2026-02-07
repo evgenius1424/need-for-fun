@@ -1,9 +1,7 @@
-import { Constants, Sound, WeaponId } from './helpers'
+import { Sound, WeaponId } from './helpers'
 import { Map } from './map'
 import { Projectiles } from './projectiles'
 import { PhysicsConstants } from './engine/core/physics'
-
-const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
 const getHitscanRange = (weaponId) => {
     const c = PhysicsConstants
@@ -23,13 +21,33 @@ const getProjectileConfig = (weaponId) => {
     const c = PhysicsConstants
     switch (weaponId) {
         case WeaponId.GRENADE:
-            return { type: 'grenade', offset: 14, loft: c.GRENADE_LOFT, sound: Sound.grenade }
+            return {
+                type: 'grenade',
+                offset: c.PROJECTILE_OFFSET[WeaponId.GRENADE],
+                loft: c.GRENADE_LOFT,
+                sound: Sound.grenade,
+            }
         case WeaponId.ROCKET:
-            return { type: 'rocket', offset: 18, loft: 0, sound: Sound.rocket }
+            return {
+                type: 'rocket',
+                offset: c.PROJECTILE_OFFSET[WeaponId.ROCKET],
+                loft: 0,
+                sound: Sound.rocket,
+            }
         case WeaponId.PLASMA:
-            return { type: 'plasma', offset: 12, loft: 0, sound: Sound.plasma }
+            return {
+                type: 'plasma',
+                offset: c.PROJECTILE_OFFSET[WeaponId.PLASMA],
+                loft: 0,
+                sound: Sound.plasma,
+            }
         case WeaponId.BFG:
-            return { type: 'bfg', offset: 12, loft: 0, sound: Sound.bfg }
+            return {
+                type: 'bfg',
+                offset: c.PROJECTILE_OFFSET[WeaponId.BFG],
+                loft: 0,
+                sound: Sound.bfg,
+            }
         default:
             return null
     }
@@ -134,16 +152,18 @@ function fireHitscan(player, weaponId, cfg) {
 }
 
 function getWeaponOrigin(player) {
-    const crouchLift = 4
-    return { x: player.x, y: player.crouch ? player.y + crouchLift : player.y }
+    return {
+        x: player.x,
+        y: player.crouch ? player.y + PhysicsConstants.WEAPON_ORIGIN_CROUCH_LIFT : player.y,
+    }
 }
 
 function rayTrace(startX, startY, angle, maxDistance) {
     const dirX = Math.cos(angle)
     const dirY = Math.sin(angle)
 
-    let mapX = Math.floor(startX / BRICK_WIDTH)
-    let mapY = Math.floor(startY / BRICK_HEIGHT)
+    let mapX = Math.floor(startX / PhysicsConstants.TILE_W)
+    let mapY = Math.floor(startY / PhysicsConstants.TILE_H)
 
     const deltaDistX = dirX === 0 ? 1e30 : Math.abs(1 / dirX)
     const deltaDistY = dirY === 0 ? 1e30 : Math.abs(1 / dirY)
@@ -153,13 +173,13 @@ function rayTrace(startX, startY, angle, maxDistance) {
 
     let sideDistX =
         dirX < 0
-            ? (startX / BRICK_WIDTH - mapX) * deltaDistX
-            : (mapX + 1 - startX / BRICK_WIDTH) * deltaDistX
+            ? (startX / PhysicsConstants.TILE_W - mapX) * deltaDistX
+            : (mapX + 1 - startX / PhysicsConstants.TILE_W) * deltaDistX
 
     let sideDistY =
         dirY < 0
-            ? (startY / BRICK_HEIGHT - mapY) * deltaDistY
-            : (mapY + 1 - startY / BRICK_HEIGHT) * deltaDistY
+            ? (startY / PhysicsConstants.TILE_H - mapY) * deltaDistY
+            : (mapY + 1 - startY / PhysicsConstants.TILE_H) * deltaDistY
 
     let hit = false
     let side = 0
@@ -176,8 +196,8 @@ function rayTrace(startX, startY, angle, maxDistance) {
             side = 1
         }
 
-        const checkX = (mapX + 0.5) * BRICK_WIDTH - startX
-        const checkY = (mapY + 0.5) * BRICK_HEIGHT - startY
+        const checkX = (mapX + 0.5) * PhysicsConstants.TILE_W - startX
+        const checkY = (mapY + 0.5) * PhysicsConstants.TILE_H - startY
         if (checkX * checkX + checkY * checkY > maxDistSq) break
 
         if (Map.isBrick(mapX, mapY)) hit = true
@@ -195,11 +215,11 @@ function rayTrace(startX, startY, angle, maxDistance) {
 
     let hitX, hitY, distance
     if (side === 0) {
-        hitX = (mapX + (stepX === -1 ? 1 : 0)) * BRICK_WIDTH
+        hitX = (mapX + (stepX === -1 ? 1 : 0)) * PhysicsConstants.TILE_W
         hitY = startY + ((hitX - startX) / dirX) * dirY
         distance = Math.abs((hitX - startX) / dirX)
     } else {
-        hitY = (mapY + (stepY === -1 ? 1 : 0)) * BRICK_HEIGHT
+        hitY = (mapY + (stepY === -1 ? 1 : 0)) * PhysicsConstants.TILE_H
         hitX = startX + ((hitY - startY) / dirY) * dirX
         distance = Math.abs((hitY - startY) / dirY)
     }

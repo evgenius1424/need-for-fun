@@ -1,11 +1,9 @@
-import { Constants, Sound, WeaponId } from './helpers'
+import { Sound, WeaponId } from './helpers'
 import { PhysicsConstants } from './engine/core/physics'
 import { Map } from './map'
 import { DEFAULT_MODEL, DEFAULT_SKIN } from './models'
 import { Weapons } from './weapons'
 
-const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
-const HALF_HEIGHT = 24
 const HALF_PI = Math.PI / 2
 const TWO_PI = Math.PI * 2
 
@@ -45,7 +43,7 @@ export class Player {
     aimAngle = 0
     prevAimAngle = 0
     facingLeft = false
-    weapons = Array(9).fill(true)
+    weapons = Array(PhysicsConstants.WEAPON_COUNT).fill(true)
     ammo = createAmmoArray()
     currentWeapon = WeaponId.ROCKET
     fireCooldown = 0
@@ -121,7 +119,7 @@ export class Player {
     }
 
     switchWeapon(weaponId) {
-        if (weaponId >= 0 && weaponId < 9 && this.weapons[weaponId]) {
+        if (weaponId >= 0 && weaponId < PhysicsConstants.WEAPON_COUNT && this.weapons[weaponId]) {
             this.currentWeapon = weaponId
         }
     }
@@ -175,7 +173,10 @@ export class Player {
     respawn() {
         const spawn = Map.getRandomRespawn()
         if (spawn) {
-            this.setXY(spawn.col * BRICK_WIDTH + 10, spawn.row * BRICK_HEIGHT - HALF_HEIGHT)
+            this.setXY(
+                spawn.col * PhysicsConstants.TILE_W + PhysicsConstants.SPAWN_OFFSET_X,
+                spawn.row * PhysicsConstants.TILE_H - PhysicsConstants.PLAYER_HALF_H,
+            )
         }
         this.prevX = this.x
         this.prevY = this.y
@@ -186,7 +187,7 @@ export class Player {
         this.dead = false
         this.velocityX = 0
         this.velocityY = 0
-        this.weapons = Array(9).fill(true)
+        this.weapons = Array(PhysicsConstants.WEAPON_COUNT).fill(true)
         this.ammo = createAmmoArray()
         this.currentWeapon = WeaponId.ROCKET
         this.quadDamage = false
@@ -205,17 +206,10 @@ export class Player {
 }
 
 function createAmmoArray() {
-    return [
-        PhysicsConstants.DEFAULT_AMMO[WeaponId.GAUNTLET],
-        PhysicsConstants.DEFAULT_AMMO[WeaponId.MACHINE],
-        PhysicsConstants.DEFAULT_AMMO[WeaponId.SHOTGUN],
-        PhysicsConstants.DEFAULT_AMMO[WeaponId.GRENADE],
-        PhysicsConstants.DEFAULT_AMMO[WeaponId.ROCKET],
-        PhysicsConstants.DEFAULT_AMMO[WeaponId.RAIL],
-        PhysicsConstants.DEFAULT_AMMO[WeaponId.PLASMA],
-        PhysicsConstants.DEFAULT_AMMO[WeaponId.SHAFT],
-        PhysicsConstants.DEFAULT_AMMO[WeaponId.BFG],
-    ]
+    return Array.from(
+        { length: PhysicsConstants.WEAPON_COUNT },
+        (_, i) => PhysicsConstants.DEFAULT_AMMO[i] ?? 0,
+    )
 }
 
 function normalizeAngle(angle) {

@@ -13,7 +13,9 @@ use crate::binary::{
     encode_player_joined, encode_player_left, encode_room_state, ItemSnapshot, ProjectileSnapshot,
     SnapshotEncoder,
 };
-use crate::constants::{PLAYER_HALF_H, ROOM_COMMAND_CAPACITY, TICK_MILLIS, TILE_H, TILE_W};
+use crate::constants::{
+    PLAYER_HALF_H, ROOM_COMMAND_CAPACITY, SPAWN_OFFSET_X, TICK_MILLIS, TILE_H, TILE_W,
+};
 use crate::game::{
     apply_explosions, apply_hit_actions, apply_projectile_hits, process_item_pickups,
     respawn_if_ready_with_rng, try_fire, update_projectiles, EventVec, HitAction, Projectile,
@@ -298,7 +300,7 @@ impl RoomTask {
         } else {
             let mut state = PlayerState::new(player_id.0);
             if let Some((row, col)) = self.map.random_respawn_with_rng(&mut self.rng) {
-                let x = col as f32 * TILE_W + 10.0;
+                let x = col as f32 * TILE_W + SPAWN_OFFSET_X;
                 let y = row as f32 * TILE_H - PLAYER_HALF_H;
                 state.set_xy(x, y, self.map.as_ref());
                 state.prev_x = state.x;

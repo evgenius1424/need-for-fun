@@ -1,11 +1,9 @@
-import { Constants, WeaponId } from '../../helpers'
+import { WeaponId } from '../../helpers'
+import { PhysicsConstants } from '../core/physics'
 
-const { BRICK_WIDTH } = Constants
+export const PLAYER_HEIGHT = PhysicsConstants.PLAYER_HALF_H * 2
 
-export const PLAYER_HEIGHT = 48
-export const PLAYER_HALF_HEIGHT = PLAYER_HEIGHT / 2
-
-export const PLAYER_SCALE_X = BRICK_WIDTH / PLAYER_HEIGHT
+export const PLAYER_SCALE_X = PhysicsConstants.TILE_W / PLAYER_HEIGHT
 export const PLAYER_SCALE_Y = 1
 export const WEAPON_SCALE = 0.85
 export const BG_TILE_SCALE = 0.7

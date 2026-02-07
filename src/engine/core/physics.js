@@ -27,7 +27,9 @@ async function initKernel() {
     runtime.WasmPlayerState = module.WasmPlayerState
 
     // Load all constants from WASM - Rust physics_core/src/constants.rs is the source of truth
+    const weaponCount = module.get_weapon_count()
     PhysicsConstants = {
+        WEAPON_COUNT: weaponCount,
         // Projectile physics
         GRAVITY: module.get_projectile_gravity(),
         GRENADE_FUSE: module.get_grenade_fuse(),
@@ -66,12 +68,16 @@ async function initKernel() {
         getDamage: module.get_damage,
         getFireRate: module.get_fire_rate,
         getProjectileSpeed: module.get_projectile_speed,
+        getProjectileOffset: module.get_projectile_offset,
         getWeaponPush: module.get_weapon_push,
         getSplashRadius: module.get_splash_radius,
         getDefaultAmmo: module.get_default_ammo,
         getPickupAmmo: module.get_pickup_ammo,
-        DEFAULT_AMMO: Array.from({ length: 9 }, (_, i) => module.get_default_ammo(i)),
-        PICKUP_AMMO: Array.from({ length: 9 }, (_, i) => module.get_pickup_ammo(i)),
+        DEFAULT_AMMO: Array.from({ length: weaponCount }, (_, i) => module.get_default_ammo(i)),
+        PICKUP_AMMO: Array.from({ length: weaponCount }, (_, i) => module.get_pickup_ammo(i)),
+        PROJECTILE_OFFSET: Array.from({ length: weaponCount }, (_, i) =>
+            module.get_projectile_offset(i),
+        ),
 
         // Game constants
         MAX_HEALTH: module.get_max_health(),
@@ -84,6 +90,12 @@ async function initKernel() {
         GIB_THRESHOLD: -40,
         RESPAWN_TIME: module.get_respawn_time(),
         SPAWN_PROTECTION: module.get_spawn_protection(),
+        PLAYER_HALF_H: module.get_player_half_h(),
+        SPAWN_OFFSET_X: module.get_spawn_offset_x(),
+        PICKUP_RADIUS: module.get_pickup_radius(),
+        HITSCAN_PLAYER_RADIUS: module.get_hitscan_player_radius(),
+        GAUNTLET_PLAYER_RADIUS: module.get_gauntlet_player_radius(),
+        WEAPON_ORIGIN_CROUCH_LIFT: module.get_weapon_origin_crouch_lift(),
 
         // Tile sizes (for validation)
         TILE_W: module.get_tile_w(),
