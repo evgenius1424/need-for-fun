@@ -307,6 +307,7 @@ function setupMultiplayerUI() {
             if (room?.map) {
                 const loaded = await Map.loadFromName(room.map)
                 if (loaded) {
+                    Physics.setMap(Map.getRows(), Map.getCols(), Map.getBricksFlat())
                     Render.renderMap()
                 }
             }

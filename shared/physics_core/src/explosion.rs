@@ -1,6 +1,4 @@
-use crate::constants::{
-    PLASMA_SPLASH_PUSH, PLASMA_SPLASH_RADIUS, SPLASH_RADIUS, WEAPON_PUSH,
-};
+use crate::constants::{PLASMA_SPLASH_PUSH, PLASMA_SPLASH_RADIUS, SPLASH_RADIUS, WEAPON_PUSH};
 use crate::projectile::{Explosion, ProjectileKind};
 use crate::types::PlayerState;
 

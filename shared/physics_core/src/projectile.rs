@@ -90,7 +90,11 @@ pub struct Explosion {
 
 /// Step a single projectile forward one tick.
 /// Returns Some(Explosion) if the projectile exploded, None otherwise.
-pub fn step_projectile(proj: &mut Projectile, map: &impl TileMap, bounds: (f32, f32)) -> Option<Explosion> {
+pub fn step_projectile(
+    proj: &mut Projectile,
+    map: &impl TileMap,
+    bounds: (f32, f32),
+) -> Option<Explosion> {
     if !proj.active {
         return None;
     }
@@ -170,8 +174,7 @@ fn check_wall_collision(proj: &mut Projectile, new_x: f32, new_y: f32, map: &imp
     }
 
     // Stop if velocity is too low
-    if proj.velocity_x.abs() < GRENADE_MIN_VELOCITY
-        && proj.velocity_y.abs() < GRENADE_MIN_VELOCITY
+    if proj.velocity_x.abs() < GRENADE_MIN_VELOCITY && proj.velocity_y.abs() < GRENADE_MIN_VELOCITY
     {
         proj.velocity_x = 0.0;
         proj.velocity_y = 0.0;

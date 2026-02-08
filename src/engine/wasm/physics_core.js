@@ -305,6 +305,139 @@ export class WasmProjectile {
 }
 if (Symbol.dispose) WasmProjectile.prototype[Symbol.dispose] = WasmProjectile.prototype.free;
 
+export class WasmRayTracer {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmRayTracerFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmraytracer_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    distance() {
+        const ret = wasm.wasmraytracer_distance(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {boolean}
+     */
+    hit_wall() {
+        const ret = wasm.wasmraytracer_hit_wall(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    constructor() {
+        const ret = wasm.wasmraytracer_new();
+        this.__wbg_ptr = ret >>> 0;
+        WasmRayTracerFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {WasmMap} map
+     * @param {number} start_x
+     * @param {number} start_y
+     * @param {number} angle
+     * @param {number} max_distance
+     */
+    trace(map, start_x, start_y, angle, max_distance) {
+        _assertClass(map, WasmMap);
+        wasm.wasmraytracer_trace(this.__wbg_ptr, map.__wbg_ptr, start_x, start_y, angle, max_distance);
+    }
+    /**
+     * @returns {number}
+     */
+    x() {
+        const ret = wasm.wasmraytracer_x(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    y() {
+        const ret = wasm.wasmraytracer_y(this.__wbg_ptr);
+        return ret;
+    }
+}
+if (Symbol.dispose) WasmRayTracer.prototype[Symbol.dispose] = WasmRayTracer.prototype.free;
+
+export class WasmWeaponKernel {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmWeaponKernelFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmweaponkernel_free(ptr, 0);
+    }
+    /**
+     * @param {number} weapon_id
+     * @param {number} origin_x
+     * @param {number} origin_y
+     * @param {number} aim_angle
+     * @returns {boolean}
+     */
+    compute_projectile_spawn(weapon_id, origin_x, origin_y, aim_angle) {
+        const ret = wasm.wasmweaponkernel_compute_projectile_spawn(this.__wbg_ptr, weapon_id, origin_x, origin_y, aim_angle);
+        return ret !== 0;
+    }
+    /**
+     * @param {number} weapon_id
+     * @returns {number}
+     */
+    hitscan_range(weapon_id) {
+        const ret = wasm.wasmweaponkernel_hitscan_range(this.__wbg_ptr, weapon_id);
+        return ret;
+    }
+    constructor() {
+        const ret = wasm.wasmweaponkernel_new();
+        this.__wbg_ptr = ret >>> 0;
+        WasmWeaponKernelFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @returns {number}
+     */
+    spawn_kind() {
+        const ret = wasm.wasmweaponkernel_spawn_kind(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    spawn_velocity_x() {
+        const ret = wasm.wasmraytracer_distance(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    spawn_velocity_y() {
+        const ret = wasm.wasmweaponkernel_spawn_velocity_y(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    spawn_x() {
+        const ret = wasm.wasmraytracer_x(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    spawn_y() {
+        const ret = wasm.wasmraytracer_y(this.__wbg_ptr);
+        return ret;
+    }
+}
+if (Symbol.dispose) WasmWeaponKernel.prototype[Symbol.dispose] = WasmWeaponKernel.prototype.free;
+
 /**
  * @returns {number}
  */
@@ -891,6 +1024,12 @@ const WasmPlayerStateFinalization = (typeof FinalizationRegistry === 'undefined'
 const WasmProjectileFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmprojectile_free(ptr >>> 0, 1));
+const WasmRayTracerFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmraytracer_free(ptr >>> 0, 1));
+const WasmWeaponKernelFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmweaponkernel_free(ptr >>> 0, 1));
 
 function _assertClass(instance, klass) {
     if (!(instance instanceof klass)) {

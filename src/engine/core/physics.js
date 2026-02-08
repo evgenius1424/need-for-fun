@@ -8,6 +8,8 @@ const runtime = {
     alpha: 1,
     kernel: null,
     map: null,
+    mapRows: 0,
+    mapCols: 0,
     scratchInput: null,
     scratchOutput: null,
     playerStates: new Map(),
@@ -25,6 +27,16 @@ async function initKernel() {
     runtime.scratchOutput = new Float32Array(12)
     runtime.WasmMap = module.WasmMap
     runtime.WasmPlayerState = module.WasmPlayerState
+    runtime.WasmProjectile = module.WasmProjectile
+    runtime.rayTracer = new module.WasmRayTracer()
+    runtime.weaponKernel = new module.WasmWeaponKernel()
+    runtime.projectileSpawnOut = {
+        kind: 0,
+        x: 0,
+        y: 0,
+        velocityX: 0,
+        velocityY: 0,
+    }
 
     // Load all constants from WASM - Rust physics_core/src/constants.rs is the source of truth
     const weaponCount = module.get_weapon_count()
@@ -116,9 +128,12 @@ await initKernel()
 
 export const Physics = {
     setMap(rows, cols, bricksFlat) {
+        runtime.map?.free()
         const map = new runtime.WasmMap(rows, cols)
         map.upload_bricks(bricksFlat)
         runtime.map = map
+        runtime.mapRows = rows
+        runtime.mapCols = cols
         runtime.playerStates.clear()
     },
 
@@ -162,6 +177,63 @@ export const Physics = {
 
     getAlpha() {
         return runtime.alpha
+    },
+
+    hasMap() {
+        return !!runtime.map
+    },
+
+    createWasmProjectile(id, kind, x, y, velocityX, velocityY, ownerId) {
+        return new runtime.WasmProjectile(id, kind, x, y, velocityX, velocityY, ownerId)
+    },
+
+    stepWasmProjectile(projectile) {
+        if (!runtime.map || !projectile) return false
+        return projectile.step(runtime.map, runtime.mapCols, runtime.mapRows)
+    },
+
+    rayTrace(startX, startY, angle, maxDistance) {
+        if (!runtime.map) {
+            return {
+                hit: false,
+                hitWall: false,
+                x: startX + Math.cos(angle) * maxDistance,
+                y: startY + Math.sin(angle) * maxDistance,
+                distance: maxDistance,
+            }
+        }
+
+        runtime.rayTracer.trace(runtime.map, startX, startY, angle, maxDistance)
+        const hitWall = runtime.rayTracer.hit_wall()
+        return {
+            hit: hitWall,
+            hitWall,
+            x: runtime.rayTracer.x(),
+            y: runtime.rayTracer.y(),
+            distance: runtime.rayTracer.distance(),
+        }
+    },
+
+    getHitscanRange(weaponId) {
+        const range = runtime.weaponKernel.hitscan_range(weaponId)
+        return range > 0 ? range : PhysicsConstants.MACHINE_RANGE
+    },
+
+    computeProjectileSpawn(weaponId, originX, originY, aimAngle) {
+        const ok = runtime.weaponKernel.compute_projectile_spawn(
+            weaponId,
+            originX,
+            originY,
+            aimAngle,
+        )
+        if (!ok) return null
+        const out = runtime.projectileSpawnOut
+        out.kind = runtime.weaponKernel.spawn_kind()
+        out.x = runtime.weaponKernel.spawn_x()
+        out.y = runtime.weaponKernel.spawn_y()
+        out.velocityX = runtime.weaponKernel.spawn_velocity_x()
+        out.velocityY = runtime.weaponKernel.spawn_velocity_y()
+        return out
     },
 }
 

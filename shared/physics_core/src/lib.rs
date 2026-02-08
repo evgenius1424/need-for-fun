@@ -8,6 +8,7 @@ pub mod step;
 pub mod test_vectors;
 pub mod tilemap;
 pub mod types;
+pub mod weapon;
 
 pub use explosion::apply_knockback;
 pub use projectile::{calculate_bounds, step_projectile, Explosion, Projectile, ProjectileKind};

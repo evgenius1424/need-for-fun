@@ -6,6 +6,7 @@ use crate::projectile::{calculate_bounds, step_projectile, Projectile, Projectil
 use crate::step::step_player;
 use crate::tilemap::FlatTileMap;
 use crate::types::{PlayerInput, PlayerState};
+use crate::weapon;
 
 // Re-export binary_protocol WASM functions
 pub use binary_protocol::wasm::{
@@ -145,6 +146,127 @@ impl WasmPhysicsKernel {
     }
 }
 
+#[wasm_bindgen]
+pub struct WasmRayTracer {
+    hit_wall: bool,
+    x: f32,
+    y: f32,
+    distance: f32,
+}
+
+#[wasm_bindgen]
+impl WasmRayTracer {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            hit_wall: false,
+            x: 0.0,
+            y: 0.0,
+            distance: 0.0,
+        }
+    }
+
+    pub fn trace(
+        &mut self,
+        map: &WasmMap,
+        start_x: f32,
+        start_y: f32,
+        angle: f32,
+        max_distance: f32,
+    ) {
+        let hit = weapon::ray_trace(&map.inner, start_x, start_y, angle, max_distance);
+        self.hit_wall = hit.hit_wall;
+        self.x = hit.x;
+        self.y = hit.y;
+        self.distance = hit.distance;
+    }
+
+    pub fn hit_wall(&self) -> bool {
+        self.hit_wall
+    }
+
+    pub fn x(&self) -> f32 {
+        self.x
+    }
+
+    pub fn y(&self) -> f32 {
+        self.y
+    }
+
+    pub fn distance(&self) -> f32 {
+        self.distance
+    }
+}
+
+#[wasm_bindgen]
+pub struct WasmWeaponKernel {
+    has_spawn: bool,
+    spawn_kind: u8,
+    spawn_x: f32,
+    spawn_y: f32,
+    spawn_velocity_x: f32,
+    spawn_velocity_y: f32,
+}
+
+#[wasm_bindgen]
+impl WasmWeaponKernel {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            has_spawn: false,
+            spawn_kind: 0,
+            spawn_x: 0.0,
+            spawn_y: 0.0,
+            spawn_velocity_x: 0.0,
+            spawn_velocity_y: 0.0,
+        }
+    }
+
+    pub fn compute_projectile_spawn(
+        &mut self,
+        weapon_id: i32,
+        origin_x: f32,
+        origin_y: f32,
+        aim_angle: f32,
+    ) -> bool {
+        if let Some(spawn) = weapon::compute_projectile_spawn(weapon_id, origin_x, origin_y, aim_angle)
+        {
+            self.has_spawn = true;
+            self.spawn_kind = spawn.kind.as_u8();
+            self.spawn_x = spawn.x;
+            self.spawn_y = spawn.y;
+            self.spawn_velocity_x = spawn.velocity_x;
+            self.spawn_velocity_y = spawn.velocity_y;
+            return true;
+        }
+        self.has_spawn = false;
+        false
+    }
+
+    pub fn hitscan_range(&self, weapon_id: i32) -> f32 {
+        weapon::hitscan_range(weapon_id).unwrap_or(-1.0)
+    }
+
+    pub fn spawn_kind(&self) -> u8 {
+        self.spawn_kind
+    }
+
+    pub fn spawn_x(&self) -> f32 {
+        self.spawn_x
+    }
+
+    pub fn spawn_y(&self) -> f32 {
+        self.spawn_y
+    }
+
+    pub fn spawn_velocity_x(&self) -> f32 {
+        self.spawn_velocity_x
+    }
+
+    pub fn spawn_velocity_y(&self) -> f32 {
+        self.spawn_velocity_y
+    }
+}
 
 #[wasm_bindgen]
 pub struct WasmProjectile {
@@ -157,7 +279,15 @@ pub struct WasmProjectile {
 #[wasm_bindgen]
 impl WasmProjectile {
     #[wasm_bindgen(constructor)]
-    pub fn new(id: u64, kind: u8, x: f32, y: f32, velocity_x: f32, velocity_y: f32, owner_id: u64) -> Self {
+    pub fn new(
+        id: u64,
+        kind: u8,
+        x: f32,
+        y: f32,
+        velocity_x: f32,
+        velocity_y: f32,
+        owner_id: u64,
+    ) -> Self {
         let proj_kind = ProjectileKind::from_u8(kind).unwrap_or(ProjectileKind::Rocket);
         Self {
             inner: Projectile::new(id, proj_kind, x, y, velocity_x, velocity_y, owner_id),
@@ -441,37 +571,58 @@ pub fn get_hit_radius_plasma() -> f32 {
 
 #[wasm_bindgen]
 pub fn get_damage(weapon_id: u8) -> f32 {
-    constants::DAMAGE.get(weapon_id as usize).copied().unwrap_or(0.0)
+    constants::DAMAGE
+        .get(weapon_id as usize)
+        .copied()
+        .unwrap_or(0.0)
 }
 
 #[wasm_bindgen]
 pub fn get_default_ammo(weapon_id: u8) -> i32 {
-    constants::DEFAULT_AMMO.get(weapon_id as usize).copied().unwrap_or(0)
+    constants::DEFAULT_AMMO
+        .get(weapon_id as usize)
+        .copied()
+        .unwrap_or(0)
 }
 
 #[wasm_bindgen]
 pub fn get_pickup_ammo(weapon_id: u8) -> i32 {
-    constants::PICKUP_AMMO.get(weapon_id as usize).copied().unwrap_or(0)
+    constants::PICKUP_AMMO
+        .get(weapon_id as usize)
+        .copied()
+        .unwrap_or(0)
 }
 
 #[wasm_bindgen]
 pub fn get_weapon_push(weapon_id: u8) -> f32 {
-    constants::WEAPON_PUSH.get(weapon_id as usize).copied().unwrap_or(0.0)
+    constants::WEAPON_PUSH
+        .get(weapon_id as usize)
+        .copied()
+        .unwrap_or(0.0)
 }
 
 #[wasm_bindgen]
 pub fn get_splash_radius(weapon_id: u8) -> f32 {
-    constants::SPLASH_RADIUS.get(weapon_id as usize).copied().unwrap_or(0.0)
+    constants::SPLASH_RADIUS
+        .get(weapon_id as usize)
+        .copied()
+        .unwrap_or(0.0)
 }
 
 #[wasm_bindgen]
 pub fn get_projectile_speed(weapon_id: u8) -> f32 {
-    constants::PROJECTILE_SPEED.get(weapon_id as usize).copied().unwrap_or(0.0)
+    constants::PROJECTILE_SPEED
+        .get(weapon_id as usize)
+        .copied()
+        .unwrap_or(0.0)
 }
 
 #[wasm_bindgen]
 pub fn get_fire_rate(weapon_id: u8) -> i32 {
-    constants::FIRE_RATE.get(weapon_id as usize).copied().unwrap_or(50)
+    constants::FIRE_RATE
+        .get(weapon_id as usize)
+        .copied()
+        .unwrap_or(50)
 }
 
 #[wasm_bindgen]

@@ -1,6 +1,5 @@
 import { Sound } from './helpers'
-import { Map as GameMap } from './map'
-import { PhysicsConstants } from './engine/core/physics'
+import { Physics, PhysicsConstants } from './engine/core/physics'
 
 const EXPLODE_SOUND = {
     rocket: Sound.rocketExplode,
@@ -9,76 +8,67 @@ const EXPLODE_SOUND = {
     bfg: Sound.plasmaHit,
 }
 
-const state = { projectiles: [], nextId: 0, explosionCallbacks: [] }
+const PROJECTILE_KIND = Object.freeze({ rocket: 0, grenade: 1, plasma: 2, bfg: 3 })
+const KIND_TO_TYPE = Object.freeze(['rocket', 'grenade', 'plasma', 'bfg'])
+
+const state = {
+    projectiles: [],
+    nextId: 0,
+    explosionCallbacks: [],
+    scratch: new Float32Array(12),
+}
 
 export const Projectiles = {
     create(type, x, y, velocityX, velocityY, ownerId) {
-        const proj = {
-            id: state.nextId++,
+        const id = state.nextId++
+        const proj = createProjectile({
+            id,
             type,
             x,
             y,
-            prevX: x,
-            prevY: y,
             velocityX,
             velocityY,
             ownerId,
             age: 0,
             active: true,
-        }
+        })
         state.projectiles.push(proj)
         return proj
     },
 
     update() {
-        const cols = GameMap.getCols()
-        const rows = GameMap.getRows()
-        const c = PhysicsConstants // Capture once per frame
-        const maxX = cols * PhysicsConstants.TILE_W + c.BOUNDS_MARGIN
-        const maxY = rows * PhysicsConstants.TILE_H + c.BOUNDS_MARGIN
+        if (!Physics.hasMap()) return
 
         for (let i = state.projectiles.length - 1; i >= 0; i--) {
             const proj = state.projectiles[i]
 
             if (!proj.active) {
+                proj.wasm?.free()
                 state.projectiles.splice(i, 1)
                 continue
             }
 
-            proj.prevX = proj.x
-            proj.prevY = proj.y
-            proj.age++
-
-            if (proj.type === 'grenade') {
-                applyGrenadePhysics(proj, c)
-            }
-
-            const newX = proj.x + proj.velocityX
-            const newY = proj.y + proj.velocityY
-
-            if (checkWallCollision(proj, newX, newY, c)) continue
-
-            proj.x = newX
-            proj.y = newY
-
-            if (proj.type === 'grenade' && proj.age > c.GRENADE_FUSE) {
-                this.explode(proj)
-                continue
-            }
-
-            if (
-                proj.x < -c.BOUNDS_MARGIN ||
-                proj.x > maxX ||
-                proj.y < -c.BOUNDS_MARGIN ||
-                proj.y > maxY
-            ) {
-                proj.active = false
+            const exploded = Physics.stepWasmProjectile(proj.wasm)
+            syncProjectileFromWasm(proj)
+            if (exploded) {
+                this.explode(proj, { syncedWithWasm: true })
             }
         }
     },
 
-    explode(proj) {
+    explode(proj, options = {}) {
+        if (!proj?.active && !options.syncedWithWasm) return
         proj.active = false
+        if (!options.syncedWithWasm && proj.wasm) {
+            proj.wasm.import_host_state(
+                proj.x,
+                proj.y,
+                proj.velocityX,
+                proj.velocityY,
+                proj.age,
+                false,
+            )
+        }
         EXPLODE_SOUND[proj.type]?.()
         for (const cb of state.explosionCallbacks) {
             cb(proj.x, proj.y, proj.type, proj)
@@ -105,18 +95,26 @@ export const Projectiles = {
     getAll: () => state.projectiles,
 
     replaceAll(projectiles) {
-        const prev = new window.Map()
+        const prev = new Map()
         for (const p of state.projectiles) {
             prev.set(p.id, p)
         }
-        state.projectiles.length = 0
-        if (!Array.isArray(projectiles)) return
+        const nextProjectiles = []
+        if (!Array.isArray(projectiles)) {
+            for (const stale of prev.values()) {
+                stale.wasm?.free()
+            }
+            state.projectiles = []
+            return
+        }
         for (const proj of projectiles) {
             if (!proj) continue
-            const old = prev.get(proj.id)
-            state.projectiles.push({
-                id: proj.id ?? state.nextId++,
-                type: proj.type,
+            const id = normalizeHostId(proj.id)
+            const resolvedId = id ?? state.nextId++
+            const old = prev.get(resolvedId)
+            const next = {
+                id: resolvedId,
+                type: proj.type ?? proj.kind ?? old?.type ?? 'rocket',
                 x: proj.x,
                 y: proj.y,
                 prevX: old?.x ?? proj.prevX ?? proj.x,
@@ -126,13 +124,25 @@ export const Projectiles = {
                 ownerId: proj.ownerId ?? proj.owner_id ?? -1,
                 age: proj.age ?? 0,
                 active: proj.active ?? true,
-            })
+            }
+            if (old) {
+                prev.delete(resolvedId)
+                hydrateProjectile(old, next)
+                nextProjectiles.push(old)
+            } else {
+                nextProjectiles.push(createProjectile(next))
+            }
+            state.nextId = Math.max(state.nextId, resolvedId + 1)
         }
+        for (const stale of prev.values()) {
+            stale.wasm?.free()
+        }
+        state.projectiles = nextProjectiles
     },
 
     spawnFromServer(event) {
         if (!event) return
-        const id = event.id
+        const id = normalizeHostId(event.id)
         const type = event.kind ?? event.projectileType ?? event.projectile_type
         if (id == null || !type) return
 
@@ -151,71 +161,135 @@ export const Projectiles = {
         const ownerId = event.ownerId ?? event.owner_id ?? -1
 
         if (existing) {
-            existing.type = type
-            existing.x = x
-            existing.y = y
-            existing.velocityX = velocityX
-            existing.velocityY = velocityY
-            existing.ownerId = ownerId
-            existing.active = true
+            hydrateProjectile(existing, {
+                type,
+                x,
+                y,
+                velocityX,
+                velocityY,
+                ownerId,
+                age: existing.age,
+                active: true,
+            })
             return
         }
 
-        state.projectiles.push({
-            id,
-            type,
-            x,
-            y,
-            prevX: x,
-            prevY: y,
-            velocityX,
-            velocityY,
-            ownerId,
-            age: 0,
-            active: true,
-        })
+        state.projectiles.push(
+            createProjectile({
+                id,
+                type,
+                x,
+                y,
+                prevX: x,
+                prevY: y,
+                velocityX,
+                velocityY,
+                ownerId,
+                age: 0,
+                active: true,
+            }),
+        )
+        state.nextId = Math.max(state.nextId, id + 1)
     },
 
     clear() {
+        for (const proj of state.projectiles) {
+            proj.wasm?.free()
+        }
         state.projectiles.length = 0
     },
 }
 
-function applyGrenadePhysics(proj, c) {
-    proj.velocityY += c.GRAVITY
-    if (proj.velocityY < 0) {
-        proj.velocityY /= c.GRENADE_RISE_DAMPING
+function createProjectile(values) {
+    const id = normalizeHostId(values.id) ?? state.nextId++
+    const type = values.type ?? 'rocket'
+    const x = values.x ?? 0
+    const y = values.y ?? 0
+    const velocityX = values.velocityX ?? values.velocity_x ?? 0
+    const velocityY = values.velocityY ?? values.velocity_y ?? 0
+    const ownerId = values.ownerId ?? values.owner_id ?? -1
+    const age = values.age ?? 0
+    const active = values.active ?? true
+
+    const proj = {
+        id,
+        type,
+        x,
+        y,
+        prevX: values.prevX ?? x,
+        prevY: values.prevY ?? y,
+        velocityX,
+        velocityY,
+        ownerId,
+        age,
+        active,
+        wasm: Physics.createWasmProjectile(
+            BigInt(id),
+            kindFromType(type),
+            x,
+            y,
+            velocityX,
+            velocityY,
+            toWasmU64(ownerId),
+        ),
     }
-    proj.velocityX /= c.GRENADE_AIR_FRICTION
-    if (proj.velocityY > c.GRENADE_MAX_FALL_SPEED) {
-        proj.velocityY = c.GRENADE_MAX_FALL_SPEED
-    }
+    proj.wasm.import_host_state(x, y, velocityX, velocityY, age, active)
+    return proj
 }
 
-function checkWallCollision(proj, newX, newY, c) {
-    const colX = Math.floor(newX / PhysicsConstants.TILE_W)
-    const colY = Math.floor(newY / PhysicsConstants.TILE_H)
+function hydrateProjectile(target, source) {
+    target.type = source.type ?? target.type
+    target.x = source.x ?? target.x
+    target.y = source.y ?? target.y
+    target.prevX = source.prevX ?? target.x
+    target.prevY = source.prevY ?? target.y
+    target.velocityX = source.velocityX ?? source.velocity_x ?? target.velocityX
+    target.velocityY = source.velocityY ?? source.velocity_y ?? target.velocityY
+    target.ownerId = source.ownerId ?? source.owner_id ?? target.ownerId
+    target.age = source.age ?? target.age ?? 0
+    target.active = source.active ?? target.active ?? true
+    target.wasm.import_host_state(
+        target.x,
+        target.y,
+        target.velocityX,
+        target.velocityY,
+        target.age,
+        target.active,
+    )
+}
 
-    if (!GameMap.isBrick(colX, colY)) return false
+function syncProjectileFromWasm(proj) {
+    proj.wasm.export_to_host(state.scratch)
+    proj.type = KIND_TO_TYPE[(state.scratch[0] | 0) & 0xff] ?? proj.type
+    proj.x = state.scratch[1]
+    proj.y = state.scratch[2]
+    proj.prevX = state.scratch[3]
+    proj.prevY = state.scratch[4]
+    proj.velocityX = state.scratch[5]
+    proj.velocityY = state.scratch[6]
+    proj.age = state.scratch[7] | 0
+    proj.active = state.scratch[8] > 0.5
+}
 
-    if (proj.type !== 'grenade') {
-        Projectiles.explode(proj)
-        return true
+function kindFromType(type) {
+    return PROJECTILE_KIND[type] ?? PROJECTILE_KIND.rocket
+}
+
+function normalizeHostId(value) {
+    const numeric = Number(value)
+    if (Number.isInteger(numeric) && numeric >= 0) return numeric
+    return null
+}
+
+function toWasmU64(value) {
+    if (typeof value === 'bigint') return value
+    if (typeof value === 'number' && Number.isFinite(value)) return BigInt(Math.trunc(value))
+    if (typeof value === 'string') {
+        try {
+            return BigInt(value)
+        } catch {
+            return 0n
+        }
     }
-
-    const oldColX = Math.floor(proj.x / PhysicsConstants.TILE_W)
-    const oldColY = Math.floor(proj.y / PhysicsConstants.TILE_H)
-
-    if (oldColX !== colX) proj.velocityX = -proj.velocityX / c.GRENADE_BOUNCE_FRICTION
-    if (oldColY !== colY) proj.velocityY = -proj.velocityY / c.GRENADE_BOUNCE_FRICTION
-
-    if (
-        Math.abs(proj.velocityX) < c.GRENADE_MIN_VELOCITY &&
-        Math.abs(proj.velocityY) < c.GRENADE_MIN_VELOCITY
-    ) {
-        proj.velocityX = 0
-        proj.velocityY = 0
-    }
-
-    return false
+    return 0n
 }

@@ -1,15 +1,12 @@
 use rand::Rng;
 
 use crate::constants::{
-    ARMOR_ABSORPTION, BOUNDS_MARGIN, DAMAGE, DEFAULT_AMMO, FIRE_RATE, GAUNTLET_PLAYER_RADIUS,
-    GAUNTLET_RANGE, GRENADE_AIR_FRICTION, GRENADE_BOUNCE_FRICTION, GRENADE_FUSE, GRENADE_HIT_GRACE,
-    GRENADE_LOFT, GRENADE_MAX_FALL_SPEED, GRENADE_MIN_VELOCITY, GRENADE_RISE_DAMPING,
-    HITSCAN_PLAYER_RADIUS, MACHINE_RANGE, MAX_ARMOR, MAX_HEALTH, MEGA_HEALTH, PICKUP_AMMO,
-    PICKUP_RADIUS, PLASMA_SPLASH_DMG, PLASMA_SPLASH_PUSH, PLASMA_SPLASH_RADIUS, PLAYER_HALF_H,
-    PROJECTILE_GRAVITY, PROJECTILE_OFFSET, PROJECTILE_SPEED, QUAD_DURATION, QUAD_MULTIPLIER,
-    RAIL_RANGE, RESPAWN_TIME, SELF_DAMAGE_REDUCTION, SELF_HIT_GRACE, SHAFT_RANGE, SHOTGUN_PELLETS,
-    SHOTGUN_RANGE, SHOTGUN_SPREAD, SPAWN_OFFSET_X, SPAWN_PROTECTION, SPLASH_RADIUS, TILE_H, TILE_W,
-    WEAPON_ORIGIN_CROUCH_LIFT, WEAPON_PUSH,
+    ARMOR_ABSORPTION, DAMAGE, DEFAULT_AMMO, FIRE_RATE, GAUNTLET_PLAYER_RADIUS, GAUNTLET_RANGE,
+    GRENADE_HIT_GRACE, HITSCAN_PLAYER_RADIUS, MACHINE_RANGE, MAX_ARMOR, MAX_HEALTH, MEGA_HEALTH,
+    PICKUP_AMMO, PICKUP_RADIUS, PLASMA_SPLASH_DMG, PLASMA_SPLASH_PUSH, PLASMA_SPLASH_RADIUS,
+    PLAYER_HALF_H, QUAD_DURATION, QUAD_MULTIPLIER, RESPAWN_TIME, SELF_DAMAGE_REDUCTION,
+    SELF_HIT_GRACE, SHOTGUN_PELLETS, SHOTGUN_RANGE, SHOTGUN_SPREAD, SPAWN_OFFSET_X,
+    SPAWN_PROTECTION, SPLASH_RADIUS, TILE_H, TILE_W, WEAPON_ORIGIN_CROUCH_LIFT, WEAPON_PUSH,
 };
 use crate::map::GameMap;
 use crate::physics::PlayerState;
@@ -108,7 +105,7 @@ pub fn try_fire(
             let (x, y) = get_weapon_origin(player);
             for _ in 0..SHOTGUN_PELLETS {
                 let angle = player.aim_angle + (rng.gen::<f32>() - 0.5) * SHOTGUN_SPREAD;
-                let trace = ray_trace(x, y, angle, SHOTGUN_RANGE, map);
+                let trace = physics_core::weapon::ray_trace(map, x, y, angle, SHOTGUN_RANGE);
                 hitscan_actions.push(HitAction::Hitscan {
                     attacker_id: player.id,
                     weapon_id: weapon,
@@ -126,14 +123,10 @@ pub fn try_fire(
             }
         }
         WeaponId::Machine | WeaponId::Rail | WeaponId::Shaft => {
-            let range = match weapon {
-                WeaponId::Machine => MACHINE_RANGE,
-                WeaponId::Rail => RAIL_RANGE,
-                WeaponId::Shaft => SHAFT_RANGE,
-                _ => MACHINE_RANGE,
-            };
+            let range =
+                physics_core::weapon::hitscan_range(player.current_weapon).unwrap_or(MACHINE_RANGE);
             let (x, y) = get_weapon_origin(player);
-            let trace = ray_trace(x, y, player.aim_angle, range, map);
+            let trace = physics_core::weapon::ray_trace(map, x, y, player.aim_angle, range);
             hitscan_actions.push(HitAction::Hitscan {
                 attacker_id: player.id,
                 weapon_id: weapon,
@@ -165,38 +158,33 @@ pub fn try_fire(
         }
         WeaponId::Grenade | WeaponId::Rocket | WeaponId::Plasma | WeaponId::Bfg => {
             let (x, y) = get_weapon_origin(player);
-            let speed = projectile_speed(weapon);
-            let cos = player.aim_angle.cos();
-            let sin = player.aim_angle.sin();
-            let (offset, loft, kind) = projectile_config(weapon);
-            let mut velocity_x = cos * speed;
-            let mut velocity_y = sin * speed - loft;
-            if kind == ProjectileKind::Grenade {
-                let slow = 0.8;
-                velocity_x *= slow;
-                velocity_y = velocity_y * slow + 0.9;
-            }
-            let proj_x = x + cos * offset;
-            let proj_y = y + sin * offset;
+            let Some(spawn) = physics_core::weapon::compute_projectile_spawn(
+                player.current_weapon,
+                x,
+                y,
+                player.aim_angle,
+            ) else {
+                return;
+            };
             let id = next_id(now_id);
             events.push(EffectEvent::ProjectileSpawn {
                 id,
-                kind: kind.as_u8(),
-                x: proj_x,
-                y: proj_y,
-                velocity_x,
-                velocity_y,
+                kind: spawn.kind.as_u8(),
+                x: spawn.x,
+                y: spawn.y,
+                velocity_x: spawn.velocity_x,
+                velocity_y: spawn.velocity_y,
                 owner_id: player.id,
             });
             projectiles.push(Projectile {
                 id,
-                kind,
-                x: proj_x,
-                y: proj_y,
+                kind: spawn.kind,
+                x: spawn.x,
+                y: spawn.y,
                 prev_x: x,
                 prev_y: y,
-                velocity_x,
-                velocity_y,
+                velocity_x: spawn.velocity_x,
+                velocity_y: spawn.velocity_y,
                 owner_id: player.id,
                 age: 0,
                 active: true,
@@ -269,42 +257,15 @@ pub fn apply_hit_actions(
 }
 
 pub fn update_projectiles(map: &GameMap, projectiles: &mut Vec<Projectile>) -> Vec<Explosion> {
-    let cols = map.cols as f32;
-    let rows = map.rows as f32;
-    let max_x = cols * TILE_W + BOUNDS_MARGIN;
-    let max_y = rows * TILE_H + BOUNDS_MARGIN;
+    let bounds = physics_core::calculate_bounds(map.cols, map.rows);
 
     let mut explosions = Vec::new();
-
     for proj in projectiles.iter_mut() {
         if !proj.active {
             continue;
         }
-        proj.prev_x = proj.x;
-        proj.prev_y = proj.y;
-        proj.age += 1;
-
-        if proj.kind == ProjectileKind::Grenade {
-            apply_grenade_physics(proj);
-        }
-
-        let new_x = proj.x + proj.velocity_x;
-        let new_y = proj.y + proj.velocity_y;
-
-        if check_wall_collision(map, proj, new_x, new_y, &mut explosions) {
-            continue;
-        }
-
-        proj.x = new_x;
-        proj.y = new_y;
-
-        if proj.kind == ProjectileKind::Grenade && proj.age > GRENADE_FUSE {
-            explode(proj, &mut explosions);
-            continue;
-        }
-
-        if proj.x < -BOUNDS_MARGIN || proj.x > max_x || proj.y < -BOUNDS_MARGIN || proj.y > max_y {
-            proj.active = false;
+        if let Some(explosion) = physics_core::step_projectile(proj, map, bounds) {
+            explosions.push(explosion);
         }
     }
 
@@ -676,21 +637,6 @@ fn fire_rate(weapon: WeaponId) -> i32 {
     FIRE_RATE[weapon as usize]
 }
 
-fn projectile_speed(weapon: WeaponId) -> f32 {
-    PROJECTILE_SPEED[weapon as usize]
-}
-
-fn projectile_config(weapon: WeaponId) -> (f32, f32, ProjectileKind) {
-    let offset = PROJECTILE_OFFSET[weapon as usize];
-    match weapon {
-        WeaponId::Grenade => (offset, GRENADE_LOFT, ProjectileKind::Grenade),
-        WeaponId::Rocket => (offset, 0.0, ProjectileKind::Rocket),
-        WeaponId::Plasma => (offset, 0.0, ProjectileKind::Plasma),
-        WeaponId::Bfg => (offset, 0.0, ProjectileKind::Bfg),
-        _ => (offset, 0.0, ProjectileKind::Rocket),
-    }
-}
-
 fn get_weapon_origin(player: &PlayerState) -> (f32, f32) {
     let y = if player.crouch {
         player.y + WEAPON_ORIGIN_CROUCH_LIFT
@@ -698,90 +644,6 @@ fn get_weapon_origin(player: &PlayerState) -> (f32, f32) {
         player.y
     };
     (player.x, y)
-}
-
-fn ray_trace(start_x: f32, start_y: f32, angle: f32, max_distance: f32, map: &GameMap) -> Trace {
-    let dir_x = angle.cos();
-    let dir_y = angle.sin();
-
-    let mut map_x = (start_x / TILE_W).floor() as i32;
-    let mut map_y = (start_y / TILE_H).floor() as i32;
-
-    let delta_dist_x = if dir_x == 0.0 {
-        1e30
-    } else {
-        (1.0 / dir_x).abs()
-    };
-    let delta_dist_y = if dir_y == 0.0 {
-        1e30
-    } else {
-        (1.0 / dir_y).abs()
-    };
-
-    let step_x = if dir_x < 0.0 { -1 } else { 1 };
-    let step_y = if dir_y < 0.0 { -1 } else { 1 };
-
-    let mut side_dist_x = if dir_x < 0.0 {
-        (start_x / TILE_W - map_x as f32) * delta_dist_x
-    } else {
-        (map_x as f32 + 1.0 - start_x / TILE_W) * delta_dist_x
-    };
-
-    let mut side_dist_y = if dir_y < 0.0 {
-        (start_y / TILE_H - map_y as f32) * delta_dist_y
-    } else {
-        (map_y as f32 + 1.0 - start_y / TILE_H) * delta_dist_y
-    };
-
-    let max_dist_sq = max_distance * max_distance;
-    let mut hit = false;
-    let mut side = 0;
-
-    while !hit {
-        if side_dist_x < side_dist_y {
-            side_dist_x += delta_dist_x;
-            map_x += step_x;
-            side = 0;
-        } else {
-            side_dist_y += delta_dist_y;
-            map_y += step_y;
-            side = 1;
-        }
-
-        let check_x = (map_x as f32 + 0.5) * TILE_W - start_x;
-        let check_y = (map_y as f32 + 0.5) * TILE_H - start_y;
-        if check_x * check_x + check_y * check_y > max_dist_sq {
-            break;
-        }
-
-        if map.is_brick(map_x, map_y) {
-            hit = true;
-        }
-    }
-
-    if !hit {
-        return Trace {
-            x: start_x + dir_x * max_distance,
-            y: start_y + dir_y * max_distance,
-        };
-    }
-
-    let (hit_x, hit_y) = if side == 0 {
-        let hx = (map_x + if step_x == -1 { 1 } else { 0 }) as f32 * TILE_W;
-        let hy = start_y + ((hx - start_x) / dir_x) * dir_y;
-        (hx, hy)
-    } else {
-        let hy = (map_y + if step_y == -1 { 1 } else { 0 }) as f32 * TILE_H;
-        let hx = start_x + ((hy - start_y) / dir_y) * dir_x;
-        (hx, hy)
-    };
-
-    Trace { x: hit_x, y: hit_y }
-}
-
-struct Trace {
-    x: f32,
-    y: f32,
 }
 
 fn find_hitscan_target(
@@ -858,51 +720,6 @@ fn check_player_collision(player: &PlayerState, proj: &Projectile) -> bool {
     let dy = player.y - proj.y;
     let radius = proj.kind.hit_radius();
     dx * dx + dy * dy < radius * radius
-}
-
-fn apply_grenade_physics(proj: &mut Projectile) {
-    proj.velocity_y += PROJECTILE_GRAVITY;
-    if proj.velocity_y < 0.0 {
-        proj.velocity_y /= GRENADE_RISE_DAMPING;
-    }
-    proj.velocity_x /= GRENADE_AIR_FRICTION;
-    if proj.velocity_y > GRENADE_MAX_FALL_SPEED {
-        proj.velocity_y = GRENADE_MAX_FALL_SPEED;
-    }
-}
-
-fn check_wall_collision(
-    map: &GameMap,
-    proj: &mut Projectile,
-    new_x: f32,
-    new_y: f32,
-    explosions: &mut Vec<Explosion>,
-) -> bool {
-    let col_x = (new_x / TILE_W).floor() as i32;
-    let col_y = (new_y / TILE_H).floor() as i32;
-    if !map.is_brick(col_x, col_y) {
-        return false;
-    }
-
-    if proj.kind != ProjectileKind::Grenade {
-        explode(proj, explosions);
-        return true;
-    }
-
-    let old_col_x = (proj.x / TILE_W).floor() as i32;
-    let old_col_y = (proj.y / TILE_H).floor() as i32;
-    if old_col_x != col_x {
-        proj.velocity_x = -proj.velocity_x / GRENADE_BOUNCE_FRICTION;
-    }
-    if old_col_y != col_y {
-        proj.velocity_y = -proj.velocity_y / GRENADE_BOUNCE_FRICTION;
-    }
-    if proj.velocity_x.abs() < GRENADE_MIN_VELOCITY && proj.velocity_y.abs() < GRENADE_MIN_VELOCITY
-    {
-        proj.velocity_x = 0.0;
-        proj.velocity_y = 0.0;
-    }
-    false
 }
 
 fn explode(proj: &mut Projectile, explosions: &mut Vec<Explosion>) {

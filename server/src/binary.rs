@@ -5,8 +5,8 @@ use crate::room::PlayerConn;
 
 // Re-export from binary_protocol for server use
 pub use binary_protocol::{
-    decode_client_message, encode_player_joined, encode_player_left, encode_welcome,
-    EffectEvent, ItemSnapshot, PlayerSnapshot, ProjectileSnapshot, WEAPON_COUNT,
+    decode_client_message, encode_player_joined, encode_player_left, encode_welcome, EffectEvent,
+    ItemSnapshot, PlayerSnapshot, ProjectileSnapshot, WEAPON_COUNT,
 };
 
 // Import constants for snapshot encoding
