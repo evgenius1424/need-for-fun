@@ -11,6 +11,8 @@ import {
 
 const DEFAULT_SERVER_URL = 'ws://localhost:3001/ws'
 const DEFAULT_MAP = 'dm2'
+const INPUT_SEND_RATE_HZ = 60
+const INPUT_SEND_INTERVAL_MS = 1000 / INPUT_SEND_RATE_HZ
 
 export class NetworkClient {
     constructor() {
@@ -24,7 +26,9 @@ export class NetworkClient {
         this.localPlayer = null
         this.pendingInputs = []
         this.snapshotBuffer = []
-        this.interpDelayMs = 100
+        this.interpDelayMs = 60
+        this.inputSendIntervalMs = INPUT_SEND_INTERVAL_MS
+        this.lastInputSentAt = -Infinity
         this.predictor = null
     }
 
@@ -72,6 +76,7 @@ export class NetworkClient {
                 'open',
                 () => {
                     this.connected = true
+                    this.lastInputSentAt = -Infinity
                     this.send(encodeHello(username))
                     this.send(encodeJoinRoom(roomId ?? '', map))
                     this.handlers.onOpen?.()
@@ -94,6 +99,7 @@ export class NetworkClient {
                 this.connected = false
                 this.playerId = null
                 this.roomId = null
+                this.lastInputSentAt = -Infinity
                 this.remotePlayers.clear()
                 this.handlers.onClose?.()
                 if (!wasConnected) {
@@ -118,11 +124,15 @@ export class NetworkClient {
         }
     }
 
-    sendInput(input) {
-        if (!this.connected || !this.socket) return
+    sendInput(input, now = performance.now()) {
+        if (!this.connected || !this.socket) return false
+        if (now - this.lastInputSentAt < this.inputSendIntervalMs) return false
+
+        this.lastInputSentAt = now
         this.inputSeq++
         this.pendingInputs.push({ seq: this.inputSeq, input })
         this.send(encodeInput(this.inputSeq, input))
+        return true
     }
 
     send(payload) {

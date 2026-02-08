@@ -70,7 +70,7 @@ async fn main() -> std::io::Result<()> {
     info!("listening on {addr}");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await
+    axum::serve(listener, app).tcp_nodelay(true).await
 }
 
 async fn ws_handler(State(state): State<Arc<AppState>>, ws: WebSocketUpgrade) -> impl IntoResponse {

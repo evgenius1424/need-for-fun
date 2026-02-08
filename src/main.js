@@ -129,10 +129,8 @@ function gameLoop(timestamp, player) {
 
         const weaponSwitch = Input.weaponSwitch
         const weaponScroll = Input.weaponScroll
-        Input.weaponSwitch = -1
-        Input.weaponScroll = 0
 
-        network.sendInput({
+        const didSendInput = network.sendInput({
             tick: timestamp | 0,
             key_up: player.keyUp,
             key_down: player.keyDown,
@@ -143,7 +141,12 @@ function gameLoop(timestamp, player) {
             weapon_scroll: weaponScroll,
             aim_angle: player.aimAngle,
             facing_left: player.facingLeft,
-        })
+        }, timestamp)
+
+        if (didSendInput) {
+            Input.weaponSwitch = -1
+            Input.weaponScroll = 0
+        }
 
         // Local prediction for movement only; server snapshots will correct.
         Physics.updateAllPlayers([player], timestamp)
