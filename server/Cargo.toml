@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 axum = { version = "0.7", features = ["ws"] }
-binary_protocol = { path = "../shared/binary_protocol" }
+binary_protocol = { path = "../shared/binary_protocol", features = ["server"] }
 bytes = "1"
 futures-util = "0.3"
 physics_core = { path = "../shared/physics_core" }

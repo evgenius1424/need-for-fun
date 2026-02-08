@@ -1,28 +1,25 @@
-// WASM-based binary protocol wrapper
-// Uses the shared binary_protocol crate compiled to WASM via physics_core
-
 let wasmModule = null
-let MSG = null
 
-// Pre-allocated buffer for input encoding (matches original JS implementation)
-const inputBuffer = new ArrayBuffer(16)
+export const MSG = {
+    HELLO: 0x01,
+    JOIN_ROOM: 0x02,
+    INPUT: 0x03,
+    WELCOME: 0x10,
+    PLAYER_JOINED: 0x11,
+    PLAYER_LEFT: 0x12,
+    ROOM_STATE: 0x20,
+    SNAPSHOT: 0x21,
+}
 
 export async function initBinaryProtocol() {
     if (wasmModule) return
-
     wasmModule = await import('./engine/wasm/physics_core.js')
     await wasmModule.default()
-
-    // Load protocol constants from WASM
-    const constants = wasmModule.get_protocol_constants()
-    MSG = constants.msg
 }
 
 export function getProtocolConstants() {
     return { MSG }
 }
-
-export { MSG }
 
 export function encodeHello(username) {
     if (!wasmModule) {
@@ -42,9 +39,7 @@ export function encodeInput(seq, input) {
     if (!wasmModule) {
         throw new Error('Binary protocol not initialized. Call initBinaryProtocol() first.')
     }
-
-    // Use WASM encoding
-    const result = wasmModule.wasm_encode_input(
+    return wasmModule.wasm_encode_input(
         BigInt(seq),
         input.aim_angle ?? 0,
         input.key_up ?? false,
@@ -56,11 +51,6 @@ export function encodeInput(seq, input) {
         input.weapon_switch ?? -1,
         input.weapon_scroll ?? 0,
     )
-
-    // Copy WASM result to our pre-allocated buffer for consistency with original API
-    const view = new Uint8Array(inputBuffer)
-    view.set(result)
-    return inputBuffer
 }
 
 export function decodeServerMessage(buffer) {

@@ -717,14 +717,6 @@ export function get_projectile_speed(weapon_id) {
 }
 
 /**
- * @returns {any}
- */
-export function get_protocol_constants() {
-    const ret = wasm.get_protocol_constants();
-    return ret;
-}
-
-/**
  * @returns {number}
  */
 export function get_quad_duration() {
@@ -949,12 +941,12 @@ export function wasm_encode_join_room(room_id, map) {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg_Error_8c4e43fe74559d73: function(arg0, arg1) {
-            const ret = Error(getStringFromWasm0(arg0, arg1));
-            return ret;
-        },
         __wbg___wbindgen_copy_to_typed_array_fc0809a4dec43528: function(arg0, arg1, arg2) {
             new Uint8Array(arg2.buffer, arg2.byteOffset, arg2.byteLength).set(getArrayU8FromWasm0(arg0, arg1));
+        },
+        __wbg___wbindgen_is_null_ac34f5003991759a: function(arg0) {
+            const ret = arg0 === null;
+            return ret;
         },
         __wbg___wbindgen_throw_be289d5034ed271b: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
@@ -967,30 +959,22 @@ function __wbg_get_imports() {
             const ret = new Array();
             return ret;
         },
-        __wbg_set_3f1d0b984ed272ed: function(arg0, arg1, arg2) {
-            arg0[arg1] = arg2;
+        __wbg_push_8ffdcb2063340ba5: function(arg0, arg1) {
+            const ret = arg0.push(arg1);
+            return ret;
         },
-        __wbg_set_f43e577aea94465b: function(arg0, arg1, arg2) {
-            arg0[arg1 >>> 0] = arg2;
-        },
+        __wbg_set_6cb8631f80447a67: function() { return handleError(function (arg0, arg1, arg2) {
+            const ret = Reflect.set(arg0, arg1, arg2);
+            return ret;
+        }, arguments); },
         __wbindgen_cast_0000000000000001: function(arg0) {
             // Cast intrinsic for `F64 -> Externref`.
             const ret = arg0;
             return ret;
         },
-        __wbindgen_cast_0000000000000002: function(arg0) {
-            // Cast intrinsic for `I64 -> Externref`.
-            const ret = arg0;
-            return ret;
-        },
-        __wbindgen_cast_0000000000000003: function(arg0, arg1) {
+        __wbindgen_cast_0000000000000002: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
-            return ret;
-        },
-        __wbindgen_cast_0000000000000004: function(arg0) {
-            // Cast intrinsic for `U64 -> Externref`.
-            const ret = BigInt.asUintN(64, arg0);
             return ret;
         },
         __wbindgen_init_externref_table: function() {
@@ -1031,6 +1015,12 @@ const WasmWeaponKernelFinalization = (typeof FinalizationRegistry === 'undefined
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmweaponkernel_free(ptr >>> 0, 1));
 
+function addToExternrefTable0(obj) {
+    const idx = wasm.__externref_table_alloc();
+    wasm.__wbindgen_externrefs.set(idx, obj);
+    return idx;
+}
+
 function _assertClass(instance, klass) {
     if (!(instance instanceof klass)) {
         throw new Error(`expected instance of ${klass.name}`);
@@ -1061,6 +1051,15 @@ function getUint8ArrayMemory0() {
         cachedUint8ArrayMemory0 = new Uint8Array(wasm.memory.buffer);
     }
     return cachedUint8ArrayMemory0;
+}
+
+function handleError(f, args) {
+    try {
+        return f.apply(this, args);
+    } catch (e) {
+        const idx = addToExternrefTable0(e);
+        wasm.__wbindgen_exn_store(idx);
+    }
 }
 
 function passArray8ToWasm0(arg, malloc) {

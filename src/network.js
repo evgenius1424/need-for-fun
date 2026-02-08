@@ -48,14 +48,11 @@ export class NetworkClient {
         return [...this.remotePlayers.values()]
     }
 
-    async connect({ url = DEFAULT_SERVER_URL, username, roomId, map = DEFAULT_MAP } = {}) {
-        if (this.connected) return
-        if (!username) throw new Error('Username required')
+    connect({ url = DEFAULT_SERVER_URL, username, roomId, map = DEFAULT_MAP } = {}) {
+        if (this.connected) return Promise.resolve()
+        if (!username) return Promise.reject(new Error('Username required'))
 
-        // Initialize WASM binary protocol before connecting
-        await initBinaryProtocol()
-
-        return new Promise((resolve, reject) => {
+        return initBinaryProtocol().then(() => new Promise((resolve, reject) => {
             let settled = false
             const resolveOnce = () => {
                 if (settled) return
@@ -112,7 +109,7 @@ export class NetworkClient {
                 },
                 { once: true },
             )
-        })
+        }))
     }
 
     disconnect() {

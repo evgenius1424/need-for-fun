@@ -3,17 +3,12 @@ use bytes::{BufMut, Bytes, BytesMut};
 use crate::constants::SNAPSHOT_BUFFER_RING;
 use crate::room::PlayerConn;
 
-// Re-export from binary_protocol for server use
 pub use binary_protocol::{
     decode_client_message, encode_player_joined, encode_player_left, encode_welcome, EffectEvent,
-    ItemSnapshot, PlayerSnapshot, ProjectileSnapshot, WEAPON_COUNT,
+    ItemSnapshot, PlayerSnapshot, ProjectileSnapshot,
 };
 
-// Import constants for snapshot encoding
-use binary_protocol::{
-    EVENT_BULLET_IMPACT, EVENT_DAMAGE, EVENT_EXPLOSION, EVENT_GAUNTLET, EVENT_PROJECTILE_SPAWN,
-    EVENT_RAIL, EVENT_SHAFT, EVENT_WEAPON_FIRED, MSG_SNAPSHOT,
-};
+use binary_protocol::{write_event, write_player_record, MSG_SNAPSHOT};
 
 // Server-specific SnapshotEncoder that uses BytesMut for performance
 pub struct SnapshotEncoder {
@@ -61,7 +56,7 @@ impl SnapshotEncoder {
         buffer.put_u8(event_count);
 
         for snapshot in players {
-            encode_player_record(buffer, snapshot);
+            write_player_record(buffer, snapshot);
         }
 
         for item in items {
@@ -84,7 +79,7 @@ impl SnapshotEncoder {
         }
 
         for event in events {
-            encode_event(buffer, event);
+            write_event(buffer, event);
         }
 
         buffer.split().freeze()
@@ -146,169 +141,24 @@ pub fn encode_room_state(
     binary_protocol::encode_room_state(room_id, map_name, &players_data)
 }
 
-fn encode_player_record(out: &mut impl BufMut, snap: &PlayerSnapshot) {
-    push_u64(out, snap.id);
-    push_f32(out, snap.x);
-    push_f32(out, snap.y);
-    push_f32(out, snap.vx);
-    push_f32(out, snap.vy);
-    push_f32(out, snap.aim_angle);
-    push_i16(out, snap.health as i16);
-    push_i16(out, snap.armor as i16);
-    out.put_u8(snap.current_weapon as u8);
-    out.put_u8(snap.fire_cooldown.clamp(0, 255) as u8);
-
-    let mut weapon_bits: u16 = 0;
-    for (idx, has) in snap.weapons.iter().enumerate() {
-        if *has {
-            weapon_bits |= 1 << idx;
-        }
-    }
-    push_u16(out, weapon_bits);
-
-    for idx in 0..WEAPON_COUNT {
-        push_i16(
-            out,
-            snap.ammo[idx].clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-        );
-    }
-
-    push_u64(out, snap.last_input_seq);
-
-    let mut flags = 0u8;
-    if snap.facing_left {
-        flags |= 0x01;
-    }
-    if snap.crouch {
-        flags |= 0x02;
-    }
-    if snap.dead {
-        flags |= 0x04;
-    }
-    if snap.key_left {
-        flags |= 0x08;
-    }
-    if snap.key_right {
-        flags |= 0x10;
-    }
-    if snap.key_up {
-        flags |= 0x20;
-    }
-    if snap.key_down {
-        flags |= 0x40;
-    }
-    out.put_u8(flags);
+fn push_u16(buf: &mut BytesMut, v: u16) {
+    buf.put_slice(&v.to_le_bytes());
 }
 
-fn encode_event(out: &mut impl BufMut, event: &EffectEvent) {
-    match event {
-        EffectEvent::WeaponFired {
-            player_id,
-            weapon_id,
-        } => {
-            out.put_u8(EVENT_WEAPON_FIRED);
-            push_u64(out, *player_id);
-            out.put_u8(*weapon_id as u8);
-        }
-        EffectEvent::ProjectileSpawn {
-            id,
-            kind,
-            x,
-            y,
-            velocity_x,
-            velocity_y,
-            owner_id,
-        } => {
-            out.put_u8(EVENT_PROJECTILE_SPAWN);
-            push_u64(out, *id);
-            out.put_u8(*kind);
-            push_f32(out, *x);
-            push_f32(out, *y);
-            push_f32(out, *velocity_x);
-            push_f32(out, *velocity_y);
-            push_u64(out, *owner_id);
-        }
-        EffectEvent::Rail {
-            start_x,
-            start_y,
-            end_x,
-            end_y,
-        } => {
-            out.put_u8(EVENT_RAIL);
-            push_f32(out, *start_x);
-            push_f32(out, *start_y);
-            push_f32(out, *end_x);
-            push_f32(out, *end_y);
-        }
-        EffectEvent::Shaft {
-            start_x,
-            start_y,
-            end_x,
-            end_y,
-        } => {
-            out.put_u8(EVENT_SHAFT);
-            push_f32(out, *start_x);
-            push_f32(out, *start_y);
-            push_f32(out, *end_x);
-            push_f32(out, *end_y);
-        }
-        EffectEvent::BulletImpact { x, y, radius } => {
-            out.put_u8(EVENT_BULLET_IMPACT);
-            push_f32(out, *x);
-            push_f32(out, *y);
-            push_f32(out, *radius);
-        }
-        EffectEvent::Gauntlet { x, y } => {
-            out.put_u8(EVENT_GAUNTLET);
-            push_f32(out, *x);
-            push_f32(out, *y);
-        }
-        EffectEvent::Explosion { x, y, kind } => {
-            out.put_u8(EVENT_EXPLOSION);
-            push_f32(out, *x);
-            push_f32(out, *y);
-            out.put_u8(*kind);
-        }
-        EffectEvent::Damage {
-            attacker_id,
-            target_id,
-            amount,
-            killed,
-        } => {
-            out.put_u8(EVENT_DAMAGE);
-            push_u64(out, *attacker_id);
-            push_u64(out, *target_id);
-            push_i16(
-                out,
-                (*amount).clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-            );
-            let mut flags = 0u8;
-            if *killed {
-                flags |= 0x01;
-            }
-            out.put_u8(flags);
-        }
-    }
+fn push_i16(buf: &mut BytesMut, v: i16) {
+    buf.put_slice(&v.to_le_bytes());
 }
 
-fn push_u16(out: &mut impl BufMut, v: u16) {
-    out.put_slice(&v.to_le_bytes());
+fn push_u64(buf: &mut BytesMut, v: u64) {
+    buf.put_slice(&v.to_le_bytes());
 }
 
-fn push_i16(out: &mut impl BufMut, v: i16) {
-    out.put_slice(&v.to_le_bytes());
+fn push_i64(buf: &mut BytesMut, v: i64) {
+    buf.put_slice(&v.to_le_bytes());
 }
 
-fn push_u64(out: &mut impl BufMut, v: u64) {
-    out.put_slice(&v.to_le_bytes());
-}
-
-fn push_i64(out: &mut impl BufMut, v: i64) {
-    out.put_slice(&v.to_le_bytes());
-}
-
-fn push_f32(out: &mut impl BufMut, v: f32) {
-    out.put_slice(&v.to_le_bytes());
+fn push_f32(buf: &mut BytesMut, v: f32) {
+    buf.put_slice(&v.to_le_bytes());
 }
 
 #[cfg(test)]
