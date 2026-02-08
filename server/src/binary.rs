@@ -1,126 +1,21 @@
-use std::string::FromUtf8Error;
-
 use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::constants::{SNAPSHOT_BUFFER_RING, WEAPON_COUNT};
-use crate::protocol::{ClientMsg, EffectEvent, PlayerSnapshot};
+use crate::constants::SNAPSHOT_BUFFER_RING;
 use crate::room::PlayerConn;
 
-pub const MSG_HELLO: u8 = 0x01;
-pub const MSG_JOIN_ROOM: u8 = 0x02;
-pub const MSG_INPUT: u8 = 0x03;
-pub const MSG_WELCOME: u8 = 0x81;
-pub const MSG_ROOM_STATE: u8 = 0x82;
-pub const MSG_PLAYER_JOINED: u8 = 0x83;
-pub const MSG_PLAYER_LEFT: u8 = 0x84;
-pub const MSG_SNAPSHOT: u8 = 0x85;
+// Re-export from binary_protocol for server use
+pub use binary_protocol::{
+    decode_client_message, encode_player_joined, encode_player_left, encode_welcome,
+    EffectEvent, ItemSnapshot, PlayerSnapshot, ProjectileSnapshot, WEAPON_COUNT,
+};
 
-pub const EVENT_WEAPON_FIRED: u8 = 0x01;
-pub const EVENT_PROJECTILE_SPAWN: u8 = 0x02;
-pub const EVENT_RAIL: u8 = 0x03;
-pub const EVENT_SHAFT: u8 = 0x04;
-pub const EVENT_BULLET_IMPACT: u8 = 0x05;
-pub const EVENT_GAUNTLET: u8 = 0x06;
-pub const EVENT_EXPLOSION: u8 = 0x07;
-pub const EVENT_DAMAGE: u8 = 0x08;
+// Import constants for snapshot encoding
+use binary_protocol::{
+    EVENT_BULLET_IMPACT, EVENT_DAMAGE, EVENT_EXPLOSION, EVENT_GAUNTLET, EVENT_PROJECTILE_SPAWN,
+    EVENT_RAIL, EVENT_SHAFT, EVENT_WEAPON_FIRED, MSG_SNAPSHOT,
+};
 
-const MAX_USERNAME_LEN: usize = 32;
-
-#[allow(dead_code)]
-#[derive(Debug)]
-pub enum DecodeError {
-    Empty,
-    UnknownType(u8),
-    OutOfBounds,
-    InvalidUtf8,
-}
-
-impl From<FromUtf8Error> for DecodeError {
-    fn from(_: FromUtf8Error) -> Self {
-        Self::InvalidUtf8
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct ItemSnapshot {
-    pub active: bool,
-    pub respawn_timer: i16,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct ProjectileSnapshot {
-    pub id: u64,
-    pub x: f32,
-    pub y: f32,
-    pub velocity_x: f32,
-    pub velocity_y: f32,
-    pub owner_id: i64,
-    pub kind: u8,
-}
-
-pub fn decode_client_message(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
-    let first = *bytes.first().ok_or(DecodeError::Empty)?;
-    match first {
-        MSG_HELLO => decode_hello(bytes),
-        MSG_JOIN_ROOM => decode_join_room(bytes),
-        MSG_INPUT => decode_input(bytes),
-        _ => Err(DecodeError::UnknownType(first)),
-    }
-}
-
-pub fn encode_welcome(player_id: u64) -> Vec<u8> {
-    let mut out = Vec::with_capacity(9);
-    out.put_u8(MSG_WELCOME);
-    push_u64(&mut out, player_id);
-    out
-}
-
-pub fn encode_player_joined(id: u64, username: &str) -> Vec<u8> {
-    let name_bytes = username.as_bytes();
-    let len = name_bytes.len().min(255);
-    let mut out = Vec::with_capacity(10 + len);
-    out.put_u8(MSG_PLAYER_JOINED);
-    push_u64(&mut out, id);
-    out.put_u8(len as u8);
-    out.put_slice(&name_bytes[..len]);
-    out
-}
-
-pub fn encode_player_left(id: u64) -> Vec<u8> {
-    let mut out = Vec::with_capacity(9);
-    out.put_u8(MSG_PLAYER_LEFT);
-    push_u64(&mut out, id);
-    out
-}
-
-pub fn encode_room_state(
-    room_id: &str,
-    map_name: &str,
-    players: &[PlayerConn],
-    player_states: &[crate::physics::PlayerState],
-) -> Vec<u8> {
-    let room_id_bytes = room_id.as_bytes();
-    let map_bytes = map_name.as_bytes();
-    let room_len = room_id_bytes.len().min(255);
-    let map_len = map_bytes.len().min(255);
-    let player_count = players.len().min(255) as u8;
-
-    let mut out = Vec::with_capacity(4 + room_len + map_len + player_count as usize * 96);
-    out.put_u8(MSG_ROOM_STATE);
-    out.put_u8(room_len as u8);
-    out.put_u8(map_len as u8);
-    out.put_u8(player_count);
-    out.put_slice(&room_id_bytes[..room_len]);
-    out.put_slice(&map_bytes[..map_len]);
-
-    debug_assert_eq!(players.len(), player_states.len());
-    for (player, state) in players.iter().zip(player_states.iter()) {
-        encode_player_info(&mut out, player, state);
-    }
-
-    out
-}
-
+// Server-specific SnapshotEncoder that uses BytesMut for performance
 pub struct SnapshotEncoder {
     buffers: Vec<BytesMut>,
     next_buffer: usize,
@@ -202,134 +97,12 @@ impl Default for SnapshotEncoder {
     }
 }
 
-#[cfg(test)]
-pub fn encode_input_message(msg: &ClientMsg) -> Option<Vec<u8>> {
-    let ClientMsg::Input {
-        seq,
-        key_up,
-        key_down,
-        key_left,
-        key_right,
-        mouse_down,
-        weapon_switch,
-        weapon_scroll,
-        aim_angle,
-        facing_left,
-    } = msg
-    else {
-        return None;
-    };
-
-    let mut out = Vec::with_capacity(16);
-    out.put_u8(MSG_INPUT);
-    push_u64(&mut out, *seq);
-    push_f32(&mut out, *aim_angle);
-
-    let mut flags = 0u8;
-    if *key_up {
-        flags |= 0x01;
-    }
-    if *key_down {
-        flags |= 0x02;
-    }
-    if *key_left {
-        flags |= 0x04;
-    }
-    if *key_right {
-        flags |= 0x08;
-    }
-    if *mouse_down {
-        flags |= 0x10;
-    }
-    if *facing_left {
-        flags |= 0x20;
-    }
-    out.put_u8(flags);
-    out.put_u8(*weapon_switch as i8 as u8);
-    out.put_u8(*weapon_scroll as i8 as u8);
-
-    Some(out)
-}
-
-fn decode_hello(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
-    if bytes.len() < 2 {
-        return Err(DecodeError::OutOfBounds);
-    }
-    let name_len = bytes[1] as usize;
-    if name_len > MAX_USERNAME_LEN || bytes.len() < 2 + name_len {
-        return Err(DecodeError::OutOfBounds);
-    }
-    let name = String::from_utf8(bytes[2..2 + name_len].to_vec())?;
-    Ok(ClientMsg::Hello { username: name })
-}
-
-fn decode_join_room(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
-    if bytes.len() < 3 {
-        return Err(DecodeError::OutOfBounds);
-    }
-
-    let room_len = bytes[1] as usize;
-    let map_len = bytes[2] as usize;
-    let mut offset = 3;
-
-    if bytes.len() < offset + room_len + map_len {
-        return Err(DecodeError::OutOfBounds);
-    }
-
-    let room_id = if room_len > 0 {
-        let room = String::from_utf8(bytes[offset..offset + room_len].to_vec())?;
-        offset += room_len;
-        Some(room)
-    } else {
-        None
-    };
-
-    let map = if map_len > 0 {
-        let name = String::from_utf8(bytes[offset..offset + map_len].to_vec())?;
-        Some(name)
-    } else {
-        None
-    };
-
-    Ok(ClientMsg::JoinRoom { room_id, map })
-}
-
-fn decode_input(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
-    if bytes.len() < 16 {
-        return Err(DecodeError::OutOfBounds);
-    }
-
-    let seq = read_u64(bytes, 1)?;
-    let aim_angle = read_f32(bytes, 9)?;
-    let flags = bytes[13];
-    let weapon_switch = bytes[14] as i8 as i32;
-    let weapon_scroll = bytes[15] as i8 as i32;
-
-    Ok(ClientMsg::Input {
-        seq,
-        key_up: flags & 0x01 != 0,
-        key_down: flags & 0x02 != 0,
-        key_left: flags & 0x04 != 0,
-        key_right: flags & 0x08 != 0,
-        mouse_down: flags & 0x10 != 0,
-        weapon_switch,
-        weapon_scroll,
-        aim_angle,
-        facing_left: flags & 0x20 != 0,
-    })
-}
-
-fn encode_player_info(
-    out: &mut impl BufMut,
+// Helper function to create a PlayerSnapshot from server state
+pub fn player_snapshot_from_state(
     player: &PlayerConn,
     state: &crate::physics::PlayerState,
-) {
-    let name_bytes = player.username.as_bytes();
-    let len = name_bytes.len().min(255);
-    out.put_u8(len as u8);
-    out.put_slice(&name_bytes[..len]);
-
-    let snapshot = PlayerSnapshot {
+) -> PlayerSnapshot {
+    PlayerSnapshot {
         id: state.id,
         x: state.x,
         y: state.y,
@@ -350,9 +123,27 @@ fn encode_player_info(
         key_right: state.key_right,
         key_up: state.key_up,
         key_down: state.key_down,
-    };
+    }
+}
 
-    encode_player_record(out, &snapshot);
+// Server-specific encode_room_state that takes PlayerConn and PlayerState
+pub fn encode_room_state(
+    room_id: &str,
+    map_name: &str,
+    players: &[PlayerConn],
+    player_states: &[crate::physics::PlayerState],
+) -> Vec<u8> {
+    let players_data: Vec<(String, PlayerSnapshot)> = players
+        .iter()
+        .zip(player_states.iter())
+        .map(|(player, state)| {
+            (
+                player.username.clone(),
+                player_snapshot_from_state(player, state),
+            )
+        })
+        .collect();
+    binary_protocol::encode_room_state(room_id, map_name, &players_data)
 }
 
 fn encode_player_record(out: &mut impl BufMut, snap: &PlayerSnapshot) {
@@ -520,49 +311,14 @@ fn push_f32(out: &mut impl BufMut, v: f32) {
     out.put_slice(&v.to_le_bytes());
 }
 
-fn read_u64(bytes: &[u8], offset: usize) -> Result<u64, DecodeError> {
-    if bytes.len() < offset + 8 {
-        return Err(DecodeError::OutOfBounds);
-    }
-    let mut raw = [0_u8; 8];
-    raw.copy_from_slice(&bytes[offset..offset + 8]);
-    Ok(u64::from_le_bytes(raw))
-}
-
-fn read_f32(bytes: &[u8], offset: usize) -> Result<f32, DecodeError> {
-    if bytes.len() < offset + 4 {
-        return Err(DecodeError::OutOfBounds);
-    }
-    let mut raw = [0_u8; 4];
-    raw.copy_from_slice(&bytes[offset..offset + 4]);
-    Ok(f32::from_le_bytes(raw))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{decode_client_message, encode_input_message};
-    use crate::protocol::ClientMsg;
+    use super::*;
+    use binary_protocol::{encode_input, ClientMsg};
 
     #[test]
     fn input_binary_roundtrip() {
-        let input = ClientMsg::Input {
-            seq: 42,
-            key_up: true,
-            key_down: false,
-            key_left: true,
-            key_right: false,
-            mouse_down: true,
-            weapon_switch: 3,
-            weapon_scroll: -1,
-            aim_angle: 1.25,
-            facing_left: true,
-        };
-
-        let maybe_bytes = encode_input_message(&input);
-        assert!(maybe_bytes.is_some());
-        let Some(bytes) = maybe_bytes else {
-            return;
-        };
+        let bytes = encode_input(42, 1.25, true, false, true, false, true, true, 3, -1);
         let decoded = decode_client_message(&bytes);
         assert!(decoded.is_ok());
         let Ok(decoded) = decoded else {
@@ -582,7 +338,7 @@ mod tests {
             facing_left,
         } = decoded
         else {
-            return;
+            panic!("expected Input");
         };
 
         assert_eq!(seq, 42);

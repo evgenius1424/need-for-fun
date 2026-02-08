@@ -8,10 +8,11 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
-wasm = ["dep:wasm-bindgen"]
+wasm = ["dep:wasm-bindgen", "binary_protocol/wasm"]
 
 [dependencies]
 wasm-bindgen = { version = "0.2", optional = true }
+binary_protocol = { path = "../binary_protocol" }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

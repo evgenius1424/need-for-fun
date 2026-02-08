@@ -7,6 +7,12 @@ use crate::step::step_player;
 use crate::tilemap::FlatTileMap;
 use crate::types::{PlayerInput, PlayerState};
 
+// Re-export binary_protocol WASM functions
+pub use binary_protocol::wasm::{
+    get_protocol_constants, wasm_decode_server_message, wasm_encode_hello, wasm_encode_input,
+    wasm_encode_join_room,
+};
+
 const HOST_EXPORT_LEN: usize = 12;
 
 #[wasm_bindgen]

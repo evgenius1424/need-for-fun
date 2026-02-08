@@ -1,7 +1,13 @@
 import { ensureModelLoaded } from './assets'
 import { Player } from './player'
 import { SkinId } from './models'
-import { decodeServerMessage, encodeHello, encodeInput, encodeJoinRoom } from './binaryProtocol'
+import {
+    decodeServerMessage,
+    encodeHello,
+    encodeInput,
+    encodeJoinRoom,
+    initBinaryProtocol,
+} from './binaryProtocolWasm'
 
 const DEFAULT_SERVER_URL = 'ws://localhost:3001/ws'
 const DEFAULT_MAP = 'dm2'
@@ -42,9 +48,12 @@ export class NetworkClient {
         return [...this.remotePlayers.values()]
     }
 
-    connect({ url = DEFAULT_SERVER_URL, username, roomId, map = DEFAULT_MAP } = {}) {
-        if (this.connected) return Promise.resolve()
-        if (!username) return Promise.reject(new Error('Username required'))
+    async connect({ url = DEFAULT_SERVER_URL, username, roomId, map = DEFAULT_MAP } = {}) {
+        if (this.connected) return
+        if (!username) throw new Error('Username required')
+
+        // Initialize WASM binary protocol before connecting
+        await initBinaryProtocol()
 
         return new Promise((resolve, reject) => {
             let settled = false
