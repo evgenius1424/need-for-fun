@@ -8,6 +8,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
@@ -27,7 +28,7 @@ mod physics;
 mod protocol;
 mod room;
 
-use crate::binary::{decode_client_message, encode_welcome};
+use crate::binary::{decode_client_message, encode_pong, encode_welcome};
 use crate::constants::{
     DEFAULT_MAP_DIR, DEFAULT_MAP_NAME, DEFAULT_PORT, DEFAULT_ROOM_ID, OUTBOUND_CHANNEL_CAPACITY,
 };
@@ -40,6 +41,7 @@ struct AppState {
     rooms: RwLock<HashMap<RoomId, Arc<RoomHandle>>>,
     next_player_id: AtomicU64,
     map_dir: PathBuf,
+    started_at: Instant,
 }
 
 enum ControlOut {
@@ -59,6 +61,7 @@ async fn main() -> std::io::Result<()> {
         rooms: RwLock::new(HashMap::new()),
         next_player_id: AtomicU64::new(1),
         map_dir,
+        started_at: Instant::now(),
     });
 
     let app = Router::new()
@@ -267,6 +270,12 @@ async fn handle_client_msg(
 
             room.set_input(player_id, seq, input).await;
             true
+        }
+        ClientMsg::Ping { client_time_ms } => {
+            let server_time_ms = state.started_at.elapsed().as_millis() as u64;
+            outbound_tx
+                .try_send(Bytes::from(encode_pong(client_time_ms, server_time_ms)))
+                .is_ok()
         }
     }
 }

@@ -4,7 +4,7 @@ use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::prelude::*;
 
 use crate::constants::*;
-use crate::encode::{encode_hello, encode_input, encode_join_room, kind_u8_to_str};
+use crate::encode::{encode_hello, encode_input, encode_join_room, encode_ping, kind_u8_to_str};
 
 #[wasm_bindgen]
 pub fn wasm_encode_hello(username: &str) -> Vec<u8> {
@@ -33,6 +33,11 @@ pub fn wasm_encode_input(
 }
 
 #[wasm_bindgen]
+pub fn wasm_encode_ping(client_time_ms: u64) -> Vec<u8> {
+    encode_ping(client_time_ms)
+}
+
+#[wasm_bindgen]
 pub fn wasm_decode_server_message(buffer: &[u8]) -> JsValue {
     if buffer.is_empty() {
         return JsValue::NULL;
@@ -43,6 +48,7 @@ pub fn wasm_decode_server_message(buffer: &[u8]) -> JsValue {
         MSG_PLAYER_JOINED => decode_player_joined_js(buffer),
         MSG_PLAYER_LEFT => decode_player_left_js(buffer),
         MSG_SNAPSHOT => decode_snapshot_js(buffer),
+        MSG_PONG => decode_pong_js(buffer),
         _ => JsValue::NULL,
     }
 }
@@ -173,6 +179,17 @@ fn decode_snapshot_js(bytes: &[u8]) -> JsValue {
     set_jsval(&obj, "items", &items);
     set_jsval(&obj, "projectiles", &projectiles);
     set_jsval(&obj, "events", &events);
+    obj.into()
+}
+
+fn decode_pong_js(bytes: &[u8]) -> JsValue {
+    if bytes.len() < 17 {
+        return JsValue::NULL;
+    }
+    let obj = Object::new();
+    set_str(&obj, "type", "pong");
+    set_f64(&obj, "client_time_ms", read_u64(bytes, 1) as f64);
+    set_f64(&obj, "server_time_ms", read_u64(bytes, 9) as f64);
     obj.into()
 }
 

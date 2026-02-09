@@ -78,10 +78,25 @@ pub fn encode_input(
     out
 }
 
+pub fn encode_ping(client_time_ms: u64) -> Vec<u8> {
+    let mut out = Vec::with_capacity(9);
+    out.push(MSG_PING);
+    push_u64(&mut out, client_time_ms);
+    out
+}
+
 pub fn encode_welcome(player_id: u64) -> Vec<u8> {
     let mut out = Vec::with_capacity(9);
     out.push(MSG_WELCOME);
     push_u64(&mut out, player_id);
+    out
+}
+
+pub fn encode_pong(client_time_ms: u64, server_time_ms: u64) -> Vec<u8> {
+    let mut out = Vec::with_capacity(17);
+    out.push(MSG_PONG);
+    push_u64(&mut out, client_time_ms);
+    push_u64(&mut out, server_time_ms);
     out
 }
 

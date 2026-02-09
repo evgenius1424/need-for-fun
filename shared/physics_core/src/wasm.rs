@@ -10,6 +10,7 @@ use crate::weapon;
 
 pub use binary_protocol::wasm::{
     wasm_decode_server_message, wasm_encode_hello, wasm_encode_input, wasm_encode_join_room,
+    wasm_encode_ping,
 };
 
 const HOST_EXPORT_LEN: usize = 12;

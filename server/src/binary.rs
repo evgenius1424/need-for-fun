@@ -4,8 +4,8 @@ use crate::constants::SNAPSHOT_BUFFER_RING;
 use crate::room::PlayerConn;
 
 pub use binary_protocol::{
-    decode_client_message, encode_player_joined, encode_player_left, encode_welcome, EffectEvent,
-    ItemSnapshot, PlayerSnapshot, ProjectileSnapshot,
+    decode_client_message, encode_player_joined, encode_player_left, encode_pong, encode_welcome,
+    EffectEvent, ItemSnapshot, PlayerSnapshot, ProjectileSnapshot,
 };
 
 use binary_protocol::{write_event, write_player_record, MSG_SNAPSHOT};

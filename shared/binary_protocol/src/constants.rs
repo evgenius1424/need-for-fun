@@ -2,11 +2,13 @@
 pub const MSG_HELLO: u8 = 0x01;
 pub const MSG_JOIN_ROOM: u8 = 0x02;
 pub const MSG_INPUT: u8 = 0x03;
+pub const MSG_PING: u8 = 0x04;
 pub const MSG_WELCOME: u8 = 0x81;
 pub const MSG_ROOM_STATE: u8 = 0x82;
 pub const MSG_PLAYER_JOINED: u8 = 0x83;
 pub const MSG_PLAYER_LEFT: u8 = 0x84;
 pub const MSG_SNAPSHOT: u8 = 0x85;
+pub const MSG_PONG: u8 = 0x86;
 
 // Event type constants
 pub const EVENT_WEAPON_FIRED: u8 = 0x01;

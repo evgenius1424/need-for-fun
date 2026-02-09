@@ -6,6 +6,7 @@ import {
     encodeHello,
     encodeInput,
     encodeJoinRoom,
+    encodePing,
     initBinaryProtocol,
 } from './binaryProtocolWasm'
 
@@ -13,6 +14,21 @@ const DEFAULT_SERVER_URL = 'ws://localhost:3001/ws'
 const DEFAULT_MAP = 'dm2'
 const INPUT_SEND_RATE_HZ = 60
 const INPUT_SEND_INTERVAL_MS = 1000 / INPUT_SEND_RATE_HZ
+const SERVER_TICK_MILLIS = 16
+const SNAPSHOT_SEND_RATE_HZ = 30
+const SNAPSHOT_INTERVAL_MS = 1000 / SNAPSHOT_SEND_RATE_HZ
+const SNAPSHOT_BUFFER_MAX = 90
+const PING_INTERVAL_MS = 1000
+const DEFAULT_CLOCK_OFFSET_MS = 0
+const DEFAULT_RTT_MS = 80
+const DEFAULT_JITTER_MS = 5
+const MIN_INTERP_DELAY_MS = 40
+const MAX_INTERP_DELAY_MS = 180
+const LOCAL_RECONCILE_SMOOTH_MAX_UNITS = 18
+const LOCAL_RECONCILE_DEADZONE_UNITS = 0.35
+const LOCAL_RECONCILE_MIN_BLEND = 0.14
+const LOCAL_RECONCILE_MAX_BLEND = 0.48
+const PENDING_INPUT_MAX = 240
 
 export class NetworkClient {
     constructor() {
@@ -26,7 +42,12 @@ export class NetworkClient {
         this.localPlayer = null
         this.pendingInputs = []
         this.snapshotBuffer = []
-        this.interpDelayMs = 60
+        this.lastReconciledServerTick = -1
+        this.clockOffsetMs = DEFAULT_CLOCK_OFFSET_MS
+        this.rttMs = DEFAULT_RTT_MS
+        this.rttJitterMs = DEFAULT_JITTER_MS
+        this.lastPingSentAt = -Infinity
+        this.interpDelayMs = MIN_INTERP_DELAY_MS
         this.inputSendIntervalMs = INPUT_SEND_INTERVAL_MS
         this.lastInputSentAt = -Infinity
         this.predictor = null
@@ -56,66 +77,74 @@ export class NetworkClient {
         if (this.connected) return Promise.resolve()
         if (!username) return Promise.reject(new Error('Username required'))
 
-        return initBinaryProtocol().then(() => new Promise((resolve, reject) => {
-            let settled = false
-            const resolveOnce = () => {
-                if (settled) return
-                settled = true
-                resolve()
-            }
-            const rejectOnce = (err) => {
-                if (settled) return
-                settled = true
-                reject(err)
-            }
+        return initBinaryProtocol().then(
+            () =>
+                new Promise((resolve, reject) => {
+                    let settled = false
+                    const resolveOnce = () => {
+                        if (settled) return
+                        settled = true
+                        resolve()
+                    }
+                    const rejectOnce = (err) => {
+                        if (settled) return
+                        settled = true
+                        reject(err)
+                    }
 
-            this.socket = new WebSocket(url)
-            this.socket.binaryType = 'arraybuffer'
+                    this.socket = new WebSocket(url)
+                    this.socket.binaryType = 'arraybuffer'
 
-            this.socket.addEventListener(
-                'open',
-                () => {
-                    this.connected = true
-                    this.lastInputSentAt = -Infinity
-                    this.send(encodeHello(username))
-                    this.send(encodeJoinRoom(roomId ?? '', map))
-                    this.handlers.onOpen?.()
-                    resolveOnce()
-                },
-                { once: true },
-            )
+                    this.socket.addEventListener(
+                        'open',
+                        () => {
+                            this.connected = true
+                            this.lastInputSentAt = -Infinity
+                            this.lastPingSentAt = -Infinity
+                            this.send(encodeHello(username))
+                            this.send(encodeJoinRoom(roomId ?? '', map))
+                            this.handlers.onOpen?.()
+                            resolveOnce()
+                        },
+                        { once: true },
+                    )
 
-            this.socket.addEventListener('message', (event) => {
-                if (event.data instanceof ArrayBuffer) {
-                    const msg = decodeServerMessage(event.data)
-                    if (msg) this.handleMessage(msg)
-                    return
-                }
-                console.warn('Unexpected text message', event.data)
-            })
+                    this.socket.addEventListener('message', (event) => {
+                        if (event.data instanceof ArrayBuffer) {
+                            const msg = decodeServerMessage(event.data)
+                            if (msg) this.handleMessage(msg)
+                            return
+                        }
+                        console.warn('Unexpected text message', event.data)
+                    })
 
-            this.socket.addEventListener('close', () => {
-                const wasConnected = this.connected
-                this.connected = false
-                this.playerId = null
-                this.roomId = null
-                this.lastInputSentAt = -Infinity
-                this.remotePlayers.clear()
-                this.handlers.onClose?.()
-                if (!wasConnected) {
-                    rejectOnce(new Error('WebSocket closed before connection'))
-                }
-            })
+                    this.socket.addEventListener('close', () => {
+                        const wasConnected = this.connected
+                        this.connected = false
+                        this.playerId = null
+                        this.roomId = null
+                        this.lastInputSentAt = -Infinity
+                        this.lastPingSentAt = -Infinity
+                        this.snapshotBuffer.length = 0
+                        this.pendingInputs.length = 0
+                        this.lastReconciledServerTick = -1
+                        this.remotePlayers.clear()
+                        this.handlers.onClose?.()
+                        if (!wasConnected) {
+                            rejectOnce(new Error('WebSocket closed before connection'))
+                        }
+                    })
 
-            this.socket.addEventListener(
-                'error',
-                (event) => {
-                    this.handlers.onError?.(event)
-                    rejectOnce(new Error('WebSocket error'))
-                },
-                { once: true },
-            )
-        }))
+                    this.socket.addEventListener(
+                        'error',
+                        (event) => {
+                            this.handlers.onError?.(event)
+                            rejectOnce(new Error('WebSocket error'))
+                        },
+                        { once: true },
+                    )
+                }),
+        )
     }
 
     disconnect() {
@@ -130,7 +159,13 @@ export class NetworkClient {
 
         this.lastInputSentAt = now
         this.inputSeq++
-        this.pendingInputs.push({ seq: this.inputSeq, input })
+        this.pendingInputs.push({
+            seq: this.inputSeq,
+            input,
+        })
+        if (this.pendingInputs.length > PENDING_INPUT_MAX) {
+            this.pendingInputs.splice(0, this.pendingInputs.length - PENDING_INPUT_MAX)
+        }
         this.send(encodeInput(this.inputSeq, input))
         return true
     }
@@ -167,6 +202,9 @@ export class NetworkClient {
             case 'snapshot':
                 this.applySnapshot(msg)
                 this.handlers.onSnapshot?.(msg)
+                break
+            case 'pong':
+                this.handlePong(msg)
                 break
             default:
                 break
@@ -206,68 +244,110 @@ export class NetworkClient {
 
     applySnapshot(snapshot) {
         if (!snapshot?.players) return
-        this.snapshotBuffer.push({
-            time: performance.now(),
-            players: snapshot.players,
-        })
-        if (this.snapshotBuffer.length > 30) {
-            this.snapshotBuffer.shift()
-        }
+        this.insertSnapshot(snapshot)
 
         for (const state of snapshot.players) {
             if (state.id === this.playerId && this.localPlayer) {
-                applyPlayerState(this.localPlayer, state, false)
-                this.reconcileLocal(state)
+                this.reconcileLocal(state, Number(snapshot.tick ?? 0))
             } else {
                 let player = this.remotePlayers.get(state.id)
                 if (!player) {
                     player = new Player()
                     player.id = state.id
                     this.remotePlayers.set(state.id, player)
+                    applyPlayerState(player, state, true)
                 }
-                applyPlayerState(player, state, true)
             }
         }
     }
 
-    reconcileLocal(serverState) {
+    reconcileLocal(serverState, serverTick = 0) {
+        if (serverTick <= this.lastReconciledServerTick) {
+            return
+        }
+        this.lastReconciledServerTick = serverTick
         const lastSeq = serverState.last_input_seq ?? 0
-        if (!this.pendingInputs.length) return
+        const predictedBefore = this.localPlayer ? captureMovementState(this.localPlayer) : null
 
-        this.pendingInputs = this.pendingInputs.filter((entry) => entry.seq > lastSeq)
+        if (!this.localPlayer) return
+        applyPlayerState(this.localPlayer, serverState, false)
 
-        if (!this.predictor || !this.localPlayer) return
+        if (this.pendingInputs.length) {
+            this.pendingInputs = this.pendingInputs.filter((entry) => entry.seq > lastSeq)
+        }
+
+        if (!this.predictor) return
         for (const entry of this.pendingInputs) {
             this.predictor(this.localPlayer, entry.input)
         }
+
+        if (!predictedBefore) return
+        const correctedAfter = captureMovementState(this.localPlayer)
+        const correctionError = Math.hypot(
+            correctedAfter.x - predictedBefore.x,
+            correctedAfter.y - predictedBefore.y,
+        )
+
+        if (correctionError <= LOCAL_RECONCILE_DEADZONE_UNITS) {
+            applyMovementState(this.localPlayer, predictedBefore)
+            return
+        }
+
+        if (correctionError >= LOCAL_RECONCILE_SMOOTH_MAX_UNITS) {
+            return
+        }
+
+        const normalized = correctionError / LOCAL_RECONCILE_SMOOTH_MAX_UNITS
+        const blend = clamp(
+            LOCAL_RECONCILE_MIN_BLEND +
+                (LOCAL_RECONCILE_MAX_BLEND - LOCAL_RECONCILE_MIN_BLEND) * normalized,
+            LOCAL_RECONCILE_MIN_BLEND,
+            LOCAL_RECONCILE_MAX_BLEND,
+        )
+
+        applyMovementState(this.localPlayer, {
+            x: lerp(predictedBefore.x, correctedAfter.x, blend),
+            y: lerp(predictedBefore.y, correctedAfter.y, blend),
+            prevX: lerp(predictedBefore.prevX, correctedAfter.prevX, blend),
+            prevY: lerp(predictedBefore.prevY, correctedAfter.prevY, blend),
+            velocityX: lerp(predictedBefore.velocityX, correctedAfter.velocityX, blend),
+            velocityY: lerp(predictedBefore.velocityY, correctedAfter.velocityY, blend),
+            aimAngle: lerpAngle(predictedBefore.aimAngle, correctedAfter.aimAngle, blend),
+            prevAimAngle: lerpAngle(
+                predictedBefore.prevAimAngle,
+                correctedAfter.prevAimAngle,
+                blend,
+            ),
+        })
     }
 
     updateInterpolation(now = performance.now()) {
+        this.maybeSendPing(now)
         if (!this.snapshotBuffer.length) return
 
-        const targetTime = now - this.interpDelayMs
+        const targetServerTime = this.estimateServerNowMs(now) - this.computeInterpDelayMs()
         let older = null
         let newer = null
 
-        for (let i = this.snapshotBuffer.length - 1; i >= 0; i--) {
+        for (let i = 0; i < this.snapshotBuffer.length; i++) {
             const snap = this.snapshotBuffer[i]
-            if (snap.time <= targetTime) {
-                older = snap
-                newer = this.snapshotBuffer[i + 1] ?? snap
+            if (snap.serverTimeMs > targetServerTime) {
+                newer = snap
+                older = this.snapshotBuffer[i - 1] ?? snap
                 break
             }
         }
 
-        if (!older) {
-            older = this.snapshotBuffer[0]
-            newer = this.snapshotBuffer[1] ?? older
+        if (!newer) {
+            older = this.snapshotBuffer[this.snapshotBuffer.length - 1]
+            newer = older
         }
 
-        const span = Math.max(1, newer.time - older.time)
-        const t = Math.min(1, Math.max(0, (targetTime - older.time) / span))
+        const span = Math.max(1, newer.serverTimeMs - older.serverTimeMs)
+        const t = Math.min(1, Math.max(0, (targetServerTime - older.serverTimeMs) / span))
 
-        const olderMap = toPlayerMap(older.players)
-        const newerMap = toPlayerMap(newer.players)
+        const olderMap = older.playerMap
+        const newerMap = newer.playerMap
 
         for (const [id, player] of this.remotePlayers.entries()) {
             const a = olderMap.get(id)
@@ -275,6 +355,63 @@ export class NetworkClient {
             if (!a || !b) continue
             applyInterpolatedState(player, a, b, t)
         }
+    }
+
+    insertSnapshot(snapshot) {
+        const tick = Number(snapshot.tick ?? 0)
+        if (!Number.isFinite(tick) || tick < 0) return
+        const serverTimeMs = tick * SERVER_TICK_MILLIS
+        const entry = {
+            tick,
+            serverTimeMs,
+            players: snapshot.players,
+            playerMap: toPlayerMap(snapshot.players),
+        }
+        const existingIndex = this.snapshotBuffer.findIndex((snap) => snap.tick === tick)
+        if (existingIndex >= 0) {
+            this.snapshotBuffer[existingIndex] = entry
+            return
+        }
+        this.snapshotBuffer.push(entry)
+        this.snapshotBuffer.sort((a, b) => a.tick - b.tick)
+        while (this.snapshotBuffer.length > SNAPSHOT_BUFFER_MAX) {
+            this.snapshotBuffer.shift()
+        }
+    }
+
+    maybeSendPing(now = performance.now()) {
+        if (!this.connected || !this.socket) return
+        if (now - this.lastPingSentAt < PING_INTERVAL_MS) return
+        this.lastPingSentAt = now
+        this.send(encodePing(Math.floor(now)))
+    }
+
+    handlePong(msg, now = performance.now()) {
+        const clientSentAt = Number(msg.client_time_ms)
+        const serverTimeMs = Number(msg.server_time_ms)
+        if (!Number.isFinite(clientSentAt) || !Number.isFinite(serverTimeMs)) {
+            return
+        }
+
+        const rttSample = Math.max(0, now - clientSentAt)
+        const offsetSample = serverTimeMs - (clientSentAt + rttSample * 0.5)
+        const alpha = 0.12
+        const beta = 0.2
+
+        this.rttMs += (rttSample - this.rttMs) * alpha
+        this.clockOffsetMs += (offsetSample - this.clockOffsetMs) * alpha
+        this.rttJitterMs += (Math.abs(rttSample - this.rttMs) - this.rttJitterMs) * beta
+    }
+
+    estimateServerNowMs(now = performance.now()) {
+        return now + this.clockOffsetMs
+    }
+
+    computeInterpDelayMs() {
+        const dynamicDelay =
+            SNAPSHOT_INTERVAL_MS * 2.25 + this.rttMs * 0.25 + this.rttJitterMs * 2.0
+        this.interpDelayMs = clamp(dynamicDelay, MIN_INTERP_DELAY_MS, MAX_INTERP_DELAY_MS)
+        return this.interpDelayMs
     }
 }
 
@@ -316,6 +453,8 @@ function applyInterpolatedState(player, a, b, t) {
 
     player.x = lerp(a.x, b.x, t)
     player.y = lerp(a.y, b.y, t)
+    player.velocityX = lerp(a.vx ?? player.velocityX, b.vx ?? player.velocityX, t)
+    player.velocityY = lerp(a.vy ?? player.velocityY, b.vy ?? player.velocityY, t)
     player.aimAngle = lerpAngle(a.aim_angle ?? 0, b.aim_angle ?? 0, t)
     player.facingLeft = b.facing_left ?? player.facingLeft
     player.crouch = b.crouch ?? player.crouch
@@ -344,4 +483,32 @@ function lerpAngle(a, b, t) {
     while (diff > Math.PI) diff -= Math.PI * 2
     while (diff < -Math.PI) diff += Math.PI * 2
     return a + diff * t
+}
+
+function captureMovementState(player) {
+    return {
+        x: player.x,
+        y: player.y,
+        prevX: player.prevX,
+        prevY: player.prevY,
+        velocityX: player.velocityX,
+        velocityY: player.velocityY,
+        aimAngle: player.aimAngle,
+        prevAimAngle: player.prevAimAngle,
+    }
+}
+
+function applyMovementState(player, movementState) {
+    player.x = movementState.x
+    player.y = movementState.y
+    player.prevX = movementState.prevX
+    player.prevY = movementState.prevY
+    player.velocityX = movementState.velocityX
+    player.velocityY = movementState.velocityY
+    player.aimAngle = movementState.aimAngle
+    player.prevAimAngle = movementState.prevAimAngle
+}
+
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value))
 }

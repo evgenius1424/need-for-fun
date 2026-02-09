@@ -7,6 +7,7 @@ pub fn decode_client_message(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
         MSG_HELLO => decode_hello(bytes),
         MSG_JOIN_ROOM => decode_join_room(bytes),
         MSG_INPUT => decode_input(bytes),
+        MSG_PING => decode_ping(bytes),
         _ => Err(DecodeError::UnknownType(first)),
     }
 }
@@ -68,6 +69,15 @@ fn decode_input(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
         weapon_scroll,
         aim_angle,
         facing_left: flags & 0x20 != 0,
+    })
+}
+
+fn decode_ping(bytes: &[u8]) -> Result<ClientMsg, DecodeError> {
+    if bytes.len() < 9 {
+        return Err(DecodeError::OutOfBounds);
+    }
+    Ok(ClientMsg::Ping {
+        client_time_ms: read_u64(bytes, 1)?,
     })
 }
 

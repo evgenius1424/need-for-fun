@@ -938,6 +938,17 @@ export function wasm_encode_join_room(room_id, map) {
     return v3;
 }
 
+/**
+ * @param {bigint} client_time_ms
+ * @returns {Uint8Array}
+ */
+export function wasm_encode_ping(client_time_ms) {
+    const ret = wasm.wasm_encode_ping(client_time_ms);
+    var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v1;
+}
+
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,

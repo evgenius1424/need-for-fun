@@ -18,6 +18,9 @@ pub enum ClientMsg {
         aim_angle: f32,
         facing_left: bool,
     },
+    Ping {
+        client_time_ms: u64,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]

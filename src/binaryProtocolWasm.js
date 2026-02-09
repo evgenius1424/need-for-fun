@@ -4,11 +4,13 @@ export const MSG = {
     HELLO: 0x01,
     JOIN_ROOM: 0x02,
     INPUT: 0x03,
-    WELCOME: 0x10,
-    PLAYER_JOINED: 0x11,
-    PLAYER_LEFT: 0x12,
-    ROOM_STATE: 0x20,
-    SNAPSHOT: 0x21,
+    PING: 0x04,
+    WELCOME: 0x81,
+    ROOM_STATE: 0x82,
+    PLAYER_JOINED: 0x83,
+    PLAYER_LEFT: 0x84,
+    SNAPSHOT: 0x85,
+    PONG: 0x86,
 }
 
 export async function initBinaryProtocol() {
@@ -51,6 +53,13 @@ export function encodeInput(seq, input) {
         input.weapon_switch ?? -1,
         input.weapon_scroll ?? 0,
     )
+}
+
+export function encodePing(clientTimeMs) {
+    if (!wasmModule) {
+        throw new Error('Binary protocol not initialized. Call initBinaryProtocol() first.')
+    }
+    return wasmModule.wasm_encode_ping(BigInt(clientTimeMs))
 }
 
 export function decodeServerMessage(buffer) {
