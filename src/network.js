@@ -29,6 +29,8 @@ const MAX_INTERP_DELAY_MS = 180
 const PENDING_INPUT_MAX = 240
 const REMOTE_AIM_MICRO_SMOOTH = 0.35
 const REMOTE_FACING_CONFIRM_FRAMES = 3
+const INPUT_MIN_SEND_HZ = 30
+const INPUT_MAX_SEND_HZ = 90
 const DEFAULT_TUNING = Object.freeze({
     interpBaseSnapshots: 2.25,
     interpRttFactor: 0.25,
@@ -43,6 +45,10 @@ const DEFAULT_TUNING = Object.freeze({
     interpUnderrunBoostMaxMs: 70,
     interpUnderrunGain: 0.35,
     interpUnderrunDecay: 0.9,
+    inputBaseHz: 60,
+    inputIdleHz: 30,
+    inputAckBacklogThreshold: 4,
+    inputResendStallMs: 110,
 })
 
 export class NetworkClient {
@@ -70,6 +76,10 @@ export class NetworkClient {
         this.rttMs = DEFAULT_RTT_MS
         this.rttJitterMs = DEFAULT_JITTER_MS
         this.lastPingSentAt = -Infinity
+        this.lastAckedInputSeq = 0
+        this.lastAckProgressAtMs = 0
+        this.lastSentInputSignature = ''
+        this.currentInputSendHz = INPUT_SEND_RATE_HZ
         this.interpDelayMs = MIN_INTERP_DELAY_MS
         this.tuning = { ...DEFAULT_TUNING }
         this.inputSendIntervalMs = INPUT_SEND_INTERVAL_MS
@@ -111,6 +121,8 @@ export class NetworkClient {
             extrapolationMs: this.lastExtrapolationMs,
             underrunBoostMs: this.interpUnderrunBoostMs,
             staleSnapshots: this.staleSnapshotCount,
+            inputSendHz: this.currentInputSendHz,
+            unackedInputs: Math.max(0, this.inputSeq - this.lastAckedInputSeq),
             pendingInputCount: this.pendingInputs.length,
         }
     }
@@ -174,6 +186,18 @@ export class NetworkClient {
             case 'interpUnderrunDecay':
                 this.tuning[name] = clamp(next, 0.5, 0.999)
                 return true
+            case 'inputBaseHz':
+                this.tuning[name] = clamp(next, INPUT_MIN_SEND_HZ, INPUT_MAX_SEND_HZ)
+                return true
+            case 'inputIdleHz':
+                this.tuning[name] = clamp(next, 10, this.tuning.inputBaseHz)
+                return true
+            case 'inputAckBacklogThreshold':
+                this.tuning[name] = clamp(Math.round(next), 1, 24)
+                return true
+            case 'inputResendStallMs':
+                this.tuning[name] = clamp(next, 20, 600)
+                return true
             default:
                 return false
         }
@@ -207,6 +231,10 @@ export class NetworkClient {
                             this.connected = true
                             this.lastInputSentAt = -Infinity
                             this.lastPingSentAt = -Infinity
+                            this.lastAckProgressAtMs = performance.now()
+                            this.lastAckedInputSeq = 0
+                            this.lastSentInputSignature = ''
+                            this.currentInputSendHz = INPUT_SEND_RATE_HZ
                             this.send(encodeHello(username))
                             this.send(encodeJoinRoom(roomId ?? '', map))
                             this.handlers.onOpen?.()
@@ -242,6 +270,10 @@ export class NetworkClient {
                         this.estimatedSnapshotIntervalMs = SNAPSHOT_INTERVAL_MS
                         this.interpUnderrunBoostMs = 0
                         this.staleSnapshotCount = 0
+                        this.lastAckedInputSeq = 0
+                        this.lastAckProgressAtMs = 0
+                        this.lastSentInputSignature = ''
+                        this.currentInputSendHz = INPUT_SEND_RATE_HZ
                         this.remotePlayers.clear()
                         this.handlers.onClose?.()
                         if (!wasConnected) {
@@ -269,7 +301,14 @@ export class NetworkClient {
 
     sendInput(input, now = performance.now()) {
         if (!this.connected || !this.socket) return false
-        if (now - this.lastInputSentAt < this.inputSendIntervalMs) return false
+        const signature = buildInputSignature(input)
+        const inputChanged = signature !== this.lastSentInputSignature
+
+        this.updateInputSendInterval(input, now)
+        const ackStalled = this.isAckProgressStalled(now)
+        if (!inputChanged && !ackStalled && now - this.lastInputSentAt < this.inputSendIntervalMs) {
+            return false
+        }
 
         this.lastInputSentAt = now
         this.inputSeq++
@@ -277,6 +316,7 @@ export class NetworkClient {
             seq: this.inputSeq,
             input,
         })
+        this.lastSentInputSignature = signature
         if (this.pendingInputs.length > PENDING_INPUT_MAX) {
             this.pendingInputs.splice(0, this.pendingInputs.length - PENDING_INPUT_MAX)
         }
@@ -382,6 +422,10 @@ export class NetworkClient {
         this.lastReconciledServerTick = serverTick
         this.lastSnapshotTick = Math.max(this.lastSnapshotTick, serverTick)
         const lastSeq = serverState.last_input_seq ?? 0
+        if (lastSeq > this.lastAckedInputSeq) {
+            this.lastAckedInputSeq = lastSeq
+            this.lastAckProgressAtMs = performance.now()
+        }
         const predictedBefore = this.localPlayer ? captureMovementState(this.localPlayer) : null
 
         if (!this.localPlayer) return
@@ -582,6 +626,41 @@ export class NetworkClient {
             this.interpUnderrunBoostMs = 0
         }
     }
+
+    updateInputSendInterval(input, now) {
+        const unackedInputs = Math.max(0, this.inputSeq - this.lastAckedInputSeq)
+        const backlogNorm = clamp(unackedInputs / 12, 0, 1)
+        const jitterNorm = clamp(this.rttJitterMs / 20, 0, 1)
+        const isIdle =
+            !input?.key_up &&
+            !input?.key_down &&
+            !input?.key_left &&
+            !input?.key_right &&
+            !input?.mouse_down &&
+            (input?.weapon_switch ?? -1) < 0 &&
+            (input?.weapon_scroll ?? 0) === 0
+
+        let targetHz =
+            this.tuning.inputBaseHz + backlogNorm * (INPUT_MAX_SEND_HZ - this.tuning.inputBaseHz)
+        targetHz -= jitterNorm * (this.tuning.inputBaseHz - INPUT_MIN_SEND_HZ) * 0.4
+        if (isIdle) {
+            targetHz = Math.min(targetHz, this.tuning.inputIdleHz)
+        }
+        this.currentInputSendHz = clamp(targetHz, INPUT_MIN_SEND_HZ, INPUT_MAX_SEND_HZ)
+        this.inputSendIntervalMs = 1000 / this.currentInputSendHz
+
+        if (this.lastAckProgressAtMs === 0) {
+            this.lastAckProgressAtMs = now
+        }
+    }
+
+    isAckProgressStalled(now) {
+        const unackedInputs = Math.max(0, this.inputSeq - this.lastAckedInputSeq)
+        if (unackedInputs < this.tuning.inputAckBacklogThreshold) {
+            return false
+        }
+        return now - this.lastAckProgressAtMs >= this.tuning.inputResendStallMs
+    }
 }
 
 function applyPlayerState(player, state, isRemote) {
@@ -722,4 +801,23 @@ function applyFacingMicroSmoothing(player, nextFacing) {
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value))
+}
+
+function buildInputSignature(input) {
+    const angle = quantize(input?.aim_angle ?? 0, 1024)
+    return [
+        input?.key_up ? 1 : 0,
+        input?.key_down ? 1 : 0,
+        input?.key_left ? 1 : 0,
+        input?.key_right ? 1 : 0,
+        input?.mouse_down ? 1 : 0,
+        input?.facing_left ? 1 : 0,
+        input?.weapon_switch ?? -1,
+        input?.weapon_scroll ?? 0,
+        angle,
+    ].join('|')
+}
+
+function quantize(value, scale) {
+    return Math.round(value * scale) / scale
 }

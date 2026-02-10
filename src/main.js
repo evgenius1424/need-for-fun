@@ -751,7 +751,8 @@ function updateNetDebugOverlay(now) {
             `Render ${round(stats.renderServerTimeMs / 16, 1)}t  ` +
             `Ext ${round(stats.extrapolationMs, 1)}ms  U+${round(stats.underrunBoostMs, 1)}  ` +
             `Corr ${round(stats.correctionErrorUnits, 2)}u b${round(stats.correctionBlend, 2)}  ` +
-            `Inp ${stats.pendingInputCount}  Stale ${stats.staleSnapshots}`
+            `Inp ${stats.pendingInputCount}/${stats.unackedInputs} ` +
+            `@${round(stats.inputSendHz, 0)}Hz  Stale ${stats.staleSnapshots}`
         lastNetDebugUpdateAt = now
     }
     Render.setNetDebugOverlay(cachedNetDebugText, true)
