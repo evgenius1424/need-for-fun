@@ -14,7 +14,8 @@ use crate::binary::{
     SnapshotEncoder,
 };
 use crate::constants::{
-    PLAYER_HALF_H, ROOM_COMMAND_CAPACITY, SPAWN_OFFSET_X, TICK_MILLIS, TILE_H, TILE_W,
+    PLAYER_HALF_H, ROOM_COMMAND_CAPACITY, SNAPSHOT_INTERVAL_TICKS, SPAWN_OFFSET_X, TICK_MILLIS,
+    TILE_H, TILE_W,
 };
 use crate::game::{
     apply_explosions, apply_hit_actions, apply_projectile_hits, process_item_pickups,
@@ -182,6 +183,7 @@ struct RoomTask {
     scratch_item_snapshots: Vec<ItemSnapshot>,
     scratch_projectile_snapshots: Vec<ProjectileSnapshot>,
     scratch_events: EventVec,
+    pending_snapshot_events: EventVec,
     scratch_hit_actions: Vec<HitAction>,
 }
 
@@ -208,6 +210,7 @@ impl RoomTask {
             scratch_item_snapshots: Vec::new(),
             scratch_projectile_snapshots: Vec::new(),
             scratch_events: EventVec::new(),
+            pending_snapshot_events: EventVec::new(),
             scratch_hit_actions: Vec::new(),
         }
     }
@@ -412,14 +415,22 @@ impl RoomTask {
 
         process_item_pickups(&mut self.player_states, &mut self.items);
 
+        self.pending_snapshot_events
+            .extend(self.scratch_events.iter().cloned());
+
+        if self.tick.0 % SNAPSHOT_INTERVAL_TICKS != 0 {
+            return;
+        }
+
         self.build_snapshot_buffers();
         let payload = self.snapshot_encoder.encode_snapshot(
             self.tick.0,
             &self.scratch_player_snapshots,
             &self.scratch_item_snapshots,
             &self.scratch_projectile_snapshots,
-            &self.scratch_events,
+            &self.pending_snapshot_events,
         );
+        self.pending_snapshot_events.clear();
         self.broadcast(payload);
     }
 

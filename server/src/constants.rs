@@ -17,6 +17,7 @@ pub const DEFAULT_MAP_NAME: &str = "dm2";
 pub const DEFAULT_MAP_DIR: &str = "../public/maps";
 
 pub const TICK_MILLIS: u64 = 16;
+pub const SNAPSHOT_INTERVAL_TICKS: u64 = 2;
 pub const OUTBOUND_CHANNEL_CAPACITY: usize = 64;
 pub const ROOM_COMMAND_CAPACITY: usize = 1024;
 
