@@ -38,6 +38,9 @@ const DEFAULT_TUNING = Object.freeze({
     reconcileMinBlend: 0.14,
     reconcileMaxBlend: 0.48,
     maxExtrapolationMs: 90,
+    interpUnderrunBoostMaxMs: 70,
+    interpUnderrunGain: 0.35,
+    interpUnderrunDecay: 0.9,
 })
 
 export class NetworkClient {
@@ -59,6 +62,7 @@ export class NetworkClient {
         this.lastRenderServerTimeMs = 0
         this.lastSnapshotTick = 0
         this.estimatedSnapshotIntervalMs = SNAPSHOT_INTERVAL_MS
+        this.interpUnderrunBoostMs = 0
         this.clockOffsetMs = DEFAULT_CLOCK_OFFSET_MS
         this.rttMs = DEFAULT_RTT_MS
         this.rttJitterMs = DEFAULT_JITTER_MS
@@ -102,6 +106,7 @@ export class NetworkClient {
             correctionErrorUnits: this.lastCorrectionErrorUnits,
             correctionBlend: this.lastCorrectionBlend,
             extrapolationMs: this.lastExtrapolationMs,
+            underrunBoostMs: this.interpUnderrunBoostMs,
             pendingInputCount: this.pendingInputs.length,
         }
     }
@@ -155,6 +160,15 @@ export class NetworkClient {
                 return true
             case 'maxExtrapolationMs':
                 this.tuning[name] = clamp(next, 0, 200)
+                return true
+            case 'interpUnderrunBoostMaxMs':
+                this.tuning[name] = clamp(next, 0, 250)
+                return true
+            case 'interpUnderrunGain':
+                this.tuning[name] = clamp(next, 0, 2)
+                return true
+            case 'interpUnderrunDecay':
+                this.tuning[name] = clamp(next, 0.5, 0.999)
                 return true
             default:
                 return false
@@ -222,6 +236,7 @@ export class NetworkClient {
                         this.lastRenderServerTimeMs = 0
                         this.lastSnapshotTick = 0
                         this.estimatedSnapshotIntervalMs = SNAPSHOT_INTERVAL_MS
+                        this.interpUnderrunBoostMs = 0
                         this.remotePlayers.clear()
                         this.handlers.onClose?.()
                         if (!wasConnected) {
@@ -446,6 +461,7 @@ export class NetworkClient {
         const lastSnapshot = this.snapshotBuffer[this.snapshotBuffer.length - 1]
         const extrapolationMs = Math.max(0, targetServerTime - lastSnapshot.serverTimeMs)
         this.lastExtrapolationMs = clamp(extrapolationMs, 0, this.tuning.maxExtrapolationMs)
+        this.updateUnderrunBoost(extrapolationMs)
         const blendTargetServerTime =
             extrapolationMs > 0
                 ? lastSnapshot.serverTimeMs + this.lastExtrapolationMs
@@ -537,9 +553,26 @@ export class NetworkClient {
         const dynamicDelay =
             this.estimatedSnapshotIntervalMs * this.tuning.interpBaseSnapshots +
             this.rttMs * this.tuning.interpRttFactor +
-            this.rttJitterMs * this.tuning.interpJitterFactor
+            this.rttJitterMs * this.tuning.interpJitterFactor +
+            this.interpUnderrunBoostMs
         this.interpDelayMs = clamp(dynamicDelay, this.tuning.interpMinMs, this.tuning.interpMaxMs)
         return this.interpDelayMs
+    }
+
+    updateUnderrunBoost(extrapolationMs) {
+        if (extrapolationMs > 0.1) {
+            const gain = extrapolationMs * this.tuning.interpUnderrunGain
+            this.interpUnderrunBoostMs = clamp(
+                this.interpUnderrunBoostMs + gain,
+                0,
+                this.tuning.interpUnderrunBoostMaxMs,
+            )
+            return
+        }
+        this.interpUnderrunBoostMs *= this.tuning.interpUnderrunDecay
+        if (this.interpUnderrunBoostMs < 0.05) {
+            this.interpUnderrunBoostMs = 0
+        }
     }
 }
 

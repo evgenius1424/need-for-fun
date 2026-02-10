@@ -742,7 +742,7 @@ function updateNetDebugOverlay(now) {
             `Interp ${round(stats.interpDelayMs, 1)}ms  Buf ${stats.snapshotBufferDepth}  ` +
             `Tick ${stats.latestSnapshotTick}\n` +
             `Render ${round(stats.renderServerTimeMs / 16, 1)}t  ` +
-            `Ext ${round(stats.extrapolationMs, 1)}ms  ` +
+            `Ext ${round(stats.extrapolationMs, 1)}ms  U+${round(stats.underrunBoostMs, 1)}  ` +
             `Corr ${round(stats.correctionErrorUnits, 2)}u b${round(stats.correctionBlend, 2)}  ` +
             `Inp ${stats.pendingInputCount}`
         lastNetDebugUpdateAt = now
