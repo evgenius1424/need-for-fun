@@ -18,6 +18,8 @@ const SERVER_TICK_MILLIS = 16
 const SNAPSHOT_SEND_RATE_HZ = 30
 const SNAPSHOT_INTERVAL_MS = 1000 / SNAPSHOT_SEND_RATE_HZ
 const SNAPSHOT_BUFFER_MAX = 90
+const SNAPSHOT_INTERVAL_MIN_MS = 12
+const SNAPSHOT_INTERVAL_MAX_MS = 80
 const PING_INTERVAL_MS = 1000
 const DEFAULT_CLOCK_OFFSET_MS = 0
 const DEFAULT_RTT_MS = 80
@@ -35,6 +37,7 @@ const DEFAULT_TUNING = Object.freeze({
     reconcileDeadzoneUnits: 0.35,
     reconcileMinBlend: 0.14,
     reconcileMaxBlend: 0.48,
+    maxExtrapolationMs: 90,
 })
 
 export class NetworkClient {
@@ -52,8 +55,10 @@ export class NetworkClient {
         this.lastReconciledServerTick = -1
         this.lastCorrectionErrorUnits = 0
         this.lastCorrectionBlend = 1
+        this.lastExtrapolationMs = 0
         this.lastRenderServerTimeMs = 0
         this.lastSnapshotTick = 0
+        this.estimatedSnapshotIntervalMs = SNAPSHOT_INTERVAL_MS
         this.clockOffsetMs = DEFAULT_CLOCK_OFFSET_MS
         this.rttMs = DEFAULT_RTT_MS
         this.rttJitterMs = DEFAULT_JITTER_MS
@@ -96,6 +101,7 @@ export class NetworkClient {
             renderServerTimeMs: this.lastRenderServerTimeMs,
             correctionErrorUnits: this.lastCorrectionErrorUnits,
             correctionBlend: this.lastCorrectionBlend,
+            extrapolationMs: this.lastExtrapolationMs,
             pendingInputCount: this.pendingInputs.length,
         }
     }
@@ -146,6 +152,9 @@ export class NetworkClient {
                     this.tuning.reconcileMinBlend,
                     this.tuning.reconcileMaxBlend,
                 )
+                return true
+            case 'maxExtrapolationMs':
+                this.tuning[name] = clamp(next, 0, 200)
                 return true
             default:
                 return false
@@ -209,8 +218,10 @@ export class NetworkClient {
                         this.lastReconciledServerTick = -1
                         this.lastCorrectionErrorUnits = 0
                         this.lastCorrectionBlend = 1
+                        this.lastExtrapolationMs = 0
                         this.lastRenderServerTimeMs = 0
                         this.lastSnapshotTick = 0
+                        this.estimatedSnapshotIntervalMs = SNAPSHOT_INTERVAL_MS
                         this.remotePlayers.clear()
                         this.handlers.onClose?.()
                         if (!wasConnected) {
@@ -432,8 +443,16 @@ export class NetworkClient {
             newer = older
         }
 
+        const lastSnapshot = this.snapshotBuffer[this.snapshotBuffer.length - 1]
+        const extrapolationMs = Math.max(0, targetServerTime - lastSnapshot.serverTimeMs)
+        this.lastExtrapolationMs = clamp(extrapolationMs, 0, this.tuning.maxExtrapolationMs)
+        const blendTargetServerTime =
+            extrapolationMs > 0
+                ? lastSnapshot.serverTimeMs + this.lastExtrapolationMs
+                : targetServerTime
+
         const span = Math.max(1, newer.serverTimeMs - older.serverTimeMs)
-        const t = Math.min(1, Math.max(0, (targetServerTime - older.serverTimeMs) / span))
+        const t = Math.min(1, Math.max(0, (blendTargetServerTime - older.serverTimeMs) / span))
 
         const olderMap = older.playerMap
         const newerMap = newer.playerMap
@@ -442,6 +461,10 @@ export class NetworkClient {
             const a = olderMap.get(id)
             const b = newerMap.get(id) ?? a
             if (!a || !b) continue
+            if (extrapolationMs > 0 && a === b) {
+                applyExtrapolatedState(player, a, this.lastExtrapolationMs)
+                continue
+            }
             applyInterpolatedState(player, a, b, t)
         }
     }
@@ -451,6 +474,19 @@ export class NetworkClient {
         if (!Number.isFinite(tick) || tick < 0) return
         this.lastSnapshotTick = Math.max(this.lastSnapshotTick, tick)
         const serverTimeMs = tick * SERVER_TICK_MILLIS
+        const prevLast = this.snapshotBuffer[this.snapshotBuffer.length - 1]
+        if (prevLast) {
+            const sample = serverTimeMs - prevLast.serverTimeMs
+            if (sample > 0) {
+                const clampedSample = clamp(
+                    sample,
+                    SNAPSHOT_INTERVAL_MIN_MS,
+                    SNAPSHOT_INTERVAL_MAX_MS,
+                )
+                this.estimatedSnapshotIntervalMs +=
+                    (clampedSample - this.estimatedSnapshotIntervalMs) * 0.15
+            }
+        }
         const entry = {
             tick,
             serverTimeMs,
@@ -499,7 +535,7 @@ export class NetworkClient {
 
     computeInterpDelayMs() {
         const dynamicDelay =
-            SNAPSHOT_INTERVAL_MS * this.tuning.interpBaseSnapshots +
+            this.estimatedSnapshotIntervalMs * this.tuning.interpBaseSnapshots +
             this.rttMs * this.tuning.interpRttFactor +
             this.rttJitterMs * this.tuning.interpJitterFactor
         this.interpDelayMs = clamp(dynamicDelay, this.tuning.interpMinMs, this.tuning.interpMaxMs)
@@ -556,6 +592,26 @@ function applyInterpolatedState(player, a, b, t) {
     player.currentWeapon = b.current_weapon ?? player.currentWeapon
     if (Array.isArray(b.weapons)) player.weapons = b.weapons
     if (Array.isArray(b.ammo)) player.ammo = b.ammo
+}
+
+function applyExtrapolatedState(player, state, extrapolationMs) {
+    const dt = extrapolationMs / SERVER_TICK_MILLIS
+    player.prevX = player.x
+    player.prevY = player.y
+    player.prevAimAngle = player.aimAngle
+    player.x = state.x + (state.vx ?? 0) * dt
+    player.y = state.y + (state.vy ?? 0) * dt
+    player.velocityX = state.vx ?? player.velocityX
+    player.velocityY = state.vy ?? player.velocityY
+    player.aimAngle = state.aim_angle ?? player.aimAngle
+    player.facingLeft = state.facing_left ?? player.facingLeft
+    player.crouch = state.crouch ?? player.crouch
+    player.dead = state.dead ?? player.dead
+    player.health = state.health ?? player.health
+    player.armor = state.armor ?? player.armor
+    player.currentWeapon = state.current_weapon ?? player.currentWeapon
+    if (Array.isArray(state.weapons)) player.weapons = state.weapons
+    if (Array.isArray(state.ammo)) player.ammo = state.ammo
 }
 
 function toPlayerMap(players = []) {
