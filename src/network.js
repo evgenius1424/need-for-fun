@@ -27,6 +27,8 @@ const DEFAULT_JITTER_MS = 5
 const MIN_INTERP_DELAY_MS = 40
 const MAX_INTERP_DELAY_MS = 180
 const PENDING_INPUT_MAX = 240
+const REMOTE_AIM_MICRO_SMOOTH = 0.35
+const REMOTE_FACING_CONFIRM_FRAMES = 3
 const DEFAULT_TUNING = Object.freeze({
     interpBaseSnapshots: 2.25,
     interpRttFactor: 0.25,
@@ -63,6 +65,7 @@ export class NetworkClient {
         this.lastSnapshotTick = 0
         this.estimatedSnapshotIntervalMs = SNAPSHOT_INTERVAL_MS
         this.interpUnderrunBoostMs = 0
+        this.staleSnapshotCount = 0
         this.clockOffsetMs = DEFAULT_CLOCK_OFFSET_MS
         this.rttMs = DEFAULT_RTT_MS
         this.rttJitterMs = DEFAULT_JITTER_MS
@@ -107,6 +110,7 @@ export class NetworkClient {
             correctionBlend: this.lastCorrectionBlend,
             extrapolationMs: this.lastExtrapolationMs,
             underrunBoostMs: this.interpUnderrunBoostMs,
+            staleSnapshots: this.staleSnapshotCount,
             pendingInputCount: this.pendingInputs.length,
         }
     }
@@ -237,6 +241,7 @@ export class NetworkClient {
                         this.lastSnapshotTick = 0
                         this.estimatedSnapshotIntervalMs = SNAPSHOT_INTERVAL_MS
                         this.interpUnderrunBoostMs = 0
+                        this.staleSnapshotCount = 0
                         this.remotePlayers.clear()
                         this.handlers.onClose?.()
                         if (!wasConnected) {
@@ -488,6 +493,9 @@ export class NetworkClient {
     insertSnapshot(snapshot) {
         const tick = Number(snapshot.tick ?? 0)
         if (!Number.isFinite(tick) || tick < 0) return
+        if (tick <= this.lastSnapshotTick) {
+            this.staleSnapshotCount++
+        }
         this.lastSnapshotTick = Math.max(this.lastSnapshotTick, tick)
         const serverTimeMs = tick * SERVER_TICK_MILLIS
         const prevLast = this.snapshotBuffer[this.snapshotBuffer.length - 1]
@@ -616,8 +624,9 @@ function applyInterpolatedState(player, a, b, t) {
     player.y = lerp(a.y, b.y, t)
     player.velocityX = lerp(a.vx ?? player.velocityX, b.vx ?? player.velocityX, t)
     player.velocityY = lerp(a.vy ?? player.velocityY, b.vy ?? player.velocityY, t)
-    player.aimAngle = lerpAngle(a.aim_angle ?? 0, b.aim_angle ?? 0, t)
-    player.facingLeft = b.facing_left ?? player.facingLeft
+    const targetAim = lerpAngle(a.aim_angle ?? 0, b.aim_angle ?? 0, t)
+    player.aimAngle = lerpAngle(player.aimAngle, targetAim, REMOTE_AIM_MICRO_SMOOTH)
+    applyFacingMicroSmoothing(player, b.facing_left)
     player.crouch = b.crouch ?? player.crouch
     player.dead = b.dead ?? player.dead
     player.health = b.health ?? player.health
@@ -636,8 +645,10 @@ function applyExtrapolatedState(player, state, extrapolationMs) {
     player.y = state.y + (state.vy ?? 0) * dt
     player.velocityX = state.vx ?? player.velocityX
     player.velocityY = state.vy ?? player.velocityY
-    player.aimAngle = state.aim_angle ?? player.aimAngle
-    player.facingLeft = state.facing_left ?? player.facingLeft
+    if (Number.isFinite(state.aim_angle)) {
+        player.aimAngle = lerpAngle(player.aimAngle, state.aim_angle, REMOTE_AIM_MICRO_SMOOTH)
+    }
+    applyFacingMicroSmoothing(player, state.facing_left)
     player.crouch = state.crouch ?? player.crouch
     player.dead = state.dead ?? player.dead
     player.health = state.health ?? player.health
@@ -688,6 +699,25 @@ function applyMovementState(player, movementState) {
     player.velocityY = movementState.velocityY
     player.aimAngle = movementState.aimAngle
     player.prevAimAngle = movementState.prevAimAngle
+}
+
+function applyFacingMicroSmoothing(player, nextFacing) {
+    if (typeof nextFacing !== 'boolean') return
+    if (player.facingLeft === nextFacing) {
+        player._pendingFacingLeft = nextFacing
+        player._pendingFacingFrames = 0
+        return
+    }
+    if (player._pendingFacingLeft !== nextFacing) {
+        player._pendingFacingLeft = nextFacing
+        player._pendingFacingFrames = 1
+        return
+    }
+    player._pendingFacingFrames = (player._pendingFacingFrames ?? 1) + 1
+    if (player._pendingFacingFrames >= REMOTE_FACING_CONFIRM_FRAMES) {
+        player.facingLeft = nextFacing
+        player._pendingFacingFrames = 0
+    }
 }
 
 function clamp(value, min, max) {

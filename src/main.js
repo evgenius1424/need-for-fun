@@ -44,6 +44,7 @@ let multiplayerUiReady = false
 let netDebugEnabled = false
 let lastNetDebugUpdateAt = 0
 let cachedNetDebugText = ''
+let lastAppliedWorldSnapshotTick = -1
 const netOverlay = document.getElementById('net-overlay')
 
 await ensureModelLoaded(localPlayer.model, SkinId.RED)
@@ -327,6 +328,11 @@ function setupMultiplayerUI() {
             }
         },
         onSnapshot: (snapshot) => {
+            const tick = Number(snapshot?.tick ?? -1)
+            if (Number.isFinite(tick)) {
+                if (tick <= lastAppliedWorldSnapshotTick) return
+                lastAppliedWorldSnapshotTick = tick
+            }
             if (snapshot?.items) Map.setItemStates(snapshot.items)
             if (snapshot?.projectiles) Projectiles.replaceAll(snapshot.projectiles)
             if (snapshot?.events) applySnapshotEvents(snapshot.events)
@@ -577,6 +583,7 @@ function setupConsoleCommands() {
 function enableMultiplayer() {
     if (multiplayerEnabled) return
     multiplayerEnabled = true
+    lastAppliedWorldSnapshotTick = -1
     setupMultiplayerUI()
     if (netOverlay) netOverlay.style.display = 'block'
     Console.writeText('Multiplayer enabled')
@@ -744,7 +751,7 @@ function updateNetDebugOverlay(now) {
             `Render ${round(stats.renderServerTimeMs / 16, 1)}t  ` +
             `Ext ${round(stats.extrapolationMs, 1)}ms  U+${round(stats.underrunBoostMs, 1)}  ` +
             `Corr ${round(stats.correctionErrorUnits, 2)}u b${round(stats.correctionBlend, 2)}  ` +
-            `Inp ${stats.pendingInputCount}`
+            `Inp ${stats.pendingInputCount}  Stale ${stats.staleSnapshots}`
         lastNetDebugUpdateAt = now
     }
     Render.setNetDebugOverlay(cachedNetDebugText, true)
