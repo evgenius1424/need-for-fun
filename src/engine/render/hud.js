@@ -40,6 +40,13 @@ const STYLES = {
         stroke: 0x000000,
         strokeThickness: 2,
     },
+    netDebug: {
+        fontFamily: 'monospace',
+        fontSize: 12,
+        fill: 0xa8e6ff,
+        stroke: 0x000000,
+        strokeThickness: 2,
+    },
 }
 
 export function createHUD() {
@@ -49,9 +56,11 @@ export function createHUD() {
     const armor = createText('0', STYLES.armor, { x: 20 })
     const weapon = createText('Machinegun', STYLES.weapon, { anchorX: 1 })
     const ammo = createText('100', STYLES.ammo, { anchorX: 1 })
+    const netDebug = createText('', STYLES.netDebug, { anchorX: 1 })
+    netDebug.visible = false
 
-    container.addChild(health, armor, weapon, ammo)
-    return { container, health, armor, weapon, ammo }
+    container.addChild(health, armor, weapon, ammo, netDebug)
+    return { container, health, armor, weapon, ammo, netDebug }
 }
 
 export function updateHUD(player, hud) {

@@ -41,6 +41,9 @@ const localPlayer = new Player()
 const network = new NetworkClient()
 let multiplayerEnabled = false
 let multiplayerUiReady = false
+let netDebugEnabled = false
+let lastNetDebugUpdateAt = 0
+let cachedNetDebugText = ''
 const netOverlay = document.getElementById('net-overlay')
 
 await ensureModelLoaded(localPlayer.model, SkinId.RED)
@@ -130,18 +133,21 @@ function gameLoop(timestamp, player) {
         const weaponSwitch = Input.weaponSwitch
         const weaponScroll = Input.weaponScroll
 
-        const didSendInput = network.sendInput({
-            tick: timestamp | 0,
-            key_up: player.keyUp,
-            key_down: player.keyDown,
-            key_left: player.keyLeft,
-            key_right: player.keyRight,
-            mouse_down: Input.mouseDown,
-            weapon_switch: weaponSwitch,
-            weapon_scroll: weaponScroll,
-            aim_angle: player.aimAngle,
-            facing_left: player.facingLeft,
-        }, timestamp)
+        const didSendInput = network.sendInput(
+            {
+                tick: timestamp | 0,
+                key_up: player.keyUp,
+                key_down: player.keyDown,
+                key_left: player.keyLeft,
+                key_right: player.keyRight,
+                mouse_down: Input.mouseDown,
+                weapon_switch: weaponSwitch,
+                weapon_scroll: weaponScroll,
+                aim_angle: player.aimAngle,
+                facing_left: player.facingLeft,
+            },
+            timestamp,
+        )
 
         if (didSendInput) {
             Input.weaponSwitch = -1
@@ -152,10 +158,15 @@ function gameLoop(timestamp, player) {
         Physics.updateAllPlayers([player], timestamp)
 
         network.updateInterpolation()
+        updateNetDebugOverlay(timestamp)
         const remoteBots = network.getRemotePlayers().map((p) => ({ player: p }))
         Render.renderGame(player, remoteBots)
         requestAnimationFrame((ts) => gameLoop(ts, player))
         return
+    }
+
+    if (netDebugEnabled) {
+        Render.setNetDebugOverlay('', false)
     }
 
     for (const p of BotManager.getAllPlayers()) {
@@ -373,6 +384,69 @@ function setupConsoleCommands() {
             Console.writeText('Usage: mp on|off')
         },
         'enable/disable multiplayer UI',
+    )
+
+    Console.registerCommand(
+        'net_debug',
+        (args) => {
+            const mode = args[0]?.toLowerCase()
+            if (!mode) {
+                Console.writeText(`net_debug: ${netDebugEnabled ? 'on' : 'off'}`)
+                return
+            }
+            if (mode === 'on' || mode === '1') {
+                netDebugEnabled = true
+                Console.writeText('net_debug enabled')
+                return
+            }
+            if (mode === 'off' || mode === '0') {
+                netDebugEnabled = false
+                Render.setNetDebugOverlay('', false)
+                Console.writeText('net_debug disabled')
+                return
+            }
+            Console.writeText('Usage: net_debug on|off')
+        },
+        'toggle network debug HUD',
+    )
+
+    Console.registerCommand(
+        'net_tune',
+        (args) => {
+            const name = args[0]
+            if (!name) {
+                const tuning = network.getTuning()
+                const summary = Object.entries(tuning)
+                    .map(([k, v]) => `${k}=${round(v, 3)}`)
+                    .join(' ')
+                Console.writeText(`net_tune: ${summary}`)
+                return
+            }
+
+            const nextValRaw = args[1]
+            if (nextValRaw == null) {
+                const tuning = network.getTuning()
+                if (!(name in tuning)) {
+                    Console.writeText(`Unknown key: ${name}`)
+                    return
+                }
+                Console.writeText(`${name}=${round(tuning[name], 3)}`)
+                return
+            }
+
+            const nextVal = Number.parseFloat(nextValRaw)
+            if (!Number.isFinite(nextVal)) {
+                Console.writeText('Usage: net_tune <key> <number>')
+                return
+            }
+            if (!network.setTuningValue(name, nextVal)) {
+                Console.writeText(`Unknown/invalid key: ${name}`)
+                return
+            }
+            const tuning = network.getTuning()
+            Console.writeText(`${name}=${round(tuning[name], 3)}`)
+        },
+        'view/set networking tune params',
     )
 
     Console.registerCommand(
@@ -655,6 +729,26 @@ function applyPredictedInput(player, input) {
     }
 }
 
+function updateNetDebugOverlay(now) {
+    if (!netDebugEnabled || !network.isActive()) {
+        Render.setNetDebugOverlay('', false)
+        return
+    }
+    if (now - lastNetDebugUpdateAt >= 100) {
+        const stats = network.getNetStats()
+        cachedNetDebugText =
+            `RTT ${round(stats.rttMs, 1)}ms  J ${round(stats.jitterMs, 1)}  ` +
+            `Off ${round(stats.clockOffsetMs, 1)}\n` +
+            `Interp ${round(stats.interpDelayMs, 1)}ms  Buf ${stats.snapshotBufferDepth}  ` +
+            `Tick ${stats.latestSnapshotTick}\n` +
+            `Render ${round(stats.renderServerTimeMs / 16, 1)}t  ` +
+            `Corr ${round(stats.correctionErrorUnits, 2)}u b${round(stats.correctionBlend, 2)}  ` +
+            `Inp ${stats.pendingInputCount}`
+        lastNetDebugUpdateAt = now
+    }
+    Render.setNetDebugOverlay(cachedNetDebugText, true)
+}
+
 function extractPointerLockedDelta() {
     const delta = Input.mouseDeltaY
     Input.mouseDeltaY = 0
@@ -877,6 +971,11 @@ function normalizeAngle(angle) {
     while (angle > Math.PI) angle -= Math.PI * 2
     while (angle < -Math.PI) angle += Math.PI * 2
     return angle
+}
+
+function round(value, digits = 2) {
+    const m = 10 ** digits
+    return Math.round(value * m) / m
 }
 
 function clamp(val, min, max) {

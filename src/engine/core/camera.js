@@ -50,6 +50,8 @@ export function recalcCamera() {
     hudRef.weapon.y = innerHeight - 50
     hudRef.ammo.x = innerWidth - 40
     hudRef.ammo.y = innerHeight - 80
+    hudRef.netDebug.x = innerWidth - 20
+    hudRef.netDebug.y = 20
 }
 
 export function updateCamera(player) {

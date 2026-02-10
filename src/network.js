@@ -24,11 +24,18 @@ const DEFAULT_RTT_MS = 80
 const DEFAULT_JITTER_MS = 5
 const MIN_INTERP_DELAY_MS = 40
 const MAX_INTERP_DELAY_MS = 180
-const LOCAL_RECONCILE_SMOOTH_MAX_UNITS = 18
-const LOCAL_RECONCILE_DEADZONE_UNITS = 0.35
-const LOCAL_RECONCILE_MIN_BLEND = 0.14
-const LOCAL_RECONCILE_MAX_BLEND = 0.48
 const PENDING_INPUT_MAX = 240
+const DEFAULT_TUNING = Object.freeze({
+    interpBaseSnapshots: 2.25,
+    interpRttFactor: 0.25,
+    interpJitterFactor: 2.0,
+    interpMinMs: MIN_INTERP_DELAY_MS,
+    interpMaxMs: MAX_INTERP_DELAY_MS,
+    reconcileSmoothMaxUnits: 18,
+    reconcileDeadzoneUnits: 0.35,
+    reconcileMinBlend: 0.14,
+    reconcileMaxBlend: 0.48,
+})
 
 export class NetworkClient {
     constructor() {
@@ -43,11 +50,16 @@ export class NetworkClient {
         this.pendingInputs = []
         this.snapshotBuffer = []
         this.lastReconciledServerTick = -1
+        this.lastCorrectionErrorUnits = 0
+        this.lastCorrectionBlend = 1
+        this.lastRenderServerTimeMs = 0
+        this.lastSnapshotTick = 0
         this.clockOffsetMs = DEFAULT_CLOCK_OFFSET_MS
         this.rttMs = DEFAULT_RTT_MS
         this.rttJitterMs = DEFAULT_JITTER_MS
         this.lastPingSentAt = -Infinity
         this.interpDelayMs = MIN_INTERP_DELAY_MS
+        this.tuning = { ...DEFAULT_TUNING }
         this.inputSendIntervalMs = INPUT_SEND_INTERVAL_MS
         this.lastInputSentAt = -Infinity
         this.predictor = null
@@ -71,6 +83,73 @@ export class NetworkClient {
 
     getRemotePlayers() {
         return [...this.remotePlayers.values()]
+    }
+
+    getNetStats() {
+        return {
+            rttMs: this.rttMs,
+            jitterMs: this.rttJitterMs,
+            clockOffsetMs: this.clockOffsetMs,
+            interpDelayMs: this.interpDelayMs,
+            snapshotBufferDepth: this.snapshotBuffer.length,
+            latestSnapshotTick: this.lastSnapshotTick,
+            renderServerTimeMs: this.lastRenderServerTimeMs,
+            correctionErrorUnits: this.lastCorrectionErrorUnits,
+            correctionBlend: this.lastCorrectionBlend,
+            pendingInputCount: this.pendingInputs.length,
+        }
+    }
+
+    getTuning() {
+        return { ...this.tuning }
+    }
+
+    setTuningValue(name, value) {
+        if (!(name in this.tuning)) return false
+        if (!Number.isFinite(value)) return false
+
+        const next = Number(value)
+        switch (name) {
+            case 'interpBaseSnapshots':
+                this.tuning[name] = clamp(next, 1.0, 5.0)
+                return true
+            case 'interpRttFactor':
+                this.tuning[name] = clamp(next, 0, 1.0)
+                return true
+            case 'interpJitterFactor':
+                this.tuning[name] = clamp(next, 0, 6.0)
+                return true
+            case 'interpMinMs':
+                this.tuning[name] = clamp(next, 10, 250)
+                this.tuning.interpMaxMs = Math.max(this.tuning.interpMaxMs, this.tuning.interpMinMs)
+                return true
+            case 'interpMaxMs':
+                this.tuning[name] = clamp(next, 20, 500)
+                this.tuning.interpMinMs = Math.min(this.tuning.interpMinMs, this.tuning.interpMaxMs)
+                return true
+            case 'reconcileSmoothMaxUnits':
+                this.tuning[name] = clamp(next, 1, 80)
+                return true
+            case 'reconcileDeadzoneUnits':
+                this.tuning[name] = clamp(next, 0, 6)
+                return true
+            case 'reconcileMinBlend':
+                this.tuning[name] = clamp(next, 0.01, 1)
+                this.tuning.reconcileMaxBlend = Math.max(
+                    this.tuning.reconcileMaxBlend,
+                    this.tuning.reconcileMinBlend,
+                )
+                return true
+            case 'reconcileMaxBlend':
+                this.tuning[name] = clamp(next, 0.01, 1)
+                this.tuning.reconcileMinBlend = Math.min(
+                    this.tuning.reconcileMinBlend,
+                    this.tuning.reconcileMaxBlend,
+                )
+                return true
+            default:
+                return false
+        }
     }
 
     connect({ url = DEFAULT_SERVER_URL, username, roomId, map = DEFAULT_MAP } = {}) {
@@ -128,6 +207,10 @@ export class NetworkClient {
                         this.snapshotBuffer.length = 0
                         this.pendingInputs.length = 0
                         this.lastReconciledServerTick = -1
+                        this.lastCorrectionErrorUnits = 0
+                        this.lastCorrectionBlend = 1
+                        this.lastRenderServerTimeMs = 0
+                        this.lastSnapshotTick = 0
                         this.remotePlayers.clear()
                         this.handlers.onClose?.()
                         if (!wasConnected) {
@@ -266,6 +349,7 @@ export class NetworkClient {
             return
         }
         this.lastReconciledServerTick = serverTick
+        this.lastSnapshotTick = Math.max(this.lastSnapshotTick, serverTick)
         const lastSeq = serverState.last_input_seq ?? 0
         const predictedBefore = this.localPlayer ? captureMovementState(this.localPlayer) : null
 
@@ -287,23 +371,27 @@ export class NetworkClient {
             correctedAfter.x - predictedBefore.x,
             correctedAfter.y - predictedBefore.y,
         )
+        this.lastCorrectionErrorUnits = correctionError
+        this.lastCorrectionBlend = 1
 
-        if (correctionError <= LOCAL_RECONCILE_DEADZONE_UNITS) {
+        if (correctionError <= this.tuning.reconcileDeadzoneUnits) {
             applyMovementState(this.localPlayer, predictedBefore)
+            this.lastCorrectionBlend = 0
             return
         }
 
-        if (correctionError >= LOCAL_RECONCILE_SMOOTH_MAX_UNITS) {
+        if (correctionError >= this.tuning.reconcileSmoothMaxUnits) {
             return
         }
 
-        const normalized = correctionError / LOCAL_RECONCILE_SMOOTH_MAX_UNITS
+        const normalized = correctionError / this.tuning.reconcileSmoothMaxUnits
         const blend = clamp(
-            LOCAL_RECONCILE_MIN_BLEND +
-                (LOCAL_RECONCILE_MAX_BLEND - LOCAL_RECONCILE_MIN_BLEND) * normalized,
-            LOCAL_RECONCILE_MIN_BLEND,
-            LOCAL_RECONCILE_MAX_BLEND,
+            this.tuning.reconcileMinBlend +
+                (this.tuning.reconcileMaxBlend - this.tuning.reconcileMinBlend) * normalized,
+            this.tuning.reconcileMinBlend,
+            this.tuning.reconcileMaxBlend,
         )
+        this.lastCorrectionBlend = blend
 
         applyMovementState(this.localPlayer, {
             x: lerp(predictedBefore.x, correctedAfter.x, blend),
@@ -326,6 +414,7 @@ export class NetworkClient {
         if (!this.snapshotBuffer.length) return
 
         const targetServerTime = this.estimateServerNowMs(now) - this.computeInterpDelayMs()
+        this.lastRenderServerTimeMs = targetServerTime
         let older = null
         let newer = null
 
@@ -360,6 +449,7 @@ export class NetworkClient {
     insertSnapshot(snapshot) {
         const tick = Number(snapshot.tick ?? 0)
         if (!Number.isFinite(tick) || tick < 0) return
+        this.lastSnapshotTick = Math.max(this.lastSnapshotTick, tick)
         const serverTimeMs = tick * SERVER_TICK_MILLIS
         const entry = {
             tick,
@@ -409,8 +499,10 @@ export class NetworkClient {
 
     computeInterpDelayMs() {
         const dynamicDelay =
-            SNAPSHOT_INTERVAL_MS * 2.25 + this.rttMs * 0.25 + this.rttJitterMs * 2.0
-        this.interpDelayMs = clamp(dynamicDelay, MIN_INTERP_DELAY_MS, MAX_INTERP_DELAY_MS)
+            SNAPSHOT_INTERVAL_MS * this.tuning.interpBaseSnapshots +
+            this.rttMs * this.tuning.interpRttFactor +
+            this.rttJitterMs * this.tuning.interpJitterFactor
+        this.interpDelayMs = clamp(dynamicDelay, this.tuning.interpMinMs, this.tuning.interpMaxMs)
         return this.interpDelayMs
     }
 }

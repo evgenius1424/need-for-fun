@@ -40,6 +40,7 @@ export const Render = {
     initSprites,
     setSceneReady,
     renderGame,
+    setNetDebugOverlay,
     renderMap,
     setPlayerColor,
     cleanupBotSprite,
@@ -67,6 +68,11 @@ function renderGame(player, bots = []) {
     renderEffects(player)
     updateHUD(player, hud)
     app.render()
+}
+
+function setNetDebugOverlay(text, visible) {
+    hud.netDebug.visible = !!visible
+    hud.netDebug.text = text ?? ''
 }
 
 function createBackground() {
