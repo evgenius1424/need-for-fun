@@ -75,75 +75,6 @@
             #console-input::placeholder {
                 color: #666;
             }
-
-            #net-overlay {
-                position: fixed;
-                right: 20px;
-                bottom: 20px;
-                background: rgba(10, 10, 10, 0.85);
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                border-radius: 8px;
-                padding: 12px;
-                width: 260px;
-                color: #ddd;
-                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-                font-size: 12px;
-                z-index: 1000;
-            }
-
-            #net-overlay h3 {
-                margin: 0 0 8px 0;
-                font-size: 12px;
-                color: #9acbff;
-            }
-
-            #net-overlay .row {
-                display: flex;
-                flex-direction: column;
-                margin-bottom: 8px;
-            }
-
-            #net-overlay label {
-                margin-bottom: 4px;
-                color: #999;
-            }
-
-            #net-overlay input {
-                padding: 6px 8px;
-                background: rgba(20, 20, 20, 0.9);
-                border: 1px solid #333;
-                color: #fff;
-                border-radius: 4px;
-                font-family: inherit;
-                font-size: 12px;
-            }
-
-            #net-overlay .actions {
-                display: flex;
-                gap: 8px;
-                margin-top: 8px;
-            }
-
-            #net-overlay button {
-                flex: 1;
-                padding: 6px 8px;
-                background: #1f4d7a;
-                border: 1px solid #2b6aa6;
-                color: #fff;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 12px;
-            }
-
-            #net-overlay button:disabled {
-                opacity: 0.5;
-                cursor: default;
-            }
-
-            #net-status {
-                margin-top: 6px;
-                color: #77ff88;
-            }
         </style>
     </head>
     <body>
@@ -154,26 +85,6 @@
                 <strong>help</strong> for commands.
             </div>
             <input id="console-input" placeholder="Enter command..." />
-        </div>
-        <div id="net-overlay">
-            <h3>Multiplayer</h3>
-            <div class="row">
-                <label for="net-server">Server</label>
-                <input id="net-server" value="" />
-            </div>
-            <div class="row">
-                <label for="net-username">Username</label>
-                <input id="net-username" placeholder="player1" />
-            </div>
-            <div class="row">
-                <label for="net-room">Room</label>
-                <input id="net-room" placeholder="room-1" />
-            </div>
-            <div class="actions">
-                <button id="net-connect">Connect</button>
-                <button id="net-disconnect" disabled>Disconnect</button>
-            </div>
-            <div id="net-status">offline</div>
         </div>
         <script type="module" src="/src/main.js"></script>
     </body>

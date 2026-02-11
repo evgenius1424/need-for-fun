@@ -39,13 +39,10 @@ const ITEM_DEFS = {
 
 const localPlayer = new Player()
 const network = new NetworkClient()
-let multiplayerEnabled = false
-let multiplayerUiReady = false
 let netDebugEnabled = false
 let lastNetDebugUpdateAt = 0
 let cachedNetDebugText = ''
 let lastAppliedWorldSnapshotTick = -1
-const netOverlay = document.getElementById('net-overlay')
 
 await ensureModelLoaded(localPlayer.model, SkinId.RED)
 
@@ -60,7 +57,7 @@ spawnPlayer(localPlayer)
 setupPointerLock()
 setupExplosionHandlers()
 setupConsoleCommands()
-if (netOverlay) netOverlay.style.display = 'none'
+initNetwork()
 
 requestAnimationFrame((ts) => gameLoop(ts, localPlayer))
 
@@ -289,43 +286,13 @@ function processAimInput(player) {
     updateFacingDirection(player)
 }
 
-function setupMultiplayerUI() {
-    if (multiplayerUiReady) return
-    multiplayerUiReady = true
-    const serverInput = document.getElementById('net-server')
-    const usernameInput = document.getElementById('net-username')
-    const roomInput = document.getElementById('net-room')
-    const connectBtn = document.getElementById('net-connect')
-    const disconnectBtn = document.getElementById('net-disconnect')
-    const statusEl = document.getElementById('net-status')
-
-    // Set default server URL based on page protocol
-    if (serverInput && !serverInput.value) {
-        const isSecure = window.location.protocol === 'https:'
-        serverInput.value = isSecure
-            ? 'wss://need-for-fun.duckdns.org/ws'
-            : 'ws://localhost:3001/ws'
-    }
-
-    const setStatus = (text, ok = false) => {
-        if (!statusEl) return
-        statusEl.textContent = text
-        statusEl.style.color = ok ? '#77ff88' : '#ff9999'
-    }
-
+function initNetwork() {
     network.setLocalPlayer(localPlayer)
     network.setHandlers({
         onOpen: () => {
-            setStatus('connected', true)
-            connectBtn.disabled = true
-            disconnectBtn.disabled = false
             BotManager.removeAllBots()
         },
-        onClose: () => {
-            setStatus('offline')
-            connectBtn.disabled = false
-            disconnectBtn.disabled = true
-        },
+        onClose: () => {},
         onRoomState: async (room) => {
             if (room?.map) {
                 const loaded = await Map.loadFromName(room.map)
@@ -354,50 +321,50 @@ function setupMultiplayerUI() {
         player.update()
         Physics.stepPlayers([player], 1)
     })
-
-    connectBtn?.addEventListener('click', async () => {
-        const username = usernameInput?.value?.trim()
-        const roomId = roomInput?.value?.trim()
-        const url = serverInput?.value?.trim()
-
-        if (!username) {
-            setStatus('username required')
-            return
-        }
-
-        try {
-            await network.connect({ url, username, roomId })
-        } catch (err) {
-            setStatus('connect failed')
-            console.error(err)
-        }
-    })
-
-    disconnectBtn?.addEventListener('click', () => {
-        network.disconnect()
-    })
 }
 
 function setupConsoleCommands() {
     Console.registerCommand(
         'mp',
-        (args) => {
-            const mode = args[0]?.toLowerCase()
-            if (!mode) {
-                Console.writeText(`Multiplayer: ${multiplayerEnabled ? 'on' : 'off'}`)
+        async (args) => {
+            const action = args[0]?.toLowerCase()
+
+            if (!action) {
+                Console.writeText(`Multiplayer: ${network.isActive() ? 'connected' : 'disconnected'}`)
                 return
             }
-            if (mode === 'on' || mode === 'enable') {
-                enableMultiplayer()
+
+            if (action === 'connect') {
+                const username = args[1]?.trim()
+                if (!username) {
+                    Console.writeText('Usage: mp connect <username> [room]')
+                    return
+                }
+                const roomId = args[2]?.trim() || 'room-1'
+                const isSecure = window.location.protocol === 'https:'
+                const url = isSecure
+                    ? 'wss://need-for-fun.duckdns.org/ws'
+                    : 'ws://localhost:3001/ws'
+
+                try {
+                    Console.writeText(`Connecting to ${roomId}...`)
+                    await network.connect({ url, username, roomId })
+                    Console.writeText(`Connected as ${username}`)
+                } catch (err) {
+                    Console.writeText(`Connection failed: ${err.message}`)
+                }
                 return
             }
-            if (mode === 'off' || mode === 'disable') {
-                disableMultiplayer()
+
+            if (action === 'disconnect') {
+                network.disconnect()
+                Console.writeText('Disconnected')
                 return
             }
-            Console.writeText('Usage: mp on|off')
+
+            Console.writeText('Usage: mp connect <username> [room] | mp disconnect')
         },
-        'enable/disable multiplayer UI',
+        'connect/disconnect multiplayer',
     )
 
     Console.registerCommand(
@@ -606,23 +573,6 @@ function setupConsoleCommands() {
         },
         'get/set rail type',
     )
-}
-
-function enableMultiplayer() {
-    if (multiplayerEnabled) return
-    multiplayerEnabled = true
-    lastAppliedWorldSnapshotTick = -1
-    setupMultiplayerUI()
-    if (netOverlay) netOverlay.style.display = 'block'
-    Console.writeText('Multiplayer enabled')
-}
-
-function disableMultiplayer() {
-    if (!multiplayerEnabled) return
-    multiplayerEnabled = false
-    network.disconnect()
-    if (netOverlay) netOverlay.style.display = 'none'
-    Console.writeText('Multiplayer disabled')
 }
 
 function applySnapshotEvents(events) {
