@@ -417,6 +417,26 @@ function setupConsoleCommands() {
     )
 
     Console.registerCommand(
+        'net_profile',
+        (args) => {
+            const mode = args[0]?.toLowerCase()
+            const options = network.getTuningProfiles().join('|')
+            if (!mode) {
+                Console.writeText(
+                    `net_profile: ${network.getCurrentTuningProfile()} (available: ${options})`,
+                )
+                return
+            }
+            if (!network.applyTuningProfile(mode)) {
+                Console.writeText(`Usage: net_profile <${options}>`)
+                return
+            }
+            Console.writeText(`net_profile set to ${network.getCurrentTuningProfile()}`)
+        },
+        'apply net tuning profile',
+    )
+
+    Console.registerCommand(
         'net_tune',
         (args) => {
             const name = args[0]

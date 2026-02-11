@@ -50,6 +50,41 @@ const DEFAULT_TUNING = Object.freeze({
     inputAckBacklogThreshold: 4,
     inputResendStallMs: 110,
 })
+const TUNING_PROFILES = Object.freeze({
+    stable: {
+        interpBaseSnapshots: 2.9,
+        interpRttFactor: 0.33,
+        interpJitterFactor: 3.2,
+        interpMinMs: 55,
+        interpMaxMs: 230,
+        maxExtrapolationMs: 70,
+        interpUnderrunBoostMaxMs: 110,
+        interpUnderrunGain: 0.45,
+        interpUnderrunDecay: 0.94,
+        inputBaseHz: 54,
+        inputIdleHz: 26,
+        inputAckBacklogThreshold: 3,
+        inputResendStallMs: 95,
+    },
+    balanced: {
+        ...DEFAULT_TUNING,
+    },
+    aggressive: {
+        interpBaseSnapshots: 1.7,
+        interpRttFactor: 0.17,
+        interpJitterFactor: 1.35,
+        interpMinMs: 28,
+        interpMaxMs: 130,
+        maxExtrapolationMs: 120,
+        interpUnderrunBoostMaxMs: 45,
+        interpUnderrunGain: 0.28,
+        interpUnderrunDecay: 0.86,
+        inputBaseHz: 75,
+        inputIdleHz: 38,
+        inputAckBacklogThreshold: 5,
+        inputResendStallMs: 130,
+    },
+})
 
 export class NetworkClient {
     constructor() {
@@ -82,6 +117,7 @@ export class NetworkClient {
         this.currentInputSendHz = INPUT_SEND_RATE_HZ
         this.interpDelayMs = MIN_INTERP_DELAY_MS
         this.tuning = { ...DEFAULT_TUNING }
+        this.tuningProfile = 'balanced'
         this.inputSendIntervalMs = INPUT_SEND_INTERVAL_MS
         this.lastInputSentAt = -Infinity
         this.predictor = null
@@ -131,11 +167,20 @@ export class NetworkClient {
         return { ...this.tuning }
     }
 
+    getTuningProfiles() {
+        return Object.keys(TUNING_PROFILES)
+    }
+
+    getCurrentTuningProfile() {
+        return this.tuningProfile
+    }
+
     setTuningValue(name, value) {
         if (!(name in this.tuning)) return false
         if (!Number.isFinite(value)) return false
 
         const next = Number(value)
+        this.tuningProfile = 'custom'
         switch (name) {
             case 'interpBaseSnapshots':
                 this.tuning[name] = clamp(next, 1.0, 5.0)
@@ -201,6 +246,19 @@ export class NetworkClient {
             default:
                 return false
         }
+    }
+
+    applyTuningProfile(name) {
+        const key = String(name ?? '').toLowerCase()
+        const profile = TUNING_PROFILES[key]
+        if (!profile) return false
+
+        this.tuning = { ...DEFAULT_TUNING }
+        for (const [k, v] of Object.entries(profile)) {
+            this.setTuningValue(k, v)
+        }
+        this.tuningProfile = key
+        return true
     }
 
     connect({ url = DEFAULT_SERVER_URL, username, roomId, map = DEFAULT_MAP } = {}) {
