@@ -32,6 +32,7 @@ impl SnapshotEncoder {
     pub fn encode_snapshot(
         &mut self,
         tick: u64,
+        server_time_ms: u64,
         players: &[PlayerSnapshot],
         items: &[ItemSnapshot],
         projectiles: &[ProjectileSnapshot],
@@ -44,6 +45,7 @@ impl SnapshotEncoder {
         buffer.clear();
         buffer.put_u8(MSG_SNAPSHOT);
         push_u64(buffer, tick);
+        push_u64(buffer, server_time_ms);
 
         let player_count = players.len().min(255) as u8;
         let item_count = items.len().min(255) as u8;

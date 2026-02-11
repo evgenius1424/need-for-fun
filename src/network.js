@@ -597,11 +597,14 @@ export class NetworkClient {
     insertSnapshot(snapshot) {
         const tick = Number(snapshot.tick ?? 0)
         if (!Number.isFinite(tick) || tick < 0) return
+        const serverTimeMsFromSnapshot = Number(snapshot.server_time_ms)
+        const serverTimeMs = Number.isFinite(serverTimeMsFromSnapshot)
+            ? serverTimeMsFromSnapshot
+            : tick * SERVER_TICK_MILLIS
         if (tick <= this.lastSnapshotTick) {
             this.staleSnapshotCount++
         }
         this.lastSnapshotTick = Math.max(this.lastSnapshotTick, tick)
-        const serverTimeMs = tick * SERVER_TICK_MILLIS
         const prevLast = this.snapshotBuffer[this.snapshotBuffer.length - 1]
         if (prevLast) {
             const sample = serverTimeMs - prevLast.serverTimeMs

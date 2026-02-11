@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use rand::SeedableRng;
@@ -97,13 +97,13 @@ pub struct RoomHandle {
 }
 
 impl RoomHandle {
-    pub fn new(id: RoomId, map: GameMap) -> Arc<Self> {
+    pub fn new(id: RoomId, map: GameMap, server_started_at: Instant) -> Arc<Self> {
         let (tx, rx) = mpsc::channel(ROOM_COMMAND_CAPACITY);
         let handle = Arc::new(Self { id, tx });
 
         let task_handle = Arc::clone(&handle);
         tokio::spawn(async move {
-            let mut task = RoomTask::new(task_handle.id.clone(), map, rx);
+            let mut task = RoomTask::new(task_handle.id.clone(), map, rx, server_started_at);
             task.run().await;
         });
 
@@ -169,6 +169,7 @@ impl RoomHandle {
 struct RoomTask {
     room_id: RoomId,
     map: Arc<GameMap>,
+    server_started_at: Instant,
     rx: mpsc::Receiver<RoomCmd>,
     tick: Tick,
     items: Vec<MapItem>,
@@ -188,7 +189,12 @@ struct RoomTask {
 }
 
 impl RoomTask {
-    fn new(room_id: RoomId, map: GameMap, rx: mpsc::Receiver<RoomCmd>) -> Self {
+    fn new(
+        room_id: RoomId,
+        map: GameMap,
+        rx: mpsc::Receiver<RoomCmd>,
+        server_started_at: Instant,
+    ) -> Self {
         let seed = room_id.as_str().bytes().fold(0_u64, |acc, byte| {
             acc.wrapping_mul(31).wrapping_add(byte as u64)
         });
@@ -197,6 +203,7 @@ impl RoomTask {
             room_id,
             items: map.items.clone(),
             map: Arc::new(map),
+            server_started_at,
             rx,
             tick: Tick(0),
             projectiles: Vec::new(),
@@ -416,15 +423,17 @@ impl RoomTask {
         process_item_pickups(&mut self.player_states, &mut self.items);
 
         self.pending_snapshot_events
-            .extend(self.scratch_events.iter().cloned());
+            .extend(self.scratch_events.drain(..));
 
         if self.tick.0 % SNAPSHOT_INTERVAL_TICKS != 0 {
             return;
         }
 
+        let server_time_ms = self.server_started_at.elapsed().as_millis() as u64;
         self.build_snapshot_buffers();
         let payload = self.snapshot_encoder.encode_snapshot(
             self.tick.0,
+            server_time_ms,
             &self.scratch_player_snapshots,
             &self.scratch_item_snapshots,
             &self.scratch_projectile_snapshots,
@@ -578,6 +587,8 @@ fn apply_input_to_state(input: &PlayerInput, state: &mut PlayerState) {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use bytes::Bytes;
     use tokio::sync::mpsc;
 
@@ -597,7 +608,11 @@ mod tests {
 
     #[tokio::test]
     async fn join_is_idempotent_and_leave_removes_player() {
-        let room = RoomHandle::new(RoomId("room-test".to_string()), simple_map());
+        let room = RoomHandle::new(
+            RoomId("room-test".to_string()),
+            simple_map(),
+            Instant::now(),
+        );
         let (tx, _rx) = mpsc::channel::<Bytes>(4);
 
         let first = room

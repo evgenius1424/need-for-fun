@@ -154,7 +154,10 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                     true
                 }
             },
-            Message::Ping(payload) => control_tx.try_send(ControlOut::Pong(payload)).is_ok(),
+            Message::Ping(payload) => {
+                let _ = control_tx.try_send(ControlOut::Pong(payload));
+                true
+            }
             Message::Close(_) => false,
             Message::Pong(_) => true,
         };
@@ -273,9 +276,8 @@ async fn handle_client_msg(
         }
         ClientMsg::Ping { client_time_ms } => {
             let server_time_ms = state.started_at.elapsed().as_millis() as u64;
-            outbound_tx
-                .try_send(Bytes::from(encode_pong(client_time_ms, server_time_ms)))
-                .is_ok()
+            let _ = outbound_tx.try_send(Bytes::from(encode_pong(client_time_ms, server_time_ms)));
+            true
         }
     }
 }
@@ -299,7 +301,7 @@ async fn get_or_create_room(
         return Some(existing);
     }
 
-    let handle = RoomHandle::new(room_id.clone(), map);
+    let handle = RoomHandle::new(room_id.clone(), map, state.started_at);
     rooms.insert(room_id, handle.clone());
     Some(handle)
 }
@@ -326,6 +328,7 @@ fn load_map_with_fallback(map_dir: &Path, map_name: &str) -> Option<GameMap> {
 mod tests {
     use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
+    use std::time::Instant;
 
     use bytes::Bytes;
     use tokio::sync::{mpsc, RwLock};
@@ -348,8 +351,8 @@ mod tests {
 
     #[tokio::test]
     async fn player_can_move_between_rooms_without_ghosting() {
-        let room_a = RoomHandle::new(RoomId("a".to_string()), simple_map());
-        let room_b = RoomHandle::new(RoomId("b".to_string()), simple_map());
+        let room_a = RoomHandle::new(RoomId("a".to_string()), simple_map(), Instant::now());
+        let room_b = RoomHandle::new(RoomId("b".to_string()), simple_map(), Instant::now());
 
         let mut rooms = std::collections::HashMap::new();
         rooms.insert(RoomId("a".to_string()), Arc::clone(&room_a));
@@ -359,6 +362,7 @@ mod tests {
             rooms: RwLock::new(std::collections::HashMap::new()),
             next_player_id: AtomicU64::new(1),
             map_dir: std::path::PathBuf::new(),
+            started_at: Instant::now(),
         });
         *state.rooms.write().await = rooms;
 

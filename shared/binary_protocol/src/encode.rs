@@ -66,12 +66,24 @@ pub fn encode_input(
     push_u64(&mut out, seq);
     push_f32(&mut out, aim_angle);
     let mut flags = 0u8;
-    if key_up { flags |= 0x01; }
-    if key_down { flags |= 0x02; }
-    if key_left { flags |= 0x04; }
-    if key_right { flags |= 0x08; }
-    if mouse_down { flags |= 0x10; }
-    if facing_left { flags |= 0x20; }
+    if key_up {
+        flags |= 0x01;
+    }
+    if key_down {
+        flags |= 0x02;
+    }
+    if key_left {
+        flags |= 0x04;
+    }
+    if key_right {
+        flags |= 0x08;
+    }
+    if mouse_down {
+        flags |= 0x10;
+    }
+    if facing_left {
+        flags |= 0x20;
+    }
     out.push(flags);
     out.push(weapon_switch as u8);
     out.push(weapon_scroll as u8);
@@ -147,6 +159,7 @@ pub fn encode_room_state(
 
 pub fn encode_snapshot(
     tick: u64,
+    server_time_ms: u64,
     players: &[PlayerSnapshot],
     items: &[ItemSnapshot],
     projectiles: &[ProjectileSnapshot],
@@ -157,13 +170,14 @@ pub fn encode_snapshot(
     let projectile_count = projectiles.len().min(u16::MAX as usize) as u16;
     let event_count = events.len().min(255) as u8;
     let mut out = Vec::with_capacity(
-        14 + (player_count as usize * 63)
+        22 + (player_count as usize * 63)
             + (item_count as usize * 3)
             + (projectile_count as usize * 33)
             + (event_count as usize * 40),
     );
     out.push(MSG_SNAPSHOT);
     push_u64(&mut out, tick);
+    push_u64(&mut out, server_time_ms);
     out.push(player_count);
     out.push(item_count);
     push_u16(&mut out, projectile_count);
@@ -173,7 +187,9 @@ pub fn encode_snapshot(
     }
     for item in items {
         let mut flags = 0u8;
-        if item.active { flags |= 0x01; }
+        if item.active {
+            flags |= 0x01;
+        }
         out.push(flags);
         push_i16(&mut out, item.respawn_timer);
     }
@@ -205,32 +221,62 @@ pub fn write_player_record<W: BinaryWriter>(out: &mut W, snap: &PlayerSnapshot) 
     out.put_u8(snap.fire_cooldown.clamp(0, 255) as u8);
     let mut weapon_bits: u16 = 0;
     for (idx, has) in snap.weapons.iter().enumerate() {
-        if *has { weapon_bits |= 1 << idx; }
+        if *has {
+            weapon_bits |= 1 << idx;
+        }
     }
     write_u16(out, weapon_bits);
     for idx in 0..WEAPON_COUNT {
-        write_i16(out, snap.ammo[idx].clamp(i16::MIN as i32, i16::MAX as i32) as i16);
+        write_i16(
+            out,
+            snap.ammo[idx].clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+        );
     }
     write_u64(out, snap.last_input_seq);
     let mut flags = 0u8;
-    if snap.facing_left { flags |= 0x01; }
-    if snap.crouch { flags |= 0x02; }
-    if snap.dead { flags |= 0x04; }
-    if snap.key_left { flags |= 0x08; }
-    if snap.key_right { flags |= 0x10; }
-    if snap.key_up { flags |= 0x20; }
-    if snap.key_down { flags |= 0x40; }
+    if snap.facing_left {
+        flags |= 0x01;
+    }
+    if snap.crouch {
+        flags |= 0x02;
+    }
+    if snap.dead {
+        flags |= 0x04;
+    }
+    if snap.key_left {
+        flags |= 0x08;
+    }
+    if snap.key_right {
+        flags |= 0x10;
+    }
+    if snap.key_up {
+        flags |= 0x20;
+    }
+    if snap.key_down {
+        flags |= 0x40;
+    }
     out.put_u8(flags);
 }
 
 pub fn write_event<W: BinaryWriter>(out: &mut W, event: &EffectEvent) {
     match event {
-        EffectEvent::WeaponFired { player_id, weapon_id } => {
+        EffectEvent::WeaponFired {
+            player_id,
+            weapon_id,
+        } => {
             out.put_u8(EVENT_WEAPON_FIRED);
             write_u64(out, *player_id);
             out.put_u8(*weapon_id as u8);
         }
-        EffectEvent::ProjectileSpawn { id, kind, x, y, velocity_x, velocity_y, owner_id } => {
+        EffectEvent::ProjectileSpawn {
+            id,
+            kind,
+            x,
+            y,
+            velocity_x,
+            velocity_y,
+            owner_id,
+        } => {
             out.put_u8(EVENT_PROJECTILE_SPAWN);
             write_u64(out, *id);
             out.put_u8(*kind);
@@ -240,14 +286,24 @@ pub fn write_event<W: BinaryWriter>(out: &mut W, event: &EffectEvent) {
             write_f32(out, *velocity_y);
             write_u64(out, *owner_id);
         }
-        EffectEvent::Rail { start_x, start_y, end_x, end_y } => {
+        EffectEvent::Rail {
+            start_x,
+            start_y,
+            end_x,
+            end_y,
+        } => {
             out.put_u8(EVENT_RAIL);
             write_f32(out, *start_x);
             write_f32(out, *start_y);
             write_f32(out, *end_x);
             write_f32(out, *end_y);
         }
-        EffectEvent::Shaft { start_x, start_y, end_x, end_y } => {
+        EffectEvent::Shaft {
+            start_x,
+            start_y,
+            end_x,
+            end_y,
+        } => {
             out.put_u8(EVENT_SHAFT);
             write_f32(out, *start_x);
             write_f32(out, *start_y);
@@ -271,11 +327,19 @@ pub fn write_event<W: BinaryWriter>(out: &mut W, event: &EffectEvent) {
             write_f32(out, *y);
             out.put_u8(*kind);
         }
-        EffectEvent::Damage { attacker_id, target_id, amount, killed } => {
+        EffectEvent::Damage {
+            attacker_id,
+            target_id,
+            amount,
+            killed,
+        } => {
             out.put_u8(EVENT_DAMAGE);
             write_u64(out, *attacker_id);
             write_u64(out, *target_id);
-            write_i16(out, (*amount).clamp(i16::MIN as i32, i16::MAX as i32) as i16);
+            write_i16(
+                out,
+                (*amount).clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+            );
             out.put_u8(if *killed { 0x01 } else { 0x00 });
         }
     }

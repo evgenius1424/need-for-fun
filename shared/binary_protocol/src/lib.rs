@@ -16,4 +16,6 @@ pub use encode::{
     encode_player_left, encode_pong, encode_room_state, encode_snapshot, encode_welcome,
     kind_u8_to_str, write_event, write_player_record, BinaryWriter,
 };
-pub use types::{ClientMsg, DecodeError, EffectEvent, ItemSnapshot, PlayerSnapshot, ProjectileSnapshot};
+pub use types::{
+    ClientMsg, DecodeError, EffectEvent, ItemSnapshot, PlayerSnapshot, ProjectileSnapshot,
+};

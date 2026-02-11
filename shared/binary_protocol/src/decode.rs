@@ -140,8 +140,16 @@ mod tests {
         let decoded = decode_client_message(&encoded).unwrap();
         match decoded {
             ClientMsg::Input {
-                seq, key_up, key_down, key_left, key_right, mouse_down,
-                weapon_switch, weapon_scroll, aim_angle, facing_left,
+                seq,
+                key_up,
+                key_down,
+                key_left,
+                key_right,
+                mouse_down,
+                weapon_switch,
+                weapon_scroll,
+                aim_angle,
+                facing_left,
             } => {
                 assert_eq!(seq, 42);
                 assert!(key_up);

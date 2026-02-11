@@ -29,7 +29,18 @@ pub fn wasm_encode_input(
     weapon_switch: i8,
     weapon_scroll: i8,
 ) -> Vec<u8> {
-    encode_input(seq, aim_angle, key_up, key_down, key_left, key_right, mouse_down, facing_left, weapon_switch, weapon_scroll)
+    encode_input(
+        seq,
+        aim_angle,
+        key_up,
+        key_down,
+        key_left,
+        key_right,
+        mouse_down,
+        facing_left,
+        weapon_switch,
+        weapon_scroll,
+    )
 }
 
 #[wasm_bindgen]
@@ -54,7 +65,9 @@ pub fn wasm_decode_server_message(buffer: &[u8]) -> JsValue {
 }
 
 fn decode_welcome_js(bytes: &[u8]) -> JsValue {
-    if bytes.len() < 9 { return JsValue::NULL; }
+    if bytes.len() < 9 {
+        return JsValue::NULL;
+    }
     let player_id = read_u64(bytes, 1);
     let obj = Object::new();
     set_str(&obj, "type", "welcome");
@@ -63,24 +76,32 @@ fn decode_welcome_js(bytes: &[u8]) -> JsValue {
 }
 
 fn decode_room_state_js(bytes: &[u8]) -> JsValue {
-    if bytes.len() < 4 { return JsValue::NULL; }
+    if bytes.len() < 4 {
+        return JsValue::NULL;
+    }
     let room_len = bytes[1] as usize;
     let map_len = bytes[2] as usize;
     let player_count = bytes[3] as usize;
     let mut offset = 4;
-    if bytes.len() < offset + room_len + map_len { return JsValue::NULL; }
+    if bytes.len() < offset + room_len + map_len {
+        return JsValue::NULL;
+    }
     let room_id = read_str(bytes, offset, room_len);
     offset += room_len;
     let map = read_str(bytes, offset, map_len);
     offset += map_len;
     let players = Array::new();
     for _ in 0..player_count {
-        if offset >= bytes.len() { break; }
+        if offset >= bytes.len() {
+            break;
+        }
         let name_len = bytes[offset] as usize;
         offset += 1;
         let username = read_str(bytes, offset, name_len);
         offset += name_len;
-        if bytes.len() < offset + 63 { break; }
+        if bytes.len() < offset + 63 {
+            break;
+        }
         let state = decode_player_record_js(bytes, offset);
         offset += 63;
         let player_id = read_u64(bytes, offset - 63);
@@ -99,7 +120,9 @@ fn decode_room_state_js(bytes: &[u8]) -> JsValue {
 }
 
 fn decode_player_joined_js(bytes: &[u8]) -> JsValue {
-    if bytes.len() < 10 { return JsValue::NULL; }
+    if bytes.len() < 10 {
+        return JsValue::NULL;
+    }
     let player_id = read_u64(bytes, 1);
     let name_len = bytes[9] as usize;
     let username = read_str(bytes, 10, name_len);
@@ -113,7 +136,9 @@ fn decode_player_joined_js(bytes: &[u8]) -> JsValue {
 }
 
 fn decode_player_left_js(bytes: &[u8]) -> JsValue {
-    if bytes.len() < 9 { return JsValue::NULL; }
+    if bytes.len() < 9 {
+        return JsValue::NULL;
+    }
     let player_id = read_u64(bytes, 1);
     let obj = Object::new();
     set_str(&obj, "type", "player_left");
@@ -122,24 +147,31 @@ fn decode_player_left_js(bytes: &[u8]) -> JsValue {
 }
 
 fn decode_snapshot_js(bytes: &[u8]) -> JsValue {
-    if bytes.len() < 14 { return JsValue::NULL; }
+    if bytes.len() < 22 {
+        return JsValue::NULL;
+    }
     let tick = read_u64(bytes, 1);
-    let player_count = bytes[9] as usize;
-    let item_count = bytes[10] as usize;
-    let projectile_count = read_u16(bytes, 11) as usize;
-    let event_count = bytes[13] as usize;
-    let mut offset = 14;
+    let server_time_ms = read_u64(bytes, 9);
+    let player_count = bytes[17] as usize;
+    let item_count = bytes[18] as usize;
+    let projectile_count = read_u16(bytes, 19) as usize;
+    let event_count = bytes[21] as usize;
+    let mut offset = 22;
 
     let players = Array::new();
     for _ in 0..player_count {
-        if bytes.len() < offset + 63 { return JsValue::NULL; }
+        if bytes.len() < offset + 63 {
+            return JsValue::NULL;
+        }
         players.push(&decode_player_record_js(bytes, offset));
         offset += 63;
     }
 
     let items = Array::new();
     for _ in 0..item_count {
-        if bytes.len() < offset + 3 { return JsValue::NULL; }
+        if bytes.len() < offset + 3 {
+            return JsValue::NULL;
+        }
         let flags = bytes[offset];
         let respawn_timer = read_i16(bytes, offset + 1);
         offset += 3;
@@ -151,7 +183,9 @@ fn decode_snapshot_js(bytes: &[u8]) -> JsValue {
 
     let projectiles = Array::new();
     for _ in 0..projectile_count {
-        if bytes.len() < offset + 33 { return JsValue::NULL; }
+        if bytes.len() < offset + 33 {
+            return JsValue::NULL;
+        }
         let proj = Object::new();
         set_f64(&proj, "id", read_u64(bytes, offset) as f64);
         set_f64(&proj, "x", read_f32(bytes, offset + 8) as f64);
@@ -167,14 +201,19 @@ fn decode_snapshot_js(bytes: &[u8]) -> JsValue {
     let events = Array::new();
     for _ in 0..event_count {
         let (event, size) = decode_event_js(bytes, offset);
-        if size == 0 { break; }
+        if size == 0 {
+            break;
+        }
         offset += size;
-        if !event.is_null() { events.push(&event); }
+        if !event.is_null() {
+            events.push(&event);
+        }
     }
 
     let obj = Object::new();
     set_str(&obj, "type", "snapshot");
     set_f64(&obj, "tick", tick as f64);
+    set_f64(&obj, "server_time_ms", server_time_ms as f64);
     set_jsval(&obj, "players", &players);
     set_jsval(&obj, "items", &items);
     set_jsval(&obj, "projectiles", &projectiles);
@@ -242,11 +281,15 @@ fn decode_player_record_js(bytes: &[u8], offset: usize) -> JsValue {
 }
 
 fn decode_event_js(bytes: &[u8], offset: usize) -> (JsValue, usize) {
-    if offset >= bytes.len() { return (JsValue::NULL, 0); }
+    if offset >= bytes.len() {
+        return (JsValue::NULL, 0);
+    }
     let event_type = bytes[offset];
     match event_type {
         EVENT_WEAPON_FIRED => {
-            if bytes.len() < offset + 10 { return (JsValue::NULL, 0); }
+            if bytes.len() < offset + 10 {
+                return (JsValue::NULL, 0);
+            }
             let obj = Object::new();
             set_str(&obj, "type", "weapon_fired");
             set_f64(&obj, "player_id", read_u64(bytes, offset + 1) as f64);
@@ -254,7 +297,9 @@ fn decode_event_js(bytes: &[u8], offset: usize) -> (JsValue, usize) {
             (obj.into(), 10)
         }
         EVENT_PROJECTILE_SPAWN => {
-            if bytes.len() < offset + 34 { return (JsValue::NULL, 0); }
+            if bytes.len() < offset + 34 {
+                return (JsValue::NULL, 0);
+            }
             let obj = Object::new();
             set_str(&obj, "type", "projectile_spawn");
             set_f64(&obj, "id", read_u64(bytes, offset + 1) as f64);
@@ -267,7 +312,9 @@ fn decode_event_js(bytes: &[u8], offset: usize) -> (JsValue, usize) {
             (obj.into(), 34)
         }
         EVENT_RAIL => {
-            if bytes.len() < offset + 17 { return (JsValue::NULL, 0); }
+            if bytes.len() < offset + 17 {
+                return (JsValue::NULL, 0);
+            }
             let obj = Object::new();
             set_str(&obj, "type", "rail");
             set_f64(&obj, "start_x", read_f32(bytes, offset + 1) as f64);
@@ -277,7 +324,9 @@ fn decode_event_js(bytes: &[u8], offset: usize) -> (JsValue, usize) {
             (obj.into(), 17)
         }
         EVENT_SHAFT => {
-            if bytes.len() < offset + 17 { return (JsValue::NULL, 0); }
+            if bytes.len() < offset + 17 {
+                return (JsValue::NULL, 0);
+            }
             let obj = Object::new();
             set_str(&obj, "type", "shaft");
             set_f64(&obj, "start_x", read_f32(bytes, offset + 1) as f64);
@@ -287,7 +336,9 @@ fn decode_event_js(bytes: &[u8], offset: usize) -> (JsValue, usize) {
             (obj.into(), 17)
         }
         EVENT_BULLET_IMPACT => {
-            if bytes.len() < offset + 13 { return (JsValue::NULL, 0); }
+            if bytes.len() < offset + 13 {
+                return (JsValue::NULL, 0);
+            }
             let obj = Object::new();
             set_str(&obj, "type", "bullet_impact");
             set_f64(&obj, "x", read_f32(bytes, offset + 1) as f64);
@@ -296,7 +347,9 @@ fn decode_event_js(bytes: &[u8], offset: usize) -> (JsValue, usize) {
             (obj.into(), 13)
         }
         EVENT_GAUNTLET => {
-            if bytes.len() < offset + 9 { return (JsValue::NULL, 0); }
+            if bytes.len() < offset + 9 {
+                return (JsValue::NULL, 0);
+            }
             let obj = Object::new();
             set_str(&obj, "type", "gauntlet");
             set_f64(&obj, "x", read_f32(bytes, offset + 1) as f64);
@@ -304,7 +357,9 @@ fn decode_event_js(bytes: &[u8], offset: usize) -> (JsValue, usize) {
             (obj.into(), 9)
         }
         EVENT_EXPLOSION => {
-            if bytes.len() < offset + 10 { return (JsValue::NULL, 0); }
+            if bytes.len() < offset + 10 {
+                return (JsValue::NULL, 0);
+            }
             let obj = Object::new();
             set_str(&obj, "type", "explosion");
             set_f64(&obj, "x", read_f32(bytes, offset + 1) as f64);
@@ -313,7 +368,9 @@ fn decode_event_js(bytes: &[u8], offset: usize) -> (JsValue, usize) {
             (obj.into(), 10)
         }
         EVENT_DAMAGE => {
-            if bytes.len() < offset + 20 { return (JsValue::NULL, 0); }
+            if bytes.len() < offset + 20 {
+                return (JsValue::NULL, 0);
+            }
             let obj = Object::new();
             set_str(&obj, "type", "damage");
             set_f64(&obj, "attacker_id", read_u64(bytes, offset + 1) as f64);

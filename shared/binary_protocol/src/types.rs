@@ -4,8 +4,13 @@ use crate::constants::WEAPON_COUNT;
 
 #[derive(Debug, Clone)]
 pub enum ClientMsg {
-    Hello { username: String },
-    JoinRoom { room_id: Option<String>, map: Option<String> },
+    Hello {
+        username: String,
+    },
+    JoinRoom {
+        room_id: Option<String>,
+        map: Option<String>,
+    },
     Input {
         seq: u64,
         key_up: bool,
@@ -66,7 +71,10 @@ pub struct ProjectileSnapshot {
 
 #[derive(Debug, Clone)]
 pub enum EffectEvent {
-    WeaponFired { player_id: u64, weapon_id: i32 },
+    WeaponFired {
+        player_id: u64,
+        weapon_id: i32,
+    },
     ProjectileSpawn {
         id: u64,
         kind: u8,
@@ -76,12 +84,38 @@ pub enum EffectEvent {
         velocity_y: f32,
         owner_id: u64,
     },
-    Rail { start_x: f32, start_y: f32, end_x: f32, end_y: f32 },
-    Shaft { start_x: f32, start_y: f32, end_x: f32, end_y: f32 },
-    BulletImpact { x: f32, y: f32, radius: f32 },
-    Gauntlet { x: f32, y: f32 },
-    Explosion { x: f32, y: f32, kind: u8 },
-    Damage { attacker_id: u64, target_id: u64, amount: i32, killed: bool },
+    Rail {
+        start_x: f32,
+        start_y: f32,
+        end_x: f32,
+        end_y: f32,
+    },
+    Shaft {
+        start_x: f32,
+        start_y: f32,
+        end_x: f32,
+        end_y: f32,
+    },
+    BulletImpact {
+        x: f32,
+        y: f32,
+        radius: f32,
+    },
+    Gauntlet {
+        x: f32,
+        y: f32,
+    },
+    Explosion {
+        x: f32,
+        y: f32,
+        kind: u8,
+    },
+    Damage {
+        attacker_id: u64,
+        target_id: u64,
+        amount: i32,
+        killed: bool,
+    },
 }
 
 #[derive(Debug)]
