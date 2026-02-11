@@ -92,7 +92,8 @@ export class NetworkClient {
         this.socket = null
         this.signalSocket = null
         this.peerConnection = null
-        this.dataChannel = null
+        this.controlDataChannel = null
+        this.gameDataChannel = null
         this.transport = 'none'
         this.playerId = null
         this.roomId = null
@@ -290,7 +291,7 @@ export class NetworkClient {
     sendInput(input, now = performance.now()) {
         if (!this.connected) return false
         if (this.transport === 'ws' && !this.socket) return false
-        if (this.transport === 'webrtc' && !this.dataChannel) return false
+        if (this.transport === 'webrtc' && !this.gameDataChannel) return false
         const signature = buildInputSignature(input)
         const inputChanged = signature !== this.lastSentInputSignature
 
@@ -310,20 +311,33 @@ export class NetworkClient {
         if (this.pendingInputs.length > PENDING_INPUT_MAX) {
             this.pendingInputs.splice(0, this.pendingInputs.length - PENDING_INPUT_MAX)
         }
-        this.send(encodeInput(this.inputSeq, input))
+        this.sendGame(encodeInput(this.inputSeq, input))
         return true
     }
 
     send(payload) {
-        if (this.transport === 'webrtc') {
-            if (!this.dataChannel || this.dataChannel.readyState !== 'open') return
-            this.dataChannel.send(payload)
-            return
-        }
         if (this.transport === 'ws') {
             if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return
             this.socket.send(payload)
         }
+    }
+
+    sendControl(payload) {
+        if (this.transport === 'webrtc') {
+            if (!this.controlDataChannel || this.controlDataChannel.readyState !== 'open') return
+            this.controlDataChannel.send(payload)
+            return
+        }
+        this.send(payload)
+    }
+
+    sendGame(payload) {
+        if (this.transport === 'webrtc') {
+            if (!this.gameDataChannel || this.gameDataChannel.readyState !== 'open') return
+            this.gameDataChannel.send(payload)
+            return
+        }
+        this.send(payload)
     }
 
     async connectWebSocket({ url, username, roomId, map }) {
@@ -354,8 +368,8 @@ export class NetworkClient {
                     this.lastAckedInputSeq = 0
                     this.lastSentInputSignature = ''
                     this.currentInputSendHz = INPUT_SEND_RATE_HZ
-                    this.send(encodeHello(username))
-                    this.send(encodeJoinRoom(roomId ?? '', map))
+                    this.sendControl(encodeHello(username))
+                    this.sendControl(encodeJoinRoom(roomId ?? '', map))
                     this.handlers.onOpen?.()
                     resolveOnce()
                 },
@@ -391,105 +405,107 @@ export class NetworkClient {
     }
 
     async connectWebRtc({ url, username, roomId, map }) {
-        if (typeof RTCPeerConnection === 'undefined') {
-            throw new Error('WebRTC not supported by this browser')
-        }
-
-        const signalingUrl = toRtcSignalingUrl(url)
-        this.signalSocket = new WebSocket(signalingUrl)
-        this.signalSocket.binaryType = 'arraybuffer'
-
-        await waitForWebSocketOpen(this.signalSocket)
-
-        this.peerConnection = new RTCPeerConnection({
-            iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }],
-        })
-        this.transport = 'webrtc'
-
-        this.peerConnection.addEventListener('connectionstatechange', () => {
-            const state = this.peerConnection?.connectionState
-            if (state === 'failed' || state === 'closed' || state === 'disconnected') {
-                this.handleTransportClosed()
+        try {
+            if (typeof RTCPeerConnection === 'undefined') {
+                throw new Error('WebRTC not supported by this browser')
             }
-        })
 
-        this.dataChannel = this.peerConnection.createDataChannel('game', {
-            ordered: false,
-            maxRetransmits: 0,
-        })
-        this.dataChannel.binaryType = 'arraybuffer'
+            const signalingUrl = toRtcSignalingUrl(url)
+            this.signalSocket = new WebSocket(signalingUrl)
+            this.signalSocket.binaryType = 'arraybuffer'
 
-        this.dataChannel.addEventListener('message', (event) => {
-            const data =
-                event.data instanceof ArrayBuffer ? event.data : new Uint8Array(event.data).buffer
-            const msg = decodeServerMessage(data)
-            if (msg) this.handleMessage(msg)
-        })
-        this.dataChannel.addEventListener('close', () => {
-            this.handleTransportClosed()
-        })
+            await waitForWebSocketOpen(this.signalSocket)
 
-        const answerPromise = new Promise((resolve, reject) => {
-            const onMessage = (event) => {
-                try {
-                    const msg = JSON.parse(String(event.data))
-                    if (msg?.type === 'answer' && typeof msg?.sdp === 'string') {
-                        resolve(msg.sdp)
-                        return
-                    }
-                    if (msg?.type === 'error') {
-                        reject(new Error(msg.message ?? 'RTC signaling error'))
-                    }
-                } catch (err) {
-                    reject(err)
+            this.peerConnection = new RTCPeerConnection({
+                iceServers: [
+                    { urls: ['stun:stun.l.google.com:19302'] },
+                    {
+                        urls: ['turn:turn.example.com:3478'],
+                        username: 'user',
+                        credential: 'pass',
+                    }, // TODO: replace with real TURN credentials
+                ],
+            })
+            this.transport = 'webrtc'
+
+            this.peerConnection.addEventListener('connectionstatechange', () => {
+                const state = this.peerConnection?.connectionState
+                if (state === 'failed' || state === 'closed' || state === 'disconnected') {
+                    this.handleTransportClosed()
                 }
+            })
+
+            this.controlDataChannel = this.peerConnection.createDataChannel('control')
+            this.gameDataChannel = this.peerConnection.createDataChannel('game', {
+                ordered: false,
+                maxRetransmits: 0,
+            })
+            this.controlDataChannel.binaryType = 'arraybuffer'
+            this.gameDataChannel.binaryType = 'arraybuffer'
+
+            const onChannelMessage = (event) => {
+                const data =
+                    event.data instanceof ArrayBuffer
+                        ? event.data
+                        : new Uint8Array(event.data).buffer
+                const msg = decodeServerMessage(data)
+                if (msg) this.handleMessage(msg)
             }
-            this.signalSocket.addEventListener('message', onMessage)
-        })
 
-        const openPromise = new Promise((resolve, reject) => {
-            const timeout = setTimeout(
-                () => reject(new Error('RTC datachannel open timeout')),
-                15000,
+            this.controlDataChannel.addEventListener('message', onChannelMessage)
+            this.gameDataChannel.addEventListener('message', onChannelMessage)
+            this.controlDataChannel.addEventListener('close', () => {
+                this.handleTransportClosed()
+            })
+            this.gameDataChannel.addEventListener('close', () => {
+                this.handleTransportClosed()
+            })
+
+            const channelsOpenPromise = Promise.all([
+                waitForDataChannelOpen(this.controlDataChannel),
+                waitForDataChannelOpen(this.gameDataChannel),
+            ])
+
+            const offer = await this.peerConnection.createOffer()
+            await this.peerConnection.setLocalDescription(offer)
+            await waitForIceGatheringComplete(this.peerConnection)
+
+            this.signalSocket.send(
+                JSON.stringify({
+                    type: 'offer',
+                    sdp: this.peerConnection.localDescription?.sdp ?? offer.sdp,
+                }),
             )
-            this.dataChannel.addEventListener(
-                'open',
-                () => {
-                    clearTimeout(timeout)
-                    resolve()
-                },
-                { once: true },
-            )
-        })
 
-        const offer = await this.peerConnection.createOffer()
-        await this.peerConnection.setLocalDescription(offer)
-        await waitForIceGatheringComplete(this.peerConnection)
+            const answerSdp = await waitForRtcAnswer(this.signalSocket, 10000)
+            await this.peerConnection.setRemoteDescription({
+                type: 'answer',
+                sdp: answerSdp,
+            })
 
-        this.signalSocket.send(
-            JSON.stringify({
-                type: 'offer',
-                sdp: this.peerConnection.localDescription?.sdp ?? offer.sdp,
-            }),
-        )
+            this.signalSocket.close()
+            this.signalSocket = null
 
-        const answerSdp = await answerPromise
-        await this.peerConnection.setRemoteDescription({
-            type: 'answer',
-            sdp: answerSdp,
-        })
-
-        await openPromise
-        this.connected = true
-        this.lastInputSentAt = -Infinity
-        this.lastPingSentAt = -Infinity
-        this.lastAckProgressAtMs = performance.now()
-        this.lastAckedInputSeq = 0
-        this.lastSentInputSignature = ''
-        this.currentInputSendHz = INPUT_SEND_RATE_HZ
-        this.send(encodeHello(username))
-        this.send(encodeJoinRoom(roomId ?? '', map))
-        this.handlers.onOpen?.()
+            await channelsOpenPromise
+            this.connected = true
+            this.lastInputSentAt = -Infinity
+            this.lastPingSentAt = -Infinity
+            this.lastAckProgressAtMs = performance.now()
+            this.lastAckedInputSeq = 0
+            this.lastSentInputSignature = ''
+            this.currentInputSendHz = INPUT_SEND_RATE_HZ
+            this.sendControl(encodeHello(username))
+            this.sendControl(encodeJoinRoom(roomId ?? '', map))
+            this.handlers.onOpen?.()
+        } catch (err) {
+            if (this.signalSocket) {
+                try {
+                    this.signalSocket.close()
+                } catch {}
+                this.signalSocket = null
+            }
+            throw err
+        }
     }
 
     resetConnectionState() {
@@ -518,23 +534,23 @@ export class NetworkClient {
 
     handleTransportClosed() {
         const wasConnected = this.connected
-        if (this.dataChannel) {
+        if (this.controlDataChannel) {
             try {
-                this.dataChannel.close()
+                this.controlDataChannel.close()
             } catch {}
-            this.dataChannel = null
+            this.controlDataChannel = null
+        }
+        if (this.gameDataChannel) {
+            try {
+                this.gameDataChannel.close()
+            } catch {}
+            this.gameDataChannel = null
         }
         if (this.peerConnection) {
             try {
                 this.peerConnection.close()
             } catch {}
             this.peerConnection = null
-        }
-        if (this.signalSocket) {
-            try {
-                this.signalSocket.close()
-            } catch {}
-            this.signalSocket = null
         }
         if (this.socket) {
             try {
@@ -800,7 +816,7 @@ export class NetworkClient {
         if (!this.connected) return
         if (now - this.lastPingSentAt < PING_INTERVAL_MS) return
         this.lastPingSentAt = now
-        this.send(encodePing(Math.floor(now)))
+        this.sendGame(encodePing(Math.floor(now)))
     }
 
     handlePong(msg, now = performance.now()) {
@@ -1084,5 +1100,82 @@ function waitForIceGatheringComplete(peerConnection) {
             }
         }
         peerConnection.addEventListener('icegatheringstatechange', onChange)
+    })
+}
+
+function waitForDataChannelOpen(dataChannel) {
+    if (dataChannel.readyState === 'open') {
+        return Promise.resolve()
+    }
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('RTC datachannel open timeout')), 15000)
+        dataChannel.addEventListener(
+            'open',
+            () => {
+                clearTimeout(timeout)
+                resolve()
+            },
+            { once: true },
+        )
+        dataChannel.addEventListener(
+            'close',
+            () => {
+                clearTimeout(timeout)
+                reject(new Error('RTC datachannel closed before open'))
+            },
+            { once: true },
+        )
+        dataChannel.addEventListener(
+            'error',
+            () => {
+                clearTimeout(timeout)
+                reject(new Error('RTC datachannel error before open'))
+            },
+            { once: true },
+        )
+    })
+}
+
+function waitForRtcAnswer(signalSocket, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        let settled = false
+        const cleanup = () => {
+            signalSocket.removeEventListener('message', onMessage)
+            signalSocket.removeEventListener('close', onClose)
+            signalSocket.removeEventListener('error', onError)
+            clearTimeout(timeout)
+        }
+        const finish = (fn, value) => {
+            if (settled) return
+            settled = true
+            cleanup()
+            fn(value)
+        }
+        const onMessage = (event) => {
+            try {
+                const msg = JSON.parse(String(event.data))
+                if (msg?.type === 'answer' && typeof msg?.sdp === 'string') {
+                    finish(resolve, msg.sdp)
+                    return
+                }
+                if (msg?.type === 'error') {
+                    finish(reject, new Error(msg.message ?? 'RTC signaling error'))
+                }
+            } catch (err) {
+                finish(reject, err)
+            }
+        }
+        const onClose = () =>
+            finish(reject, new Error('RTC signaling socket closed during negotiation'))
+        const onError = () =>
+            finish(reject, new Error('RTC signaling socket error during negotiation'))
+        const timeout = setTimeout(
+            () => finish(reject, new Error('RTC answer timeout after 10s')),
+            timeoutMs,
+        )
+
+        signalSocket.addEventListener('message', onMessage)
+        signalSocket.addEventListener('close', onClose)
+        signalSocket.addEventListener('error', onError)
     })
 }

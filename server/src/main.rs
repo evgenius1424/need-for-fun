@@ -24,6 +24,7 @@ use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
 use webrtc::api::APIBuilder;
 use webrtc::data_channel::data_channel_message::DataChannelMessage;
+use webrtc::ice_transport::ice_credential_type::RTCIceCredentialType;
 use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
@@ -273,10 +274,18 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
         .build();
 
     let config = RTCConfiguration {
-        ice_servers: vec![RTCIceServer {
-            urls: vec!["stun:stun.l.google.com:19302".to_string()],
-            ..Default::default()
-        }],
+        ice_servers: vec![
+            RTCIceServer {
+                urls: vec!["stun:stun.l.google.com:19302".to_string()],
+                ..Default::default()
+            },
+            RTCIceServer {
+                urls: vec!["turn:turn.example.com:3478".to_string()],
+                username: "user".to_string(),
+                credential: "pass".to_string(),
+                credential_type: RTCIceCredentialType::Password,
+            }, // TODO: replace with real TURN credentials
+        ],
         ..Default::default()
     };
 
@@ -285,8 +294,8 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
         Err(_) => return,
     };
 
-    let (outbound_tx, outbound_rx) = mpsc::channel::<Bytes>(OUTBOUND_CHANNEL_CAPACITY);
-    let outbound_rx = Arc::new(Mutex::new(Some(outbound_rx)));
+    let (game_outbound_tx, game_outbound_rx) = mpsc::channel::<Bytes>(OUTBOUND_CHANNEL_CAPACITY);
+    let game_outbound_rx = Arc::new(Mutex::new(Some(game_outbound_rx)));
 
     let player_id = PlayerId(state.next_player_id.fetch_add(1, Ordering::Relaxed));
     let session_ctx = Arc::new(Mutex::new(RtcSessionCtx {
@@ -295,29 +304,35 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
     }));
 
     let state_for_dc = Arc::clone(&state);
-    let outbound_tx_for_dc = outbound_tx.clone();
-    let outbound_rx_for_dc = Arc::clone(&outbound_rx);
+    let game_outbound_tx_for_dc = game_outbound_tx.clone();
+    let game_outbound_rx_for_dc = Arc::clone(&game_outbound_rx);
     let session_ctx_for_dc = Arc::clone(&session_ctx);
     peer_connection.on_data_channel(Box::new(move |dc| {
+        let label = dc.label().to_string();
+        if label != "control" && label != "game" {
+            return Box::pin(async {});
+        }
         let state_for_msg = Arc::clone(&state_for_dc);
-        let outbound_tx_for_msg = outbound_tx_for_dc.clone();
-        let outbound_rx_for_msg = Arc::clone(&outbound_rx_for_dc);
+        let game_outbound_tx_for_msg = game_outbound_tx_for_dc.clone();
+        let game_outbound_rx_for_msg = Arc::clone(&game_outbound_rx_for_dc);
         let session_ctx_for_msg = Arc::clone(&session_ctx_for_dc);
 
         Box::pin(async move {
-            let dc_for_open = Arc::clone(&dc);
-            dc.on_open(Box::new(move || {
-                let dc_for_open2 = Arc::clone(&dc_for_open);
-                Box::pin(async move {
-                    let _ = dc_for_open2
-                        .send(&Bytes::from(encode_welcome(player_id.0)))
-                        .await;
-                })
-            }));
+            if label == "control" {
+                let dc_for_open = Arc::clone(&dc);
+                dc.on_open(Box::new(move || {
+                    let dc_for_open2 = Arc::clone(&dc_for_open);
+                    Box::pin(async move {
+                        let _ = dc_for_open2
+                            .send(&Bytes::from(encode_welcome(player_id.0)))
+                            .await;
+                    })
+                }));
+            }
 
             dc.on_message(Box::new(move |msg: DataChannelMessage| {
                 let state_for_msg2 = Arc::clone(&state_for_msg);
-                let outbound_tx_for_msg2 = outbound_tx_for_msg.clone();
+                let game_outbound_tx_for_msg2 = game_outbound_tx_for_msg.clone();
                 let session_ctx_for_msg2 = Arc::clone(&session_ctx_for_msg);
                 Box::pin(async move {
                     if msg.is_string {
@@ -338,7 +353,7 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
                         &mut username,
                         player_id,
                         client_msg,
-                        &outbound_tx_for_msg2,
+                        &game_outbound_tx_for_msg2,
                     )
                     .await;
 
@@ -348,16 +363,18 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
                 })
             }));
 
-            let mut maybe_rx = outbound_rx_for_msg.lock().await;
-            if let Some(mut rx) = maybe_rx.take() {
-                let dc_for_send = Arc::clone(&dc);
-                tokio::spawn(async move {
-                    while let Some(payload) = rx.recv().await {
-                        if dc_for_send.send(&payload).await.is_err() {
-                            break;
+            if label == "game" {
+                let mut maybe_rx = game_outbound_rx_for_msg.lock().await;
+                if let Some(mut rx) = maybe_rx.take() {
+                    let dc_for_send = Arc::clone(&dc);
+                    tokio::spawn(async move {
+                        while let Some(payload) = rx.recv().await {
+                            if dc_for_send.send(&payload).await.is_err() {
+                                break;
+                            }
                         }
-                    }
-                });
+                    });
+                }
             }
         })
     }));
