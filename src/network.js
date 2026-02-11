@@ -90,6 +90,10 @@ const DEFAULT_TUNING_PROFILE = 'balanced'
 export class NetworkClient {
     constructor() {
         this.socket = null
+        this.signalSocket = null
+        this.peerConnection = null
+        this.dataChannel = null
+        this.transport = 'none'
         this.playerId = null
         this.roomId = null
         this.inputSeq = 0
@@ -267,100 +271,26 @@ export class NetworkClient {
         if (this.connected) return Promise.resolve()
         if (!username) return Promise.reject(new Error('Username required'))
 
-        return initBinaryProtocol().then(
-            () =>
-                new Promise((resolve, reject) => {
-                    let settled = false
-                    const resolveOnce = () => {
-                        if (settled) return
-                        settled = true
-                        resolve()
-                    }
-                    const rejectOnce = (err) => {
-                        if (settled) return
-                        settled = true
-                        reject(err)
-                    }
-
-                    this.socket = new WebSocket(url)
-                    this.socket.binaryType = 'arraybuffer'
-
-                    this.socket.addEventListener(
-                        'open',
-                        () => {
-                            this.connected = true
-                            this.lastInputSentAt = -Infinity
-                            this.lastPingSentAt = -Infinity
-                            this.lastAckProgressAtMs = performance.now()
-                            this.lastAckedInputSeq = 0
-                            this.lastSentInputSignature = ''
-                            this.currentInputSendHz = INPUT_SEND_RATE_HZ
-                            this.send(encodeHello(username))
-                            this.send(encodeJoinRoom(roomId ?? '', map))
-                            this.handlers.onOpen?.()
-                            resolveOnce()
-                        },
-                        { once: true },
-                    )
-
-                    this.socket.addEventListener('message', (event) => {
-                        if (event.data instanceof ArrayBuffer) {
-                            const msg = decodeServerMessage(event.data)
-                            if (msg) this.handleMessage(msg)
-                            return
-                        }
-                        console.warn('Unexpected text message', event.data)
-                    })
-
-                    this.socket.addEventListener('close', () => {
-                        const wasConnected = this.connected
-                        this.connected = false
-                        this.playerId = null
-                        this.roomId = null
-                        this.lastInputSentAt = -Infinity
-                        this.lastPingSentAt = -Infinity
-                        this.snapshotBuffer.length = 0
-                        this.pendingInputs.length = 0
-                        this.lastReconciledServerTick = -1
-                        this.lastCorrectionErrorUnits = 0
-                        this.lastCorrectionBlend = 1
-                        this.lastExtrapolationMs = 0
-                        this.lastRenderServerTimeMs = 0
-                        this.lastSnapshotTick = 0
-                        this.estimatedSnapshotIntervalMs = SNAPSHOT_INTERVAL_MS
-                        this.interpUnderrunBoostMs = 0
-                        this.staleSnapshotCount = 0
-                        this.lastAckedInputSeq = 0
-                        this.lastAckProgressAtMs = 0
-                        this.lastSentInputSignature = ''
-                        this.currentInputSendHz = INPUT_SEND_RATE_HZ
-                        this.remotePlayers.clear()
-                        this.handlers.onClose?.()
-                        if (!wasConnected) {
-                            rejectOnce(new Error('WebSocket closed before connection'))
-                        }
-                    })
-
-                    this.socket.addEventListener(
-                        'error',
-                        (event) => {
-                            this.handlers.onError?.(event)
-                            rejectOnce(new Error('WebSocket error'))
-                        },
-                        { once: true },
-                    )
-                }),
-        )
+        return initBinaryProtocol().then(async () => {
+            this.resetConnectionState()
+            try {
+                await this.connectWebRtc({ url, username, roomId, map })
+            } catch (err) {
+                console.warn('WebRTC connect failed, falling back to WebSocket', err)
+                this.handleTransportClosed()
+                await this.connectWebSocket({ url, username, roomId, map })
+            }
+        })
     }
 
     disconnect() {
-        if (this.socket) {
-            this.socket.close()
-        }
+        this.handleTransportClosed()
     }
 
     sendInput(input, now = performance.now()) {
-        if (!this.connected || !this.socket) return false
+        if (!this.connected) return false
+        if (this.transport === 'ws' && !this.socket) return false
+        if (this.transport === 'webrtc' && !this.dataChannel) return false
         const signature = buildInputSignature(input)
         const inputChanged = signature !== this.lastSentInputSignature
 
@@ -385,8 +315,238 @@ export class NetworkClient {
     }
 
     send(payload) {
-        if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return
-        this.socket.send(payload)
+        if (this.transport === 'webrtc') {
+            if (!this.dataChannel || this.dataChannel.readyState !== 'open') return
+            this.dataChannel.send(payload)
+            return
+        }
+        if (this.transport === 'ws') {
+            if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return
+            this.socket.send(payload)
+        }
+    }
+
+    async connectWebSocket({ url, username, roomId, map }) {
+        await new Promise((resolve, reject) => {
+            let settled = false
+            const resolveOnce = () => {
+                if (settled) return
+                settled = true
+                resolve()
+            }
+            const rejectOnce = (err) => {
+                if (settled) return
+                settled = true
+                reject(err)
+            }
+
+            this.socket = new WebSocket(url)
+            this.socket.binaryType = 'arraybuffer'
+            this.transport = 'ws'
+
+            this.socket.addEventListener(
+                'open',
+                () => {
+                    this.connected = true
+                    this.lastInputSentAt = -Infinity
+                    this.lastPingSentAt = -Infinity
+                    this.lastAckProgressAtMs = performance.now()
+                    this.lastAckedInputSeq = 0
+                    this.lastSentInputSignature = ''
+                    this.currentInputSendHz = INPUT_SEND_RATE_HZ
+                    this.send(encodeHello(username))
+                    this.send(encodeJoinRoom(roomId ?? '', map))
+                    this.handlers.onOpen?.()
+                    resolveOnce()
+                },
+                { once: true },
+            )
+
+            this.socket.addEventListener('message', (event) => {
+                if (event.data instanceof ArrayBuffer) {
+                    const msg = decodeServerMessage(event.data)
+                    if (msg) this.handleMessage(msg)
+                    return
+                }
+                console.warn('Unexpected text message', event.data)
+            })
+
+            this.socket.addEventListener('close', () => {
+                const wasConnected = this.connected
+                this.handleTransportClosed()
+                if (!wasConnected) {
+                    rejectOnce(new Error('WebSocket closed before connection'))
+                }
+            })
+
+            this.socket.addEventListener(
+                'error',
+                (event) => {
+                    this.handlers.onError?.(event)
+                    rejectOnce(new Error('WebSocket error'))
+                },
+                { once: true },
+            )
+        })
+    }
+
+    async connectWebRtc({ url, username, roomId, map }) {
+        if (typeof RTCPeerConnection === 'undefined') {
+            throw new Error('WebRTC not supported by this browser')
+        }
+
+        const signalingUrl = toRtcSignalingUrl(url)
+        this.signalSocket = new WebSocket(signalingUrl)
+        this.signalSocket.binaryType = 'arraybuffer'
+
+        await waitForWebSocketOpen(this.signalSocket)
+
+        this.peerConnection = new RTCPeerConnection({
+            iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }],
+        })
+        this.transport = 'webrtc'
+
+        this.peerConnection.addEventListener('connectionstatechange', () => {
+            const state = this.peerConnection?.connectionState
+            if (state === 'failed' || state === 'closed' || state === 'disconnected') {
+                this.handleTransportClosed()
+            }
+        })
+
+        this.dataChannel = this.peerConnection.createDataChannel('game', {
+            ordered: false,
+            maxRetransmits: 0,
+        })
+        this.dataChannel.binaryType = 'arraybuffer'
+
+        this.dataChannel.addEventListener('message', (event) => {
+            const data =
+                event.data instanceof ArrayBuffer ? event.data : new Uint8Array(event.data).buffer
+            const msg = decodeServerMessage(data)
+            if (msg) this.handleMessage(msg)
+        })
+        this.dataChannel.addEventListener('close', () => {
+            this.handleTransportClosed()
+        })
+
+        const answerPromise = new Promise((resolve, reject) => {
+            const onMessage = (event) => {
+                try {
+                    const msg = JSON.parse(String(event.data))
+                    if (msg?.type === 'answer' && typeof msg?.sdp === 'string') {
+                        resolve(msg.sdp)
+                        return
+                    }
+                    if (msg?.type === 'error') {
+                        reject(new Error(msg.message ?? 'RTC signaling error'))
+                    }
+                } catch (err) {
+                    reject(err)
+                }
+            }
+            this.signalSocket.addEventListener('message', onMessage)
+        })
+
+        const openPromise = new Promise((resolve, reject) => {
+            const timeout = setTimeout(
+                () => reject(new Error('RTC datachannel open timeout')),
+                15000,
+            )
+            this.dataChannel.addEventListener(
+                'open',
+                () => {
+                    clearTimeout(timeout)
+                    resolve()
+                },
+                { once: true },
+            )
+        })
+
+        const offer = await this.peerConnection.createOffer()
+        await this.peerConnection.setLocalDescription(offer)
+        await waitForIceGatheringComplete(this.peerConnection)
+
+        this.signalSocket.send(
+            JSON.stringify({
+                type: 'offer',
+                sdp: this.peerConnection.localDescription?.sdp ?? offer.sdp,
+            }),
+        )
+
+        const answerSdp = await answerPromise
+        await this.peerConnection.setRemoteDescription({
+            type: 'answer',
+            sdp: answerSdp,
+        })
+
+        await openPromise
+        this.connected = true
+        this.lastInputSentAt = -Infinity
+        this.lastPingSentAt = -Infinity
+        this.lastAckProgressAtMs = performance.now()
+        this.lastAckedInputSeq = 0
+        this.lastSentInputSignature = ''
+        this.currentInputSendHz = INPUT_SEND_RATE_HZ
+        this.send(encodeHello(username))
+        this.send(encodeJoinRoom(roomId ?? '', map))
+        this.handlers.onOpen?.()
+    }
+
+    resetConnectionState() {
+        this.connected = false
+        this.playerId = null
+        this.roomId = null
+        this.lastInputSentAt = -Infinity
+        this.lastPingSentAt = -Infinity
+        this.snapshotBuffer.length = 0
+        this.pendingInputs.length = 0
+        this.lastReconciledServerTick = -1
+        this.lastCorrectionErrorUnits = 0
+        this.lastCorrectionBlend = 1
+        this.lastExtrapolationMs = 0
+        this.lastRenderServerTimeMs = 0
+        this.lastSnapshotTick = 0
+        this.estimatedSnapshotIntervalMs = SNAPSHOT_INTERVAL_MS
+        this.interpUnderrunBoostMs = 0
+        this.staleSnapshotCount = 0
+        this.lastAckedInputSeq = 0
+        this.lastAckProgressAtMs = 0
+        this.lastSentInputSignature = ''
+        this.currentInputSendHz = INPUT_SEND_RATE_HZ
+        this.remotePlayers.clear()
+    }
+
+    handleTransportClosed() {
+        const wasConnected = this.connected
+        if (this.dataChannel) {
+            try {
+                this.dataChannel.close()
+            } catch {}
+            this.dataChannel = null
+        }
+        if (this.peerConnection) {
+            try {
+                this.peerConnection.close()
+            } catch {}
+            this.peerConnection = null
+        }
+        if (this.signalSocket) {
+            try {
+                this.signalSocket.close()
+            } catch {}
+            this.signalSocket = null
+        }
+        if (this.socket) {
+            try {
+                this.socket.close()
+            } catch {}
+            this.socket = null
+        }
+        this.transport = 'none'
+        this.resetConnectionState()
+        if (wasConnected) {
+            this.handlers.onClose?.()
+        }
     }
 
     handleMessage(msg) {
@@ -637,7 +797,7 @@ export class NetworkClient {
     }
 
     maybeSendPing(now = performance.now()) {
-        if (!this.connected || !this.socket) return
+        if (!this.connected) return
         if (now - this.lastPingSentAt < PING_INTERVAL_MS) return
         this.lastPingSentAt = now
         this.send(encodePing(Math.floor(now)))
@@ -883,4 +1043,46 @@ function buildInputSignature(input) {
 
 function quantize(value, scale) {
     return Math.round(value * scale) / scale
+}
+
+function toRtcSignalingUrl(baseUrl) {
+    try {
+        const url = new URL(baseUrl, window.location.href)
+        url.pathname = '/rtc'
+        url.search = ''
+        url.hash = ''
+        return url.toString()
+    } catch {
+        if (baseUrl.endsWith('/ws')) {
+            return `${baseUrl.slice(0, -3)}/rtc`
+        }
+        return `${baseUrl}/rtc`
+    }
+}
+
+function waitForWebSocketOpen(socket) {
+    if (socket.readyState === WebSocket.OPEN) {
+        return Promise.resolve()
+    }
+    return new Promise((resolve, reject) => {
+        const onOpen = () => resolve()
+        const onError = () => reject(new Error('RTC signaling socket error'))
+        socket.addEventListener('open', onOpen, { once: true })
+        socket.addEventListener('error', onError, { once: true })
+    })
+}
+
+function waitForIceGatheringComplete(peerConnection) {
+    if (peerConnection.iceGatheringState === 'complete') {
+        return Promise.resolve()
+    }
+    return new Promise((resolve) => {
+        const onChange = () => {
+            if (peerConnection.iceGatheringState === 'complete') {
+                peerConnection.removeEventListener('icegatheringstatechange', onChange)
+                resolve()
+            }
+        }
+        peerConnection.addEventListener('icegatheringstatechange', onChange)
+    })
 }

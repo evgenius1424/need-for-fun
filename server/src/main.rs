@@ -17,8 +17,16 @@ use axum::routing::get;
 use axum::Router;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
-use tokio::sync::{mpsc, RwLock};
+use serde::{Deserialize, Serialize};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::{error, info, warn};
+use webrtc::api::interceptor_registry::register_default_interceptors;
+use webrtc::api::media_engine::MediaEngine;
+use webrtc::api::APIBuilder;
+use webrtc::data_channel::data_channel_message::DataChannelMessage;
+use webrtc::ice_transport::ice_server::RTCIceServer;
+use webrtc::peer_connection::configuration::RTCConfiguration;
+use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 mod binary;
 mod constants;
@@ -49,6 +57,29 @@ enum ControlOut {
     Close,
 }
 
+#[derive(Debug, Deserialize)]
+struct RtcSignalIn {
+    #[serde(rename = "type")]
+    msg_type: String,
+    sdp: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct RtcSignalOut {
+    #[serde(rename = "type")]
+    msg_type: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sdp: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+}
+
+#[derive(Default)]
+struct RtcSessionCtx {
+    current_room: Option<Arc<RoomHandle>>,
+    username: String,
+}
+
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt::init();
@@ -66,6 +97,7 @@ async fn main() -> std::io::Result<()> {
 
     let app = Router::new()
         .route("/ws", get(ws_handler))
+        .route("/rtc", get(rtc_ws_handler))
         .with_state(state);
 
     let port = std::env::var("PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());
@@ -78,6 +110,13 @@ async fn main() -> std::io::Result<()> {
 
 async fn ws_handler(State(state): State<Arc<AppState>>, ws: WebSocketUpgrade) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(state, socket))
+}
+
+async fn rtc_ws_handler(
+    State(state): State<Arc<AppState>>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_rtc_socket(state, socket))
 }
 
 async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
@@ -177,6 +216,196 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
     if let Err(err) = send_task.await {
         error!(player_id = player_id.0, "send task join error: {err}");
     }
+}
+
+async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
+    let (mut ws_sender, mut ws_receiver) = socket.split();
+
+    let Some(Ok(Message::Text(offer_text))) = ws_receiver.next().await else {
+        return;
+    };
+
+    let signal: RtcSignalIn = match serde_json::from_str(&offer_text) {
+        Ok(v) => v,
+        Err(err) => {
+            let payload = serde_json::to_string(&RtcSignalOut {
+                msg_type: "error",
+                sdp: None,
+                message: Some(format!("invalid rtc signal: {err}")),
+            })
+            .unwrap_or_else(|_| {
+                "{\"type\":\"error\",\"message\":\"invalid rtc signal\"}".to_string()
+            });
+            let _ = ws_sender.send(Message::Text(payload)).await;
+            return;
+        }
+    };
+
+    if signal.msg_type != "offer" || signal.sdp.is_none() {
+        let _ = ws_sender
+            .send(Message::Text(
+                serde_json::to_string(&RtcSignalOut {
+                    msg_type: "error",
+                    sdp: None,
+                    message: Some("expected offer with sdp".to_string()),
+                })
+                .unwrap_or_else(|_| {
+                    "{\"type\":\"error\",\"message\":\"expected offer\"}".to_string()
+                }),
+            ))
+            .await;
+        return;
+    }
+
+    let mut media_engine = MediaEngine::default();
+    if media_engine.register_default_codecs().is_err() {
+        return;
+    }
+    let mut registry = webrtc::interceptor::registry::Registry::new();
+    registry = match register_default_interceptors(registry, &mut media_engine) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let api = APIBuilder::new()
+        .with_media_engine(media_engine)
+        .with_interceptor_registry(registry)
+        .build();
+
+    let config = RTCConfiguration {
+        ice_servers: vec![RTCIceServer {
+            urls: vec!["stun:stun.l.google.com:19302".to_string()],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let peer_connection = match api.new_peer_connection(config).await {
+        Ok(pc) => Arc::new(pc),
+        Err(_) => return,
+    };
+
+    let (outbound_tx, outbound_rx) = mpsc::channel::<Bytes>(OUTBOUND_CHANNEL_CAPACITY);
+    let outbound_rx = Arc::new(Mutex::new(Some(outbound_rx)));
+
+    let player_id = PlayerId(state.next_player_id.fetch_add(1, Ordering::Relaxed));
+    let session_ctx = Arc::new(Mutex::new(RtcSessionCtx {
+        current_room: None,
+        username: format!("player{}", player_id.0),
+    }));
+
+    let state_for_dc = Arc::clone(&state);
+    let outbound_tx_for_dc = outbound_tx.clone();
+    let outbound_rx_for_dc = Arc::clone(&outbound_rx);
+    let session_ctx_for_dc = Arc::clone(&session_ctx);
+    peer_connection.on_data_channel(Box::new(move |dc| {
+        let state_for_msg = Arc::clone(&state_for_dc);
+        let outbound_tx_for_msg = outbound_tx_for_dc.clone();
+        let outbound_rx_for_msg = Arc::clone(&outbound_rx_for_dc);
+        let session_ctx_for_msg = Arc::clone(&session_ctx_for_dc);
+
+        Box::pin(async move {
+            let dc_for_open = Arc::clone(&dc);
+            dc.on_open(Box::new(move || {
+                let dc_for_open2 = Arc::clone(&dc_for_open);
+                Box::pin(async move {
+                    let _ = dc_for_open2
+                        .send(&Bytes::from(encode_welcome(player_id.0)))
+                        .await;
+                })
+            }));
+
+            dc.on_message(Box::new(move |msg: DataChannelMessage| {
+                let state_for_msg2 = Arc::clone(&state_for_msg);
+                let outbound_tx_for_msg2 = outbound_tx_for_msg.clone();
+                let session_ctx_for_msg2 = Arc::clone(&session_ctx_for_msg);
+                Box::pin(async move {
+                    if msg.is_string {
+                        return;
+                    }
+                    let Ok(client_msg) = decode_client_message(&msg.data) else {
+                        return;
+                    };
+
+                    let mut guard = session_ctx_for_msg2.lock().await;
+                    let mut current_room = guard.current_room.take();
+                    let mut username = std::mem::take(&mut guard.username);
+                    drop(guard);
+
+                    let _ = handle_client_msg(
+                        &state_for_msg2,
+                        &mut current_room,
+                        &mut username,
+                        player_id,
+                        client_msg,
+                        &outbound_tx_for_msg2,
+                    )
+                    .await;
+
+                    let mut guard = session_ctx_for_msg2.lock().await;
+                    guard.current_room = current_room;
+                    guard.username = username;
+                })
+            }));
+
+            let mut maybe_rx = outbound_rx_for_msg.lock().await;
+            if let Some(mut rx) = maybe_rx.take() {
+                let dc_for_send = Arc::clone(&dc);
+                tokio::spawn(async move {
+                    while let Some(payload) = rx.recv().await {
+                        if dc_for_send.send(&payload).await.is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+        })
+    }));
+
+    let offer = match RTCSessionDescription::offer(signal.sdp.unwrap_or_default()) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if peer_connection.set_remote_description(offer).await.is_err() {
+        return;
+    }
+    let answer = match peer_connection.create_answer(None).await {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if peer_connection.set_local_description(answer).await.is_err() {
+        return;
+    }
+
+    let mut gather_complete = peer_connection.gathering_complete_promise().await;
+    let _ = gather_complete.recv().await;
+
+    let Some(local_desc) = peer_connection.local_description().await else {
+        return;
+    };
+
+    let payload = serde_json::to_string(&RtcSignalOut {
+        msg_type: "answer",
+        sdp: Some(local_desc.sdp),
+        message: None,
+    })
+    .unwrap_or_else(|_| "{\"type\":\"error\",\"message\":\"failed to build answer\"}".to_string());
+
+    if ws_sender.send(Message::Text(payload)).await.is_err() {
+        return;
+    }
+
+    while let Some(msg) = ws_receiver.next().await {
+        match msg {
+            Ok(Message::Close(_)) | Err(_) => break,
+            _ => {}
+        }
+    }
+
+    if let Some(room) = session_ctx.lock().await.current_room.take() {
+        room.leave(player_id).await;
+    }
+    let _ = peer_connection.close().await;
 }
 
 async fn handle_client_msg(
