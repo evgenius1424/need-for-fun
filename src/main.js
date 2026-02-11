@@ -299,6 +299,14 @@ function setupMultiplayerUI() {
     const disconnectBtn = document.getElementById('net-disconnect')
     const statusEl = document.getElementById('net-status')
 
+    // Set default server URL based on page protocol
+    if (serverInput && !serverInput.value) {
+        const isSecure = window.location.protocol === 'https:'
+        serverInput.value = isSecure
+            ? 'wss://need-for-fun.duckdns.org/ws'
+            : 'ws://localhost:3001/ws'
+    }
+
     const setStatus = (text, ok = false) => {
         if (!statusEl) return
         statusEl.textContent = text
