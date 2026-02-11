@@ -85,6 +85,7 @@ const TUNING_PROFILES = Object.freeze({
         inputResendStallMs: 130,
     },
 })
+const DEFAULT_TUNING_PROFILE = 'balanced'
 
 export class NetworkClient {
     constructor() {
@@ -117,7 +118,8 @@ export class NetworkClient {
         this.currentInputSendHz = INPUT_SEND_RATE_HZ
         this.interpDelayMs = MIN_INTERP_DELAY_MS
         this.tuning = { ...DEFAULT_TUNING }
-        this.tuningProfile = 'balanced'
+        this.tuningProfile = DEFAULT_TUNING_PROFILE
+        this.applyTuningProfile(DEFAULT_TUNING_PROFILE)
         this.inputSendIntervalMs = INPUT_SEND_INTERVAL_MS
         this.lastInputSentAt = -Infinity
         this.predictor = null
