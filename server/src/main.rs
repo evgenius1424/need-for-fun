@@ -27,6 +27,7 @@ use webrtc::data_channel::data_channel_message::DataChannelMessage;
 use webrtc::ice_transport::ice_credential_type::RTCIceCredentialType;
 use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::peer_connection::configuration::RTCConfiguration;
+use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 mod binary;
@@ -289,6 +290,20 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
         Ok(pc) => Arc::new(pc),
         Err(_) => return,
     };
+    let (pc_closed_tx, mut pc_closed_rx) = mpsc::channel::<()>(1);
+    peer_connection.on_peer_connection_state_change(Box::new(move |state| {
+        let pc_closed_tx2 = pc_closed_tx.clone();
+        Box::pin(async move {
+            if matches!(
+                state,
+                RTCPeerConnectionState::Disconnected
+                    | RTCPeerConnectionState::Failed
+                    | RTCPeerConnectionState::Closed
+            ) {
+                let _ = pc_closed_tx2.try_send(());
+            }
+        })
+    }));
 
     let (game_outbound_tx, game_outbound_rx) = mpsc::channel::<Bytes>(OUTBOUND_CHANNEL_CAPACITY);
     let game_outbound_rx = Arc::new(Mutex::new(Some(game_outbound_rx)));
@@ -411,12 +426,9 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
         return;
     }
 
-    while let Some(msg) = ws_receiver.next().await {
-        match msg {
-            Ok(Message::Close(_)) | Err(_) => break,
-            _ => {}
-        }
-    }
+    drop(ws_sender);
+    drop(ws_receiver);
+    let _ = pc_closed_rx.recv().await;
 
     let _ = rtc_cmd_tx.try_send(RtcCmd::Shutdown);
     if let Err(err) = session_task.await {
