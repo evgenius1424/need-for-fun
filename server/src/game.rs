@@ -272,6 +272,7 @@ pub fn apply_hit_actions(
 pub fn update_projectiles(
     map: &GameMap,
     projectiles: &mut Vec<Projectile>,
+    events: &mut EventVec,
     explosions: &mut Vec<Explosion>,
 ) {
     let bounds = physics_core::calculate_bounds(map.cols, map.rows);
@@ -281,6 +282,12 @@ pub fn update_projectiles(
             continue;
         }
         if let Some(explosion) = physics_core::step_projectile(proj, map, bounds) {
+            events.push(EffectEvent::ProjectileRemove {
+                id: proj.id,
+                x: explosion.x,
+                y: explosion.y,
+                kind: explosion.kind.as_u8(),
+            });
             explosions.push(explosion);
         }
     }
@@ -335,6 +342,12 @@ pub fn apply_projectile_hits(
                 );
             }
             explode(proj, explosions);
+            events.push(EffectEvent::ProjectileRemove {
+                id: proj.id,
+                x: proj.x,
+                y: proj.y,
+                kind: proj.kind.as_u8(),
+            });
         }
     }
 

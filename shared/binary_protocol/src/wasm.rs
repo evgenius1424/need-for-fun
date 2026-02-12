@@ -379,6 +379,18 @@ fn decode_event_js(bytes: &[u8], offset: usize) -> (JsValue, usize) {
             set_bool(&obj, "killed", (bytes[offset + 19] & 0x01) != 0);
             (obj.into(), 20)
         }
+        EVENT_PROJECTILE_REMOVE => {
+            if bytes.len() < offset + 18 {
+                return (JsValue::NULL, 0);
+            }
+            let obj = Object::new();
+            set_str(&obj, "type", "projectile_remove");
+            set_f64(&obj, "id", read_u64(bytes, offset + 1) as f64);
+            set_f64(&obj, "x", read_f32(bytes, offset + 9) as f64);
+            set_f64(&obj, "y", read_f32(bytes, offset + 13) as f64);
+            set_str(&obj, "kind", kind_u8_to_str(bytes[offset + 17]));
+            (obj.into(), 18)
+        }
         _ => (JsValue::NULL, 1),
     }
 }

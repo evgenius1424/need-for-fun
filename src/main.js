@@ -154,6 +154,7 @@ function gameLoop(timestamp, player) {
 
         // Local prediction for movement only; server snapshots will correct.
         Physics.updateAllPlayers([player], timestamp)
+        Projectiles.update()
 
         network.updateInterpolation()
         updateNetDebugOverlay(timestamp)
@@ -309,7 +310,6 @@ function initNetwork() {
                 lastAppliedWorldSnapshotTick = tick
             }
             if (snapshot?.items) Map.setItemStates(snapshot.items)
-            if (snapshot?.projectiles) Projectiles.replaceAll(snapshot.projectiles)
             if (snapshot?.events) applySnapshotEvents(snapshot.events)
         },
         onPlayerLeft: (playerId) => {
@@ -604,6 +604,9 @@ function applySnapshotEvents(events) {
                 break
             case 'gauntlet':
                 Render.addGauntletSpark(event.x, event.y)
+                break
+            case 'projectile_remove':
+                Projectiles.removeById(event.id, event.x, event.y, event.kind)
                 break
             case 'explosion':
                 Render.addExplosion(event.x, event.y, event.kind)

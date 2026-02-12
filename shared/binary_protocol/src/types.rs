@@ -116,6 +116,12 @@ pub enum EffectEvent {
         amount: i32,
         killed: bool,
     },
+    ProjectileRemove {
+        id: u64,
+        x: f32,
+        y: f32,
+        kind: u8,
+    },
 }
 
 #[derive(Debug)]

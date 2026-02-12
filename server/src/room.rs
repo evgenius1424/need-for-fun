@@ -475,7 +475,12 @@ impl RoomTask {
             &mut self.scratch_events,
         );
 
-        update_projectiles(map, &mut self.projectiles, &mut self.scratch_explosions);
+        update_projectiles(
+            map,
+            &mut self.projectiles,
+            &mut self.scratch_events,
+            &mut self.scratch_explosions,
+        );
         apply_projectile_hits(
             &mut self.projectiles,
             self.player_store.states_mut(),
@@ -513,7 +518,7 @@ impl RoomTask {
             server_time_ms,
             &self.scratch_player_snapshots,
             &self.scratch_item_snapshots,
-            &self.scratch_projectile_snapshots,
+            &[],
             &self.pending_snapshot_events,
         );
         self.pending_snapshot_events.clear();

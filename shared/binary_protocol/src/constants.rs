@@ -19,6 +19,7 @@ pub const EVENT_BULLET_IMPACT: u8 = 0x05;
 pub const EVENT_GAUNTLET: u8 = 0x06;
 pub const EVENT_EXPLOSION: u8 = 0x07;
 pub const EVENT_DAMAGE: u8 = 0x08;
+pub const EVENT_PROJECTILE_REMOVE: u8 = 0x09;
 
 // Protocol limits
 pub const MAX_USERNAME_LEN: usize = 32;

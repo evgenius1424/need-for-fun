@@ -342,6 +342,13 @@ pub fn write_event<W: BinaryWriter>(out: &mut W, event: &EffectEvent) {
             );
             out.put_u8(if *killed { 0x01 } else { 0x00 });
         }
+        EffectEvent::ProjectileRemove { id, x, y, kind } => {
+            out.put_u8(EVENT_PROJECTILE_REMOVE);
+            write_u64(out, *id);
+            write_f32(out, *x);
+            write_f32(out, *y);
+            out.put_u8(*kind);
+        }
     }
 }
 

@@ -192,6 +192,25 @@ export const Projectiles = {
         state.nextId = Math.max(state.nextId, id + 1)
     },
 
+    removeById(id, x, y, kind) {
+        const numId = normalizeHostId(id)
+        if (numId == null) return
+        for (let i = 0; i < state.projectiles.length; i++) {
+            if (state.projectiles[i].id !== numId) continue
+            const proj = state.projectiles[i]
+            proj.x = x
+            proj.y = y
+            proj.active = false
+            proj.wasm?.free()
+            state.projectiles.splice(i, 1)
+            EXPLODE_SOUND[proj.type]?.()
+            for (const cb of state.explosionCallbacks) {
+                cb(proj.x, proj.y, proj.type, proj)
+            }
+            return
+        }
+    },
+
     clear() {
         for (const proj of state.projectiles) {
             proj.wasm?.free()
