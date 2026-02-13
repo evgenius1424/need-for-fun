@@ -20,3 +20,8 @@ pub const OUTBOUND_CHANNEL_CAPACITY: usize = 64;
 pub const ROOM_COMMAND_CAPACITY: usize = 1024;
 
 pub const SNAPSHOT_BUFFER_RING: usize = 8;
+
+pub const EXPLOSION_MID_BIAS: f32 = 40.0;
+pub const EXPLOSION_MID_SCALE: f32 = 100.0;
+pub const EXPLOSION_FAR_SCALE: f32 = 60.0;
+pub const EXPLOSION_FAR_BIAS: f32 = 20.0;

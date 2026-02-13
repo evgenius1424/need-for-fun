@@ -11,7 +11,7 @@ use tracing::{debug, warn};
 
 use crate::binary::{
     encode_player_joined, encode_player_left, encode_room_state, player_snapshot_from_state,
-    ItemSnapshot, ProjectileSnapshot, SnapshotEncoder,
+    ItemSnapshot, ProjectileSnapshot, RoomStatePlayer, SnapshotEncoder,
 };
 use crate::binary::{EffectEvent, PlayerSnapshot};
 use crate::constants::{
@@ -196,7 +196,7 @@ struct RoomTask {
 impl RoomTask {
     fn new(
         room_id: RoomId,
-        map: GameMap,
+        mut map: GameMap,
         rx: mpsc::Receiver<RoomCmd>,
         server_started_at: Instant,
     ) -> Self {
@@ -206,7 +206,7 @@ impl RoomTask {
 
         Self {
             room_id,
-            items: map.items.clone(),
+            items: std::mem::take(&mut map.items),
             map: Arc::new(map),
             server_started_at,
             rx,
@@ -338,11 +338,21 @@ impl RoomTask {
             true
         };
 
+        let players: Vec<RoomStatePlayer<'_>> = self
+            .players
+            .iter()
+            .zip(self.player_states.iter())
+            .map(|(player, state)| RoomStatePlayer {
+                username: &player.username,
+                last_input_seq: player.last_input_seq,
+                state,
+            })
+            .collect();
+
         let room_state = Bytes::from(encode_room_state(
             self.room_id.as_str(),
             self.map.name.as_str(),
-            &self.players,
-            &self.player_states,
+            &players,
         ));
 
         JoinResult {
