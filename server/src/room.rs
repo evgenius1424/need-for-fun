@@ -178,9 +178,7 @@ struct RoomTask {
     items: Vec<MapItem>,
     projectiles: Vec<Projectile>,
     next_projectile_id: IdGen,
-    players: Vec<PlayerConn>,
-    player_states: Vec<PlayerState>,
-    player_index: HashMap<PlayerId, usize>,
+    player_store: PlayerStore,
     snapshot_encoder: SnapshotEncoder,
     rng: ChaCha8Rng,
     scratch_player_snapshots: Vec<PlayerSnapshot>,
@@ -191,6 +189,86 @@ struct RoomTask {
     scratch_hit_actions: Vec<HitAction>,
     scratch_explosions: Vec<Explosion>,
     scratch_pending_hits: Vec<(u64, u64, f32)>,
+}
+
+struct PlayerStore {
+    players: Vec<PlayerConn>,
+    player_states: Vec<PlayerState>,
+    player_index: HashMap<PlayerId, usize>,
+}
+
+impl PlayerStore {
+    fn new() -> Self {
+        Self {
+            players: Vec::new(),
+            player_states: Vec::new(),
+            player_index: HashMap::new(),
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.players.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.players.is_empty()
+    }
+
+    fn get_index(&self, player_id: PlayerId) -> Option<usize> {
+        self.player_index.get(&player_id).copied()
+    }
+
+    fn player_mut(&mut self, idx: usize) -> &mut PlayerConn {
+        &mut self.players[idx]
+    }
+
+    fn pair_mut(&mut self, idx: usize) -> (&mut PlayerConn, &mut PlayerState) {
+        (&mut self.players[idx], &mut self.player_states[idx])
+    }
+
+    fn states_mut(&mut self) -> &mut [PlayerState] {
+        &mut self.player_states
+    }
+
+    fn states(&self) -> &[PlayerState] {
+        &self.player_states
+    }
+
+    fn players(&self) -> &[PlayerConn] {
+        &self.players
+    }
+
+    fn insert(&mut self, player: PlayerConn, state: PlayerState) {
+        let idx = self.players.len();
+        self.player_index.insert(player.id, idx);
+        self.players.push(player);
+        self.player_states.push(state);
+    }
+
+    fn remove(&mut self, player_id: PlayerId) -> bool {
+        let Some(idx) = self.player_index.remove(&player_id) else {
+            return false;
+        };
+
+        let last_idx = self.players.len() - 1;
+        self.players.swap_remove(idx);
+        self.player_states.swap_remove(idx);
+
+        if idx != last_idx {
+            let moved_id = self.players[idx].id;
+            self.player_index.insert(moved_id, idx);
+        }
+
+        true
+    }
+
+    fn validate(&self) {
+        debug_assert_eq!(self.players.len(), self.player_states.len());
+        debug_assert_eq!(self.players.len(), self.player_index.len());
+        for (idx, player) in self.players.iter().enumerate() {
+            debug_assert_eq!(self.player_index.get(&player.id), Some(&idx));
+        }
+    }
 }
 
 impl RoomTask {
@@ -213,9 +291,7 @@ impl RoomTask {
             tick: Tick(0),
             projectiles: Vec::new(),
             next_projectile_id: IdGen::default(),
-            players: Vec::new(),
-            player_states: Vec::new(),
-            player_index: HashMap::new(),
+            player_store: PlayerStore::new(),
             snapshot_encoder: SnapshotEncoder::new(),
             rng: ChaCha8Rng::seed_from_u64(seed),
             scratch_player_snapshots: Vec::new(),
@@ -284,8 +360,8 @@ impl RoomTask {
                 seq,
                 input,
             } => {
-                if let Some(idx) = self.player_index.get(&player_id).copied() {
-                    let player = &mut self.players[idx];
+                if let Some(idx) = self.player_store.get_index(player_id) {
+                    let player = self.player_store.player_mut(idx);
                     if seq >= player.last_input_seq {
                         player.last_input_seq = seq;
                         player.input = input;
@@ -297,7 +373,7 @@ impl RoomTask {
                 player_id,
                 response,
             } => {
-                let _ = response.send(self.player_index.contains_key(&player_id));
+                let _ = response.send(self.player_store.get_index(player_id).is_some());
             }
         }
     }
@@ -309,8 +385,8 @@ impl RoomTask {
         tx: mpsc::Sender<Bytes>,
     ) -> JoinResult {
         let joined_name = username.clone();
-        let broadcast_join = if let Some(idx) = self.player_index.get(&player_id).copied() {
-            let player = &mut self.players[idx];
+        let broadcast_join = if let Some(idx) = self.player_store.get_index(player_id) {
+            let player = self.player_store.player_mut(idx);
             player.username = username;
             player.tx = tx;
             false
@@ -324,24 +400,25 @@ impl RoomTask {
                 state.prev_y = state.y;
             }
 
-            let idx = self.players.len();
-            self.players.push(PlayerConn {
-                id: player_id,
-                username: username.clone(),
-                tx,
-                input: PlayerInput::default(),
-                last_input_seq: 0,
-            });
-            self.player_states.push(state);
-            self.player_index.insert(player_id, idx);
-            self.validate_player_storage();
+            self.player_store.insert(
+                PlayerConn {
+                    id: player_id,
+                    username: username.clone(),
+                    tx,
+                    input: PlayerInput::default(),
+                    last_input_seq: 0,
+                },
+                state,
+            );
+            self.player_store.validate();
             true
         };
 
         let players: Vec<RoomStatePlayer<'_>> = self
-            .players
+            .player_store
+            .players()
             .iter()
-            .zip(self.player_states.iter())
+            .zip(self.player_store.states().iter())
             .map(|(player, state)| RoomStatePlayer {
                 username: &player.username,
                 last_input_seq: player.last_input_seq,
@@ -364,26 +441,16 @@ impl RoomTask {
     }
 
     fn remove_player(&mut self, player_id: PlayerId) -> bool {
-        let Some(idx) = self.player_index.remove(&player_id) else {
-            return false;
-        };
-
-        let last_idx = self.players.len() - 1;
-        self.players.swap_remove(idx);
-        self.player_states.swap_remove(idx);
-
-        if idx != last_idx {
-            let moved_id = self.players[idx].id;
-            self.player_index.insert(moved_id, idx);
+        let removed = self.player_store.remove(player_id);
+        if removed {
+            self.player_store.validate();
         }
-
-        self.validate_player_storage();
-        true
+        removed
     }
 
     fn simulate_tick(&mut self) {
-        self.validate_player_storage();
-        if self.players.is_empty() {
+        self.player_store.validate();
+        if self.player_store.is_empty() {
             return;
         }
 
@@ -394,9 +461,9 @@ impl RoomTask {
         self.scratch_explosions.clear();
         self.scratch_pending_hits.clear();
 
-        for idx in 0..self.players.len() {
-            let input = self.players[idx].input;
-            let state = &mut self.player_states[idx];
+        for idx in 0..self.player_store.len() {
+            let (player, state) = self.player_store.pair_mut(idx);
+            let input = player.input;
             apply_input_to_state(&input, state);
 
             if !state.dead && input.mouse_down {
@@ -417,20 +484,20 @@ impl RoomTask {
 
         apply_hit_actions(
             &self.scratch_hit_actions,
-            &mut self.player_states,
+            self.player_store.states_mut(),
             &mut self.scratch_events,
         );
 
         update_projectiles(map, &mut self.projectiles, &mut self.scratch_explosions);
         apply_projectile_hits(
             &mut self.projectiles,
-            &mut self.player_states,
+            self.player_store.states_mut(),
             &mut self.scratch_events,
             &mut self.scratch_explosions,
         );
         apply_explosions(
             &self.scratch_explosions,
-            &mut self.player_states,
+            self.player_store.states_mut(),
             &mut self.scratch_events,
             &mut self.scratch_pending_hits,
         );
@@ -443,7 +510,7 @@ impl RoomTask {
             });
         }
 
-        process_item_pickups(&mut self.player_states, &mut self.items);
+        process_item_pickups(self.player_store.states_mut(), &mut self.items);
 
         self.pending_snapshot_events
             .extend(self.scratch_events.drain(..));
@@ -471,9 +538,10 @@ impl RoomTask {
         self.scratch_item_snapshots.clear();
         self.scratch_projectile_snapshots.clear();
 
-        self.scratch_player_snapshots.reserve(self.players.len());
-        for (idx, player) in self.players.iter().enumerate() {
-            let state = &self.player_states[idx];
+        self.scratch_player_snapshots
+            .reserve(self.player_store.len());
+        for (idx, player) in self.player_store.players().iter().enumerate() {
+            let state = &self.player_store.states()[idx];
             self.scratch_player_snapshots
                 .push(player_snapshot_from_state(player.last_input_seq, state));
         }
@@ -503,7 +571,7 @@ impl RoomTask {
 
     fn broadcast(&mut self, payload: Bytes) {
         let mut disconnected_ids = Vec::new();
-        for player in &self.players {
+        for player in self.player_store.players() {
             match player.tx.try_send(payload.clone()) {
                 Ok(()) => {}
                 Err(err) => {
@@ -538,25 +606,17 @@ impl RoomTask {
     }
 
     fn broadcast_after_disconnect(&mut self, payload: Bytes) {
-        for player in &self.players {
+        for player in self.player_store.players() {
             let _ = player.tx.try_send(payload.clone());
         }
     }
 
     fn broadcast_except(&mut self, payload: Bytes, skip_player_id: PlayerId) {
-        for player in &self.players {
+        for player in self.player_store.players() {
             if player.id == skip_player_id {
                 continue;
             }
             let _ = player.tx.try_send(payload.clone());
-        }
-    }
-
-    fn validate_player_storage(&self) {
-        debug_assert_eq!(self.players.len(), self.player_states.len());
-        debug_assert_eq!(self.players.len(), self.player_index.len());
-        for (idx, player) in self.players.iter().enumerate() {
-            debug_assert_eq!(self.player_index.get(&player.id), Some(&idx));
         }
     }
 }
