@@ -20,7 +20,7 @@ use crate::constants::{
 };
 use crate::game::{
     apply_explosions, apply_hit_actions, apply_projectile_hits, process_item_pickups,
-    respawn_if_ready_with_rng, try_fire, update_projectiles, EventVec, Explosion, HitAction,
+    respawn_if_ready_with_rng, try_fire, update_projectiles, EventVec, Explosion, HitAction, IdGen,
     Projectile, WeaponId,
 };
 use crate::map::{GameMap, MapItem};
@@ -171,7 +171,7 @@ struct RoomTask {
     tick: Tick,
     items: Vec<MapItem>,
     projectiles: Vec<Projectile>,
-    next_projectile_id: u64,
+    next_projectile_id: IdGen,
     players: Vec<PlayerConn>,
     player_states: Vec<PlayerState>,
     player_index: HashMap<PlayerId, usize>,
@@ -206,7 +206,7 @@ impl RoomTask {
             rx,
             tick: Tick(0),
             projectiles: Vec::new(),
-            next_projectile_id: 0,
+            next_projectile_id: IdGen::default(),
             players: Vec::new(),
             player_states: Vec::new(),
             player_index: HashMap::new(),

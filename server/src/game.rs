@@ -38,6 +38,16 @@ pub enum WeaponId {
     Bfg = 8,
 }
 
+#[derive(Default)]
+pub struct IdGen(u64);
+
+impl IdGen {
+    pub fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(1);
+        self.0
+    }
+}
+
 impl TryFrom<i32> for WeaponId {
     type Error = ();
 
@@ -70,7 +80,7 @@ pub fn try_fire(
     player: &mut PlayerState,
     projectiles: &mut Vec<Projectile>,
     map: &GameMap,
-    now_id: &mut u64,
+    id_gen: &mut IdGen,
     hitscan_actions: &mut Vec<HitAction>,
     events: &mut EventVec,
     rng: &mut impl Rng,
@@ -172,7 +182,7 @@ pub fn try_fire(
             ) else {
                 return;
             };
-            let id = next_id(now_id);
+            let id = id_gen.next();
             events.push(EffectEvent::ProjectileSpawn {
                 id,
                 kind: spawn.kind.as_u8(),
@@ -732,9 +742,4 @@ fn explode(proj: &mut Projectile, explosions: &mut Vec<Explosion>) {
         kind: proj.kind,
         owner_id: proj.owner_id,
     });
-}
-
-fn next_id(counter: &mut u64) -> u64 {
-    *counter += 1;
-    *counter
 }

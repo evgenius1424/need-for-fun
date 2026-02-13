@@ -127,10 +127,17 @@ pub fn encode_room_state(
     players: &[PlayerConn],
     player_states: &[crate::physics::PlayerState],
 ) -> Vec<u8> {
+    assert_eq!(
+        players.len(),
+        player_states.len(),
+        "players/player_states length mismatch"
+    );
+
     let players_data: Vec<(String, PlayerSnapshot)> = players
         .iter()
-        .zip(player_states.iter())
-        .map(|(player, state)| {
+        .enumerate()
+        .map(|(idx, player)| {
+            let state = &player_states[idx];
             (
                 player.username.clone(),
                 player_snapshot_from_state(player.last_input_seq, state),
