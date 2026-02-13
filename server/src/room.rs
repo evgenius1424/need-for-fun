@@ -30,7 +30,7 @@ use crate::physics::{step_player, PlayerState};
 pub struct PlayerId(pub u64);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct RoomId(pub String);
+pub struct RoomId(pub Arc<str>);
 
 impl RoomId {
     pub fn as_str(&self) -> &str {
@@ -40,7 +40,13 @@ impl RoomId {
 
 impl From<String> for RoomId {
     fn from(value: String) -> Self {
-        Self(value)
+        Self(Arc::from(value))
+    }
+}
+
+impl From<&str> for RoomId {
+    fn from(value: &str) -> Self {
+        Self(Arc::from(value))
     }
 }
 
@@ -328,6 +334,7 @@ impl RoomTask {
             });
             self.player_states.push(state);
             self.player_index.insert(player_id, idx);
+            self.validate_player_storage();
             true
         };
 
@@ -360,10 +367,12 @@ impl RoomTask {
             self.player_index.insert(moved_id, idx);
         }
 
+        self.validate_player_storage();
         true
     }
 
     fn simulate_tick(&mut self) {
+        self.validate_player_storage();
         if self.players.is_empty() {
             // Freeze the room while empty. No players means no world progression.
             return;
@@ -533,6 +542,14 @@ impl RoomTask {
             let _ = player.tx.try_send(payload.clone());
         }
     }
+
+    fn validate_player_storage(&self) {
+        debug_assert_eq!(self.players.len(), self.player_states.len());
+        debug_assert_eq!(self.players.len(), self.player_index.len());
+        for (idx, player) in self.players.iter().enumerate() {
+            debug_assert_eq!(self.player_index.get(&player.id), Some(&idx));
+        }
+    }
 }
 
 struct JoinResult {
@@ -598,11 +615,7 @@ mod tests {
 
     #[tokio::test]
     async fn join_is_idempotent_and_leave_removes_player() {
-        let room = RoomHandle::new(
-            RoomId("room-test".to_string()),
-            simple_map(),
-            Instant::now(),
-        );
+        let room = RoomHandle::new(RoomId::from("room-test"), simple_map(), Instant::now());
         let (tx, _rx) = mpsc::channel::<Bytes>(4);
 
         let first = room

@@ -612,12 +612,12 @@ mod tests {
 
     #[tokio::test]
     async fn player_can_move_between_rooms_without_ghosting() {
-        let room_a = RoomHandle::new(RoomId("a".to_string()), simple_map(), Instant::now());
-        let room_b = RoomHandle::new(RoomId("b".to_string()), simple_map(), Instant::now());
+        let room_a = RoomHandle::new(RoomId::from("a"), simple_map(), Instant::now());
+        let room_b = RoomHandle::new(RoomId::from("b"), simple_map(), Instant::now());
 
         let mut rooms = std::collections::HashMap::new();
-        rooms.insert(RoomId("a".to_string()), Arc::clone(&room_a));
-        rooms.insert(RoomId("b".to_string()), Arc::clone(&room_b));
+        rooms.insert(RoomId::from("a"), Arc::clone(&room_a));
+        rooms.insert(RoomId::from("b"), Arc::clone(&room_b));
 
         let state = Arc::new(AppState {
             rooms: RwLock::new(std::collections::HashMap::new()),
