@@ -10,8 +10,8 @@ use tokio::time::interval;
 use tracing::{debug, warn};
 
 use crate::binary::{
-    encode_player_joined, encode_player_left, encode_room_state, ItemSnapshot, ProjectileSnapshot,
-    SnapshotEncoder,
+    encode_player_joined, encode_player_left, encode_room_state, player_snapshot_from_state,
+    ItemSnapshot, ProjectileSnapshot, SnapshotEncoder,
 };
 use crate::binary::{EffectEvent, PlayerSnapshot};
 use crate::constants::{
@@ -456,28 +456,8 @@ impl RoomTask {
         self.scratch_player_snapshots.reserve(self.players.len());
         for (idx, player) in self.players.iter().enumerate() {
             let state = &self.player_states[idx];
-            self.scratch_player_snapshots.push(PlayerSnapshot {
-                id: state.id,
-                x: state.x,
-                y: state.y,
-                vx: state.velocity_x,
-                vy: state.velocity_y,
-                aim_angle: state.aim_angle,
-                facing_left: state.facing_left,
-                crouch: state.crouch,
-                dead: state.dead,
-                health: state.health,
-                armor: state.armor,
-                current_weapon: state.current_weapon,
-                fire_cooldown: state.fire_cooldown,
-                weapons: state.weapons,
-                ammo: state.ammo,
-                last_input_seq: player.last_input_seq,
-                key_left: state.key_left,
-                key_right: state.key_right,
-                key_up: state.key_up,
-                key_down: state.key_down,
-            });
+            self.scratch_player_snapshots
+                .push(player_snapshot_from_state(player.last_input_seq, state));
         }
 
         self.scratch_item_snapshots.reserve(self.items.len());

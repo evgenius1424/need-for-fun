@@ -20,6 +20,10 @@ pub type EventVec = SmallVec<[EffectEvent; 16]>;
 
 const PUSH_LATERAL_FACTOR: f32 = 5.0 / 6.0;
 const PICKUP_RADIUS_SQ: f32 = PICKUP_RADIUS * PICKUP_RADIUS;
+const EXPLOSION_MID_BIAS: f32 = 40.0;
+const EXPLOSION_MID_SCALE: f32 = 100.0;
+const EXPLOSION_FAR_SCALE: f32 = 60.0;
+const EXPLOSION_FAR_BIAS: f32 = 20.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WeaponId {
@@ -538,12 +542,6 @@ fn apply_push_impulse(player: &mut PlayerState, source_x: f32, source_y: f32, st
 }
 
 fn explosion_falloff_damage(base: f32, radius: f32, distance: f32) -> f32 {
-    // Splash curve: piecewise falloff with small additive bias.
-    const MID_BIAS: f32 = 40.0;
-    const MID_SCALE: f32 = 100.0;
-    const FAR_SCALE: f32 = 60.0;
-    const FAR_BIAS: f32 = 20.0;
-
     if radius <= 0.0 || distance <= 0.0 {
         return base.max(0.0);
     }
@@ -552,10 +550,11 @@ fn explosion_falloff_damage(base: f32, radius: f32, distance: f32) -> f32 {
         return base;
     }
     if distance < 2.0 * r3 {
-        let scaled = (2.0 * radius - distance * 3.0 + MID_BIAS) / MID_SCALE;
+        let scaled = (2.0 * radius - distance * 3.0 + EXPLOSION_MID_BIAS) / EXPLOSION_MID_SCALE;
         return (base * scaled).max(0.0);
     }
-    let scaled = ((radius - distance) * FAR_SCALE / radius + FAR_BIAS) / MID_SCALE;
+    let scaled = ((radius - distance) * EXPLOSION_FAR_SCALE / radius + EXPLOSION_FAR_BIAS)
+        / EXPLOSION_MID_SCALE;
     (base * scaled).max(0.0)
 }
 

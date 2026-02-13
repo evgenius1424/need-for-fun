@@ -52,7 +52,7 @@ struct AppState {
 }
 
 enum ControlOut {
-    Pong(Vec<u8>),
+    Pong(Bytes),
     Close,
 }
 
@@ -129,7 +129,9 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
             tokio::select! {
                 Some(control) = control_rx.recv() => {
                     let result = match control {
-                        ControlOut::Pong(payload) => ws_sender.send(Message::Pong(payload)).await,
+                        ControlOut::Pong(payload) => {
+                            ws_sender.send(Message::Pong(payload.to_vec())).await
+                        }
                         ControlOut::Close => ws_sender.send(Message::Close(Some(CloseFrame {
                             code: axum::extract::ws::close_code::PROTOCOL,
                             reason: "protocol error".into(),
@@ -194,7 +196,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                 }
             },
             Message::Ping(payload) => {
-                let _ = control_tx.try_send(ControlOut::Pong(payload));
+                let _ = control_tx.try_send(ControlOut::Pong(Bytes::from(payload)));
                 true
             }
             Message::Close(_) => false,
