@@ -142,7 +142,6 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                     }
                 }
                 Some(msg) = outbound_rx.recv() => {
-                    // axum 0.7 websocket `Message::Binary` takes `Vec<u8>`, so this copy is required.
                     if ws_sender.send(Message::Binary(msg.to_vec())).await.is_err() {
                         break;
                     }

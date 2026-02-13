@@ -317,7 +317,6 @@ pub fn apply_projectile_hits(
         }
 
         if let Some(target_id) = target_id {
-            // Direct damage is 0 — all damage comes from splash explosion.
             let damage = match proj.kind {
                 ProjectileKind::Rocket => 0.0,
                 ProjectileKind::Grenade => 0.0,
@@ -535,16 +534,17 @@ fn apply_push_explosion(player: &mut PlayerState, source_x: f32, source_y: f32, 
 }
 
 fn apply_push_impulse(player: &mut PlayerState, source_x: f32, source_y: f32, strength: f32) {
-    // Asymmetry: stronger when source is left/below; only upward kick from explosions below.
     let dx = source_x - player.x;
     let dy = source_y - player.y;
     if dx < -0.01 {
         player.velocity_x += strength;
     } else if dx > 0.01 {
-        player.velocity_x -= strength * PUSH_LATERAL_FACTOR;
+        player.velocity_x -= strength;
     }
     if dy > 0.01 {
         player.velocity_y -= strength * PUSH_LATERAL_FACTOR;
+    } else if dy < -0.01 {
+        player.velocity_y += strength * PUSH_LATERAL_FACTOR;
     }
 }
 

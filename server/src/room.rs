@@ -384,7 +384,6 @@ impl RoomTask {
     fn simulate_tick(&mut self) {
         self.validate_player_storage();
         if self.players.is_empty() {
-            // Freeze the room while empty. No players means no world progression.
             return;
         }
 
