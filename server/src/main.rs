@@ -30,12 +30,59 @@ use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 mod binary;
-mod constants;
 mod game;
 mod map;
-mod physics;
-mod protocol;
 mod room;
+mod constants {
+    pub use physics_core::constants::WEAPON_COUNT;
+    pub use physics_core::constants::{PLAYER_HALF_H, TILE_H, TILE_W};
+
+    // Re-export projectile/weapon constants from physics_core
+    pub use physics_core::constants::{
+        ARMOR_ABSORPTION, DAMAGE, DEFAULT_AMMO, FIRE_RATE, GAUNTLET_PLAYER_RADIUS, GAUNTLET_RANGE,
+        GRENADE_HIT_GRACE, HITSCAN_PLAYER_RADIUS, MACHINE_RANGE, MAX_ARMOR, MAX_HEALTH,
+        MEGA_HEALTH, PICKUP_AMMO, PICKUP_RADIUS, PLASMA_SPLASH_DMG, PLASMA_SPLASH_PUSH,
+        PLASMA_SPLASH_RADIUS, QUAD_DURATION, QUAD_MULTIPLIER, RESPAWN_TIME, SELF_DAMAGE_REDUCTION,
+        SELF_HIT_GRACE, SHOTGUN_PELLETS, SHOTGUN_RANGE, SHOTGUN_SPREAD, SPAWN_OFFSET_X,
+        SPAWN_PROTECTION, SPLASH_RADIUS, WEAPON_ORIGIN_CROUCH_LIFT, WEAPON_PUSH,
+    };
+
+    pub const DEFAULT_PORT: &str = "3001";
+    pub const DEFAULT_ROOM_ID: &str = "room-1";
+    pub const DEFAULT_MAP_NAME: &str = "dm2";
+    pub const DEFAULT_MAP_DIR: &str = "../public/maps";
+
+    pub const TICK_MILLIS: u64 = 16;
+    pub const SNAPSHOT_INTERVAL_TICKS: u64 = 2;
+    pub const OUTBOUND_CHANNEL_CAPACITY: usize = 64;
+    pub const ROOM_COMMAND_CAPACITY: usize = 1024;
+
+    pub const SNAPSHOT_BUFFER_RING: usize = 8;
+}
+
+mod physics {
+    use physics_core::step::step_player as core_step_player;
+
+    use crate::map::GameMap;
+
+    pub use physics_core::types::PlayerState;
+
+    pub fn step_player(player: &mut PlayerState, map: &GameMap) {
+        let input = physics_core::types::PlayerInput {
+            key_up: player.key_up,
+            key_down: player.key_down,
+            key_left: player.key_left,
+            key_right: player.key_right,
+        };
+
+        core_step_player(player, input, map);
+    }
+}
+
+mod protocol {
+    // Re-export types from binary_protocol for server use
+    pub use binary_protocol::{ClientMsg, EffectEvent, PlayerSnapshot};
+}
 
 use crate::binary::{decode_client_message, encode_pong, encode_welcome};
 use crate::constants::{
