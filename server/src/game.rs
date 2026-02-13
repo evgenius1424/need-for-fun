@@ -359,12 +359,9 @@ pub fn apply_explosions(
         if radius <= 0.0 {
             continue;
         }
+        let radius_sq = radius * radius;
 
-        let attacker_quad = players
-            .iter()
-            .find(|p| p.id == explosion.owner_id)
-            .map(|p| p.quad_damage)
-            .unwrap_or(false);
+        let attacker_quad = has_quad_damage(players, explosion.owner_id);
         let push_scale = if attacker_quad {
             push * QUAD_MULTIPLIER
         } else {
@@ -377,11 +374,12 @@ pub fn apply_explosions(
             }
             let dx = player.x - explosion.x;
             let dy = player.y - explosion.y;
-            let distance = (dx * dx + dy * dy).sqrt();
-            if distance >= radius {
+            let distance_sq = dx * dx + dy * dy;
+            if distance_sq >= radius_sq {
                 continue;
             }
 
+            let distance = distance_sq.sqrt();
             let damage = explosion_falloff_damage(base_damage, radius, distance);
             if damage > 0.0 {
                 pending_hits.push((explosion.owner_id, player.id, damage));
@@ -451,48 +449,41 @@ fn apply_damage(
     players: &mut [PlayerState],
     events: &mut EventVec,
 ) {
-    let attacker_quad = players
-        .iter()
-        .find(|p| p.id == attacker_id)
-        .map(|p| p.quad_damage)
-        .unwrap_or(false);
+    let attacker_quad = has_quad_damage(players, attacker_id);
     let multiplier = if attacker_quad { QUAD_MULTIPLIER } else { 1.0 };
     let mut actual = damage * multiplier;
 
-    for player in players.iter_mut() {
-        if player.id != target_id {
-            continue;
-        }
-        if player.dead || player.spawn_protection > 0 {
-            return;
-        }
-        if attacker_id == target_id {
-            actual *= SELF_DAMAGE_REDUCTION;
-        }
+    let Some(player) = players.iter_mut().find(|p| p.id == target_id) else {
+        return;
+    };
+    if player.dead || player.spawn_protection > 0 {
+        return;
+    }
+    if attacker_id == target_id {
+        actual *= SELF_DAMAGE_REDUCTION;
+    }
 
-        if player.armor > 0 {
-            let armor_damage = (actual * ARMOR_ABSORPTION).floor() as i32;
-            let absorbed = armor_damage.min(player.armor);
-            player.armor -= absorbed;
-            actual -= absorbed as f32;
-        }
+    if player.armor > 0 {
+        let armor_damage = (actual * ARMOR_ABSORPTION).floor() as i32;
+        let absorbed = armor_damage.min(player.armor);
+        player.armor -= absorbed;
+        actual -= absorbed as f32;
+    }
 
-        let rounded = actual.floor() as i32;
-        player.health -= rounded;
-        let killed = player.health <= 0;
-        if killed {
-            player.dead = true;
-            player.respawn_timer = RESPAWN_TIME;
-        }
-        if rounded > 0 {
-            events.push(EffectEvent::Damage {
-                attacker_id,
-                target_id,
-                amount: rounded,
-                killed,
-            });
-        }
-        break;
+    let rounded = actual.floor() as i32;
+    player.health -= rounded;
+    let killed = player.health <= 0;
+    if killed {
+        player.dead = true;
+        player.respawn_timer = RESPAWN_TIME;
+    }
+    if rounded > 0 {
+        events.push(EffectEvent::Damage {
+            attacker_id,
+            target_id,
+            amount: rounded,
+            killed,
+        });
     }
 }
 
@@ -515,7 +506,7 @@ fn apply_push_on_hit(
     if strength <= 0.0 {
         return;
     }
-    let attacker_quad = players.iter().any(|p| p.id == attacker_id && p.quad_damage);
+    let attacker_quad = has_quad_damage(players, attacker_id);
     if attacker_quad {
         strength *= QUAD_MULTIPLIER;
     }
@@ -647,6 +638,14 @@ fn get_weapon_origin(player: &PlayerState) -> (f32, f32) {
         player.y
     };
     (player.x, y)
+}
+
+fn has_quad_damage(players: &[PlayerState], player_id: u64) -> bool {
+    players
+        .iter()
+        .find(|player| player.id == player_id)
+        .map(|player| player.quad_damage)
+        .unwrap_or(false)
 }
 
 fn find_hitscan_target(

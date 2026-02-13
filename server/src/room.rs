@@ -504,12 +504,12 @@ impl RoomTask {
     }
 
     fn broadcast(&mut self, payload: Bytes) {
-        let mut idx = 0;
-        while idx < self.players.len() {
-            match self.players[idx].tx.try_send(payload.clone()) {
-                Ok(()) => idx += 1,
+        let mut disconnected_ids = Vec::new();
+        for player in &self.players {
+            match player.tx.try_send(payload.clone()) {
+                Ok(()) => {}
                 Err(err) => {
-                    let disconnected_id = self.players[idx].id;
+                    let disconnected_id = player.id;
                     match err {
                         mpsc::error::TrySendError::Full(_) => {
                             warn!(
@@ -526,10 +526,15 @@ impl RoomTask {
                             );
                         }
                     }
-                    self.remove_player(disconnected_id);
-                    let left_payload = Bytes::from(encode_player_left(disconnected_id.0));
-                    self.broadcast_after_disconnect(left_payload);
+                    disconnected_ids.push(disconnected_id);
                 }
+            }
+        }
+
+        for disconnected_id in disconnected_ids {
+            if self.remove_player(disconnected_id) {
+                let left_payload = Bytes::from(encode_player_left(disconnected_id.0));
+                self.broadcast_after_disconnect(left_payload);
             }
         }
     }
