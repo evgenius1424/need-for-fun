@@ -13,7 +13,6 @@ use crate::map::GameMap;
 use crate::physics::PlayerState;
 use smallvec::SmallVec;
 
-// Re-export Projectile types from physics_core
 pub use physics_core::projectile::{Explosion, Projectile, ProjectileKind};
 
 pub use crate::constants::WEAPON_COUNT;
@@ -35,19 +34,21 @@ pub enum WeaponId {
     Bfg = 8,
 }
 
-impl WeaponId {
-    pub fn from_i32(value: i32) -> Option<Self> {
+impl TryFrom<i32> for WeaponId {
+    type Error = ();
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            0 => Some(Self::Gauntlet),
-            1 => Some(Self::Machine),
-            2 => Some(Self::Shotgun),
-            3 => Some(Self::Grenade),
-            4 => Some(Self::Rocket),
-            5 => Some(Self::Rail),
-            6 => Some(Self::Plasma),
-            7 => Some(Self::Shaft),
-            8 => Some(Self::Bfg),
-            _ => None,
+            0 => Ok(Self::Gauntlet),
+            1 => Ok(Self::Machine),
+            2 => Ok(Self::Shotgun),
+            3 => Ok(Self::Grenade),
+            4 => Ok(Self::Rocket),
+            5 => Ok(Self::Rail),
+            6 => Ok(Self::Plasma),
+            7 => Ok(Self::Shaft),
+            8 => Ok(Self::Bfg),
+            _ => Err(()),
         }
     }
 }
@@ -74,9 +75,9 @@ pub fn try_fire(
         return;
     }
 
-    let weapon = match WeaponId::from_i32(player.current_weapon) {
-        Some(w) => w,
-        None => return,
+    let weapon = match WeaponId::try_from(player.current_weapon) {
+        Ok(w) => w,
+        Err(()) => return,
     };
 
     if player.ammo[player.current_weapon as usize] != -1 {

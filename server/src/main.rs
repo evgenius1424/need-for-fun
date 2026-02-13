@@ -272,19 +272,15 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
         .with_interceptor_registry(registry)
         .build();
 
+    let mut ice_servers = vec![RTCIceServer {
+        urls: vec!["stun:stun.l.google.com:19302".to_string()],
+        ..Default::default()
+    }];
+    if let Some(turn_server) = load_turn_server() {
+        ice_servers.push(turn_server);
+    }
     let config = RTCConfiguration {
-        ice_servers: vec![
-            RTCIceServer {
-                urls: vec!["stun:stun.l.google.com:19302".to_string()],
-                ..Default::default()
-            },
-            RTCIceServer {
-                urls: vec!["turn:turn.example.com:3478".to_string()],
-                username: "user".to_string(),
-                credential: "pass".to_string(),
-                credential_type: RTCIceCredentialType::Password,
-            }, // TODO: replace with real TURN credentials
-        ],
+        ice_servers,
         ..Default::default()
     };
 
@@ -510,7 +506,7 @@ async fn handle_client_msg(
                 key_left,
                 key_right,
                 mouse_down,
-                weapon_switch: WeaponId::from_i32(weapon_switch),
+                weapon_switch: WeaponId::try_from(weapon_switch).ok(),
                 weapon_scroll: weapon_scroll as i8,
                 aim_angle,
                 facing_left,
@@ -559,6 +555,25 @@ fn load_map(map_dir: &Path, map_name: &str) -> Option<GameMap> {
             None
         }
     }
+}
+
+fn load_turn_server() -> Option<RTCIceServer> {
+    let turn_url = std::env::var("TURN_URL").ok()?;
+    let username = std::env::var("TURN_USERNAME").unwrap_or_default();
+    let credential = std::env::var("TURN_PASSWORD").unwrap_or_default();
+
+    let mut server = RTCIceServer {
+        urls: vec![turn_url],
+        ..Default::default()
+    };
+
+    if !username.is_empty() || !credential.is_empty() {
+        server.username = username;
+        server.credential = credential;
+        server.credential_type = RTCIceCredentialType::Password;
+    }
+
+    Some(server)
 }
 
 #[cfg(test)]
