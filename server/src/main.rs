@@ -39,6 +39,7 @@ mod room;
 use crate::binary::{decode_client_message, encode_pong, encode_welcome, ClientMsg};
 use crate::constants::{
     DEFAULT_MAP_DIR, DEFAULT_MAP_NAME, DEFAULT_PORT, DEFAULT_ROOM_ID, OUTBOUND_CHANNEL_CAPACITY,
+    ROOM_COMMAND_CAPACITY,
 };
 use crate::game::WeaponId;
 use crate::map::GameMap;
@@ -56,6 +57,11 @@ enum ControlOut {
     Close,
 }
 
+enum RtcCmd {
+    Client(ClientMsg),
+    Shutdown,
+}
+
 #[derive(Debug, Deserialize)]
 struct RtcSignalIn {
     #[serde(rename = "type")]
@@ -71,12 +77,6 @@ struct RtcSignalOut {
     sdp: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<String>,
-}
-
-#[derive(Default)]
-struct RtcSessionCtx {
-    current_room: Option<Arc<RoomHandle>>,
-    username: String,
 }
 
 #[tokio::main]
@@ -293,26 +293,49 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
 
     let (game_outbound_tx, game_outbound_rx) = mpsc::channel::<Bytes>(OUTBOUND_CHANNEL_CAPACITY);
     let game_outbound_rx = Arc::new(Mutex::new(Some(game_outbound_rx)));
+    let (rtc_cmd_tx, mut rtc_cmd_rx) = mpsc::channel::<RtcCmd>(ROOM_COMMAND_CAPACITY);
 
     let player_id = PlayerId(state.next_player_id.fetch_add(1, Ordering::Relaxed));
-    let session_ctx = Arc::new(Mutex::new(RtcSessionCtx {
-        current_room: None,
-        username: format!("player{}", player_id.0),
-    }));
+    let state_for_session = Arc::clone(&state);
+    let game_outbound_tx_for_session = game_outbound_tx.clone();
+    let session_task = tokio::spawn(async move {
+        let mut current_room: Option<Arc<RoomHandle>> = None;
+        let mut username = format!("player{}", player_id.0);
 
-    let state_for_dc = Arc::clone(&state);
-    let game_outbound_tx_for_dc = game_outbound_tx.clone();
+        while let Some(cmd) = rtc_cmd_rx.recv().await {
+            match cmd {
+                RtcCmd::Client(client_msg) => {
+                    let keep_running = handle_client_msg(
+                        &state_for_session,
+                        &mut current_room,
+                        &mut username,
+                        player_id,
+                        client_msg,
+                        &game_outbound_tx_for_session,
+                    )
+                    .await;
+                    if !keep_running {
+                        break;
+                    }
+                }
+                RtcCmd::Shutdown => break,
+            }
+        }
+
+        if let Some(room) = current_room.take() {
+            room.leave(player_id);
+        }
+    });
+
     let game_outbound_rx_for_dc = Arc::clone(&game_outbound_rx);
-    let session_ctx_for_dc = Arc::clone(&session_ctx);
+    let rtc_cmd_tx_for_dc = rtc_cmd_tx.clone();
     peer_connection.on_data_channel(Box::new(move |dc| {
         let label = dc.label().to_string();
         if label != "control" && label != "game" {
             return Box::pin(async {});
         }
-        let state_for_msg = Arc::clone(&state_for_dc);
-        let game_outbound_tx_for_msg = game_outbound_tx_for_dc.clone();
         let game_outbound_rx_for_msg = Arc::clone(&game_outbound_rx_for_dc);
-        let session_ctx_for_msg = Arc::clone(&session_ctx_for_dc);
+        let rtc_cmd_tx_for_msg = rtc_cmd_tx_for_dc.clone();
 
         Box::pin(async move {
             if label == "control" {
@@ -328,9 +351,7 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
             }
 
             dc.on_message(Box::new(move |msg: DataChannelMessage| {
-                let state_for_msg2 = Arc::clone(&state_for_msg);
-                let game_outbound_tx_for_msg2 = game_outbound_tx_for_msg.clone();
-                let session_ctx_for_msg2 = Arc::clone(&session_ctx_for_msg);
+                let rtc_cmd_tx_for_msg2 = rtc_cmd_tx_for_msg.clone();
                 Box::pin(async move {
                     if msg.is_string {
                         return;
@@ -338,25 +359,7 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
                     let Ok(client_msg) = decode_client_message(&msg.data) else {
                         return;
                     };
-
-                    let mut guard = session_ctx_for_msg2.lock().await;
-                    let mut current_room = guard.current_room.take();
-                    let mut username = std::mem::take(&mut guard.username);
-                    drop(guard);
-
-                    let _ = handle_client_msg(
-                        &state_for_msg2,
-                        &mut current_room,
-                        &mut username,
-                        player_id,
-                        client_msg,
-                        &game_outbound_tx_for_msg2,
-                    )
-                    .await;
-
-                    let mut guard = session_ctx_for_msg2.lock().await;
-                    guard.current_room = current_room;
-                    guard.username = username;
+                    let _ = rtc_cmd_tx_for_msg2.try_send(RtcCmd::Client(client_msg));
                 })
             }));
 
@@ -416,8 +419,12 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
         }
     }
 
-    if let Some(room) = session_ctx.lock().await.current_room.take() {
-        room.leave(player_id);
+    let _ = rtc_cmd_tx.try_send(RtcCmd::Shutdown);
+    if let Err(err) = session_task.await {
+        error!(
+            player_id = player_id.0,
+            "rtc session task join error: {err}"
+        );
     }
     let _ = peer_connection.close().await;
 }
