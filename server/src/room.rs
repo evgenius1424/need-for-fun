@@ -19,8 +19,8 @@ use crate::constants::{
 };
 use crate::game::{
     apply_explosions, apply_hit_actions, apply_projectile_hits, process_item_pickups,
-    respawn_if_ready_with_rng, try_fire, update_projectiles, EventVec, HitAction, Projectile,
-    WeaponId,
+    respawn_if_ready_with_rng, try_fire, update_projectiles, EventVec, Explosion, HitAction,
+    Projectile, WeaponId,
 };
 use crate::map::{GameMap, MapItem};
 use crate::physics::{step_player, PlayerState};
@@ -133,19 +133,16 @@ impl RoomHandle {
         response_rx.await.ok()
     }
 
-    pub async fn leave(&self, player_id: PlayerId) {
-        let _ = self.tx.send(RoomCmd::Leave { player_id }).await;
+    pub fn leave(&self, player_id: PlayerId) {
+        let _ = self.tx.try_send(RoomCmd::Leave { player_id });
     }
 
-    pub async fn set_input(&self, player_id: PlayerId, seq: u64, input: PlayerInput) {
-        let _ = self
-            .tx
-            .send(RoomCmd::Input {
-                player_id,
-                seq,
-                input,
-            })
-            .await;
+    pub fn set_input(&self, player_id: PlayerId, seq: u64, input: PlayerInput) {
+        let _ = self.tx.try_send(RoomCmd::Input {
+            player_id,
+            seq,
+            input,
+        });
     }
 
     #[cfg(test)]
@@ -186,6 +183,8 @@ struct RoomTask {
     scratch_events: EventVec,
     pending_snapshot_events: EventVec,
     scratch_hit_actions: Vec<HitAction>,
+    scratch_explosions: Vec<Explosion>,
+    scratch_pending_hits: Vec<(u64, u64, f32)>,
 }
 
 impl RoomTask {
@@ -219,6 +218,8 @@ impl RoomTask {
             scratch_events: EventVec::new(),
             pending_snapshot_events: EventVec::new(),
             scratch_hit_actions: Vec::new(),
+            scratch_explosions: Vec::new(),
+            scratch_pending_hits: Vec::new(),
         }
     }
 
@@ -369,8 +370,11 @@ impl RoomTask {
         }
 
         self.tick.0 = self.tick.0.wrapping_add(1);
+        let map = self.map.as_ref();
         self.scratch_events.clear();
         self.scratch_hit_actions.clear();
+        self.scratch_explosions.clear();
+        self.scratch_pending_hits.clear();
 
         for idx in 0..self.players.len() {
             let input = self.players[idx].input;
@@ -381,7 +385,7 @@ impl RoomTask {
                 try_fire(
                     state,
                     &mut self.projectiles,
-                    self.map.as_ref(),
+                    map,
                     &mut self.next_projectile_id,
                     &mut self.scratch_hit_actions,
                     &mut self.scratch_events,
@@ -389,8 +393,8 @@ impl RoomTask {
                 );
             }
 
-            step_player(state, self.map.as_ref());
-            respawn_if_ready_with_rng(state, self.map.as_ref(), &mut self.rng);
+            step_player(state, map);
+            respawn_if_ready_with_rng(state, map, &mut self.rng);
         }
 
         apply_hit_actions(
@@ -399,20 +403,21 @@ impl RoomTask {
             &mut self.scratch_events,
         );
 
-        let mut explosions = update_projectiles(self.map.as_ref(), &mut self.projectiles);
-        let mut projectile_explosions = apply_projectile_hits(
+        update_projectiles(map, &mut self.projectiles, &mut self.scratch_explosions);
+        apply_projectile_hits(
             &mut self.projectiles,
             &mut self.player_states,
             &mut self.scratch_events,
+            &mut self.scratch_explosions,
         );
-        explosions.append(&mut projectile_explosions);
         apply_explosions(
-            &explosions,
+            &self.scratch_explosions,
             &mut self.player_states,
             &mut self.scratch_events,
+            &mut self.scratch_pending_hits,
         );
 
-        for explosion in &explosions {
+        for explosion in &self.scratch_explosions {
             self.scratch_events.push(EffectEvent::Explosion {
                 x: explosion.x,
                 y: explosion.y,
@@ -625,7 +630,7 @@ mod tests {
         assert!(second.is_some());
         assert!(room.contains_player(PlayerId(10)).await);
 
-        room.leave(PlayerId(10)).await;
+        room.leave(PlayerId(10));
         tokio::task::yield_now().await;
         assert!(!room.contains_player(PlayerId(10)).await);
     }

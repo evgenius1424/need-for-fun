@@ -189,6 +189,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                     }
                 }
                 Some(msg) = outbound_rx.recv() => {
+                    // axum 0.7 websocket `Message::Binary` takes `Vec<u8>`, so this copy is required.
                     if ws_sender.send(Message::Binary(msg.to_vec())).await.is_err() {
                         break;
                     }
@@ -255,7 +256,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
     }
 
     if let Some(room) = current_room.take() {
-        room.leave(player_id).await;
+        room.leave(player_id);
     }
 
     drop(outbound_tx);
@@ -467,7 +468,7 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
     }
 
     if let Some(room) = session_ctx.lock().await.current_room.take() {
-        room.leave(player_id).await;
+        room.leave(player_id);
     }
     let _ = peer_connection.close().await;
 }
@@ -506,7 +507,7 @@ async fn handle_client_msg(
             }
 
             if let Some(previous_room) = current_room.take() {
-                previous_room.leave(player_id).await;
+                previous_room.leave(player_id);
             }
 
             let Some(handle) = get_or_create_room(state, room_id.clone(), &map_name).await else {
@@ -564,7 +565,7 @@ async fn handle_client_msg(
                 facing_left,
             };
 
-            room.set_input(player_id, seq, input).await;
+            room.set_input(player_id, seq, input);
             true
         }
         ClientMsg::Ping { client_time_ms } => {
@@ -584,7 +585,7 @@ async fn get_or_create_room(
         return Some(existing);
     }
 
-    let map = match load_map_with_fallback(&state.map_dir, map_name) {
+    let map = match load_map(&state.map_dir, map_name) {
         Some(map) => map,
         None => return None,
     };
@@ -599,20 +600,12 @@ async fn get_or_create_room(
     Some(handle)
 }
 
-fn load_map_with_fallback(map_dir: &Path, map_name: &str) -> Option<GameMap> {
+fn load_map(map_dir: &Path, map_name: &str) -> Option<GameMap> {
     match GameMap::load(map_dir, map_name) {
         Ok(map) => Some(map),
         Err(primary_err) => {
-            warn!(
-                "failed to load map '{map_name}': {primary_err}. trying fallback '{DEFAULT_MAP_NAME}'"
-            );
-            match GameMap::load(map_dir, DEFAULT_MAP_NAME) {
-                Ok(map) => Some(map),
-                Err(fallback_err) => {
-                    error!("failed to load fallback map '{DEFAULT_MAP_NAME}': {fallback_err}");
-                    None
-                }
-            }
+            error!("failed to load map '{map_name}': {primary_err}");
+            None
         }
     }
 }

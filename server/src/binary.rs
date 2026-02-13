@@ -10,7 +10,6 @@ pub use binary_protocol::{
 
 use binary_protocol::{write_event, write_player_record, MSG_SNAPSHOT};
 
-// Server-specific SnapshotEncoder that uses BytesMut for performance
 pub struct SnapshotEncoder {
     buffers: Vec<BytesMut>,
     next_buffer: usize,
@@ -44,8 +43,8 @@ impl SnapshotEncoder {
         let buffer = &mut self.buffers[buffer_idx];
         buffer.clear();
         buffer.put_u8(MSG_SNAPSHOT);
-        push_u64(buffer, tick);
-        push_u64(buffer, server_time_ms);
+        buffer.put_u64_le(tick);
+        buffer.put_u64_le(server_time_ms);
 
         let player_count = players.len().min(255) as u8;
         let item_count = items.len().min(255) as u8;
@@ -54,7 +53,7 @@ impl SnapshotEncoder {
 
         buffer.put_u8(player_count);
         buffer.put_u8(item_count);
-        push_u16(buffer, projectile_count);
+        buffer.put_u16_le(projectile_count);
         buffer.put_u8(event_count);
 
         for snapshot in players {
@@ -67,16 +66,16 @@ impl SnapshotEncoder {
                 flags |= 0x01;
             }
             buffer.put_u8(flags);
-            push_i16(buffer, item.respawn_timer);
+            buffer.put_i16_le(item.respawn_timer);
         }
 
         for proj in projectiles {
-            push_u64(buffer, proj.id);
-            push_f32(buffer, proj.x);
-            push_f32(buffer, proj.y);
-            push_f32(buffer, proj.velocity_x);
-            push_f32(buffer, proj.velocity_y);
-            push_i64(buffer, proj.owner_id);
+            buffer.put_u64_le(proj.id);
+            buffer.put_f32_le(proj.x);
+            buffer.put_f32_le(proj.y);
+            buffer.put_f32_le(proj.velocity_x);
+            buffer.put_f32_le(proj.velocity_y);
+            buffer.put_i64_le(proj.owner_id);
             buffer.put_u8(proj.kind);
         }
 
@@ -94,7 +93,6 @@ impl Default for SnapshotEncoder {
     }
 }
 
-// Helper function to create a PlayerSnapshot from server state
 pub fn player_snapshot_from_state(
     player: &PlayerConn,
     state: &crate::physics::PlayerState,
@@ -123,7 +121,6 @@ pub fn player_snapshot_from_state(
     }
 }
 
-// Server-specific encode_room_state that takes PlayerConn and PlayerState
 pub fn encode_room_state(
     room_id: &str,
     map_name: &str,
@@ -141,26 +138,6 @@ pub fn encode_room_state(
         })
         .collect();
     binary_protocol::encode_room_state(room_id, map_name, &players_data)
-}
-
-fn push_u16(buf: &mut BytesMut, v: u16) {
-    buf.put_slice(&v.to_le_bytes());
-}
-
-fn push_i16(buf: &mut BytesMut, v: i16) {
-    buf.put_slice(&v.to_le_bytes());
-}
-
-fn push_u64(buf: &mut BytesMut, v: u64) {
-    buf.put_slice(&v.to_le_bytes());
-}
-
-fn push_i64(buf: &mut BytesMut, v: i64) {
-    buf.put_slice(&v.to_le_bytes());
-}
-
-fn push_f32(buf: &mut BytesMut, v: f32) {
-    buf.put_slice(&v.to_le_bytes());
 }
 
 #[cfg(test)]

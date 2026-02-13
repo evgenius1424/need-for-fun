@@ -20,6 +20,7 @@ pub use crate::constants::WEAPON_COUNT;
 pub type EventVec = SmallVec<[EffectEvent; 16]>;
 
 const PUSH_LATERAL_FACTOR: f32 = 5.0 / 6.0;
+const PICKUP_RADIUS_SQ: f32 = PICKUP_RADIUS * PICKUP_RADIUS;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WeaponId {
@@ -256,10 +257,13 @@ pub fn apply_hit_actions(
     }
 }
 
-pub fn update_projectiles(map: &GameMap, projectiles: &mut Vec<Projectile>) -> Vec<Explosion> {
+pub fn update_projectiles(
+    map: &GameMap,
+    projectiles: &mut Vec<Projectile>,
+    explosions: &mut Vec<Explosion>,
+) {
     let bounds = physics_core::calculate_bounds(map.cols, map.rows);
 
-    let mut explosions = Vec::new();
     for proj in projectiles.iter_mut() {
         if !proj.active {
             continue;
@@ -270,15 +274,14 @@ pub fn update_projectiles(map: &GameMap, projectiles: &mut Vec<Projectile>) -> V
     }
 
     projectiles.retain(|p| p.active);
-    explosions
 }
 
 pub fn apply_projectile_hits(
     projectiles: &mut Vec<Projectile>,
     players: &mut [PlayerState],
     events: &mut EventVec,
-) -> Vec<Explosion> {
-    let mut explosions = Vec::new();
+    explosions: &mut Vec<Explosion>,
+) {
     for proj in projectiles.iter_mut() {
         if !proj.active {
             continue;
@@ -320,20 +323,19 @@ pub fn apply_projectile_hits(
                     players,
                 );
             }
-            explode(proj, &mut explosions);
+            explode(proj, explosions);
         }
     }
 
     projectiles.retain(|p| p.active);
-    explosions
 }
 
 pub fn apply_explosions(
     explosions: &[Explosion],
     players: &mut [PlayerState],
     events: &mut EventVec,
+    pending_hits: &mut Vec<(u64, u64, f32)>,
 ) {
-    let mut pending_hits: Vec<(u64, u64, f32)> = Vec::new();
     for explosion in explosions {
         let (radius, base_damage, push) = match explosion.kind {
             ProjectileKind::Rocket => (
@@ -388,7 +390,7 @@ pub fn apply_explosions(
             apply_push_explosion(player, explosion.x, explosion.y, push_scale);
         }
     }
-    for (attacker_id, target_id, damage) in pending_hits {
+    for (attacker_id, target_id, damage) in pending_hits.drain(..) {
         apply_damage(attacker_id, target_id, damage, players, events);
     }
 }
@@ -421,13 +423,14 @@ pub fn respawn_if_ready_with_rng(player: &mut PlayerState, map: &GameMap, rng: &
     if !player.dead || player.respawn_timer > 0 {
         return;
     }
-    if let Some((row, col)) = map.random_respawn_with_rng(rng) {
-        let x = col as f32 * TILE_W + SPAWN_OFFSET_X;
-        let y = row as f32 * TILE_H - PLAYER_HALF_H;
-        player.set_xy(x, y, map);
-        player.prev_x = player.x;
-        player.prev_y = player.y;
-    }
+    let Some((row, col)) = map.random_respawn_with_rng(rng) else {
+        return;
+    };
+    let x = col as f32 * TILE_W + SPAWN_OFFSET_X;
+    let y = row as f32 * TILE_H - PLAYER_HALF_H;
+    player.set_xy(x, y, map);
+    player.prev_x = player.x;
+    player.prev_y = player.y;
     player.health = MAX_HEALTH;
     player.armor = 0;
     player.dead = false;
@@ -569,7 +572,7 @@ fn is_player_near_item(player: &PlayerState, item: &crate::map::MapItem) -> bool
     let y = item.row as f32 * TILE_H + TILE_H / 2.0;
     let dx = player.x - x;
     let dy = player.y - y;
-    (dx * dx + dy * dy).sqrt() <= PICKUP_RADIUS
+    dx * dx + dy * dy <= PICKUP_RADIUS_SQ
 }
 
 fn apply_item_effect(player: &mut PlayerState, item: &crate::map::MapItem) {
