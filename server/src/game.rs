@@ -1,5 +1,6 @@
 use rand::Rng;
 
+use crate::binary::EffectEvent;
 use crate::constants::{
     ARMOR_ABSORPTION, DAMAGE, DEFAULT_AMMO, FIRE_RATE, GAUNTLET_PLAYER_RADIUS, GAUNTLET_RANGE,
     GRENADE_HIT_GRACE, HITSCAN_PLAYER_RADIUS, MACHINE_RANGE, MAX_ARMOR, MAX_HEALTH, MEGA_HEALTH,
@@ -10,7 +11,6 @@ use crate::constants::{
 };
 use crate::map::GameMap;
 use crate::physics::PlayerState;
-use crate::protocol::EffectEvent;
 use smallvec::SmallVec;
 
 // Re-export Projectile types from physics_core

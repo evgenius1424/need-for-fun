@@ -13,6 +13,7 @@ use crate::binary::{
     encode_player_joined, encode_player_left, encode_room_state, ItemSnapshot, ProjectileSnapshot,
     SnapshotEncoder,
 };
+use crate::binary::{EffectEvent, PlayerSnapshot};
 use crate::constants::{
     PLAYER_HALF_H, ROOM_COMMAND_CAPACITY, SNAPSHOT_INTERVAL_TICKS, SPAWN_OFFSET_X, TICK_MILLIS,
     TILE_H, TILE_W,
@@ -24,7 +25,6 @@ use crate::game::{
 };
 use crate::map::{GameMap, MapItem};
 use crate::physics::{step_player, PlayerState};
-use crate::protocol::{EffectEvent, PlayerSnapshot};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct PlayerId(pub u64);

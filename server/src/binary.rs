@@ -5,7 +5,7 @@ use crate::room::PlayerConn;
 
 pub use binary_protocol::{
     decode_client_message, encode_player_joined, encode_player_left, encode_pong, encode_welcome,
-    EffectEvent, ItemSnapshot, PlayerSnapshot, ProjectileSnapshot,
+    ClientMsg, EffectEvent, ItemSnapshot, PlayerSnapshot, ProjectileSnapshot,
 };
 
 use binary_protocol::{write_event, write_player_record, MSG_SNAPSHOT};
@@ -94,7 +94,7 @@ impl Default for SnapshotEncoder {
 }
 
 pub fn player_snapshot_from_state(
-    player: &PlayerConn,
+    last_input_seq: u64,
     state: &crate::physics::PlayerState,
 ) -> PlayerSnapshot {
     PlayerSnapshot {
@@ -113,7 +113,7 @@ pub fn player_snapshot_from_state(
         fire_cooldown: state.fire_cooldown,
         weapons: state.weapons,
         ammo: state.ammo,
-        last_input_seq: player.last_input_seq,
+        last_input_seq,
         key_left: state.key_left,
         key_right: state.key_right,
         key_up: state.key_up,
@@ -133,7 +133,7 @@ pub fn encode_room_state(
         .map(|(player, state)| {
             (
                 player.username.clone(),
-                player_snapshot_from_state(player, state),
+                player_snapshot_from_state(player.last_input_seq, state),
             )
         })
         .collect();
