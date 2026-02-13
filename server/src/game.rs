@@ -45,6 +45,21 @@ impl IdGen {
     }
 }
 
+pub trait PlayerStateAccess {
+    fn state(&self) -> &PlayerState;
+    fn state_mut(&mut self) -> &mut PlayerState;
+}
+
+impl PlayerStateAccess for PlayerState {
+    fn state(&self) -> &PlayerState {
+        self
+    }
+
+    fn state_mut(&mut self) -> &mut PlayerState {
+        self
+    }
+}
+
 impl TryFrom<i32> for WeaponId {
     type Error = ();
 
@@ -228,7 +243,7 @@ pub enum HitAction {
 
 pub fn apply_hit_actions(
     actions: &[HitAction],
-    players: &mut [PlayerState],
+    players: &mut [impl PlayerStateAccess],
     events: &mut EventVec,
 ) {
     for action in actions {
@@ -290,7 +305,7 @@ pub fn update_projectiles(
 
 pub fn apply_projectile_hits(
     projectiles: &mut Vec<Projectile>,
-    players: &mut [PlayerState],
+    players: &mut [impl PlayerStateAccess],
     events: &mut EventVec,
     explosions: &mut Vec<Explosion>,
 ) {
@@ -300,19 +315,20 @@ pub fn apply_projectile_hits(
         }
         let mut target_id: Option<u64> = None;
         for player in players.iter() {
-            if player.dead {
+            let player_state = player.state();
+            if player_state.dead {
                 continue;
             }
-            if proj.owner_id == player.id && proj.age < SELF_HIT_GRACE {
+            if proj.owner_id == player_state.id && proj.age < SELF_HIT_GRACE {
                 continue;
             }
             if proj.kind == ProjectileKind::Grenade && proj.age < GRENADE_HIT_GRACE {
                 continue;
             }
-            if !check_player_collision(player, proj) {
+            if !check_player_collision(player_state, proj) {
                 continue;
             }
-            target_id = Some(player.id);
+            target_id = Some(player_state.id);
             break;
         }
 
@@ -343,7 +359,7 @@ pub fn apply_projectile_hits(
 
 pub fn apply_explosions(
     explosions: &[Explosion],
-    players: &mut [PlayerState],
+    players: &mut [impl PlayerStateAccess],
     events: &mut EventVec,
     pending_hits: &mut Vec<(u64, u64, f32)>,
 ) {
@@ -380,11 +396,12 @@ pub fn apply_explosions(
         };
 
         for player in players.iter_mut() {
-            if player.dead {
+            let player_state = player.state_mut();
+            if player_state.dead {
                 continue;
             }
-            let dx = player.x - explosion.x;
-            let dy = player.y - explosion.y;
+            let dx = player_state.x - explosion.x;
+            let dy = player_state.y - explosion.y;
             let distance_sq = dx * dx + dy * dy;
             if distance_sq >= radius_sq {
                 continue;
@@ -393,10 +410,10 @@ pub fn apply_explosions(
             let distance = distance_sq.sqrt();
             let damage = explosion_falloff_damage(base_damage, radius, distance);
             if damage > 0.0 {
-                pending_hits.push((explosion.owner_id, player.id, damage));
+                pending_hits.push((explosion.owner_id, player_state.id, damage));
             }
 
-            apply_push_explosion(player, explosion.x, explosion.y, push_scale);
+            apply_push_explosion(player_state, explosion.x, explosion.y, push_scale);
         }
     }
     for (attacker_id, target_id, damage) in pending_hits.drain(..) {
@@ -404,7 +421,10 @@ pub fn apply_explosions(
     }
 }
 
-pub fn process_item_pickups(players: &mut [PlayerState], items: &mut [crate::map::MapItem]) {
+pub fn process_item_pickups(
+    players: &mut [impl PlayerStateAccess],
+    items: &mut [crate::map::MapItem],
+) {
     for item in items.iter_mut() {
         if !item.active {
             item.respawn_timer -= 1;
@@ -414,13 +434,14 @@ pub fn process_item_pickups(players: &mut [PlayerState], items: &mut [crate::map
             continue;
         }
         for player in players.iter_mut() {
-            if player.dead {
+            let player_state = player.state_mut();
+            if player_state.dead {
                 continue;
             }
-            if !is_player_near_item(player, item) {
+            if !is_player_near_item(player_state, item) {
                 continue;
             }
-            apply_item_effect(player, item);
+            apply_item_effect(player_state, item);
             item.active = false;
             item.respawn_timer = item.kind.respawn_time();
             break;
@@ -457,16 +478,17 @@ fn apply_damage(
     attacker_id: u64,
     target_id: u64,
     damage: f32,
-    players: &mut [PlayerState],
+    players: &mut [impl PlayerStateAccess],
     events: &mut EventVec,
 ) {
     let attacker_quad = has_quad_damage(players, attacker_id);
     let multiplier = if attacker_quad { QUAD_MULTIPLIER } else { 1.0 };
     let mut actual = damage * multiplier;
 
-    let Some(player) = players.iter_mut().find(|p| p.id == target_id) else {
+    let Some(player) = players.iter_mut().find(|p| p.state().id == target_id) else {
         return;
     };
+    let player = player.state_mut();
     if player.dead || player.spawn_protection > 0 {
         return;
     }
@@ -498,11 +520,14 @@ fn apply_damage(
     }
 }
 
-fn get_player_pos(player_id: u64, players: &[PlayerState]) -> Option<(f32, f32)> {
+fn get_player_pos(player_id: u64, players: &[impl PlayerStateAccess]) -> Option<(f32, f32)> {
     players
         .iter()
-        .find(|p| p.id == player_id)
-        .map(|p| (p.x, p.y))
+        .find(|player| player.state().id == player_id)
+        .map(|player| {
+            let state = player.state();
+            (state.x, state.y)
+        })
 }
 
 fn apply_push_on_hit(
@@ -511,7 +536,7 @@ fn apply_push_on_hit(
     weapon_id: WeaponId,
     source_x: f32,
     source_y: f32,
-    players: &mut [PlayerState],
+    players: &mut [impl PlayerStateAccess],
 ) {
     let mut strength = WEAPON_PUSH[weapon_id as usize];
     if strength <= 0.0 {
@@ -521,8 +546,11 @@ fn apply_push_on_hit(
     if attacker_quad {
         strength *= QUAD_MULTIPLIER;
     }
-    if let Some(target) = players.iter_mut().find(|p| p.id == target_id && !p.dead) {
-        apply_push_impulse(target, source_x, source_y, strength);
+    if let Some(target) = players.iter_mut().find(|player| {
+        let state = player.state();
+        state.id == target_id && !state.dead
+    }) {
+        apply_push_impulse(target.state_mut(), source_x, source_y, strength);
     }
 }
 
@@ -647,11 +675,11 @@ fn get_weapon_origin(player: &PlayerState) -> (f32, f32) {
     (player.x, y)
 }
 
-fn has_quad_damage(players: &[PlayerState], player_id: u64) -> bool {
+fn has_quad_damage(players: &[impl PlayerStateAccess], player_id: u64) -> bool {
     players
         .iter()
-        .find(|player| player.id == player_id)
-        .map(|player| player.quad_damage)
+        .find(|player| player.state().id == player_id)
+        .map(|player| player.state().quad_damage)
         .unwrap_or(false)
 }
 
@@ -661,7 +689,7 @@ fn find_hitscan_target(
     start_y: f32,
     end_x: f32,
     end_y: f32,
-    players: &[PlayerState],
+    players: &[impl PlayerStateAccess],
 ) -> Option<u64> {
     let dx = end_x - start_x;
     let dy = end_y - start_y;
@@ -675,24 +703,25 @@ fn find_hitscan_target(
     let mut closest_t = f32::INFINITY;
 
     for target in players {
-        if target.dead || target.id == attacker_id {
+        let target_state = target.state();
+        if target_state.dead || target_state.id == attacker_id {
             continue;
         }
-        let t = ((target.x - start_x) * dx + (target.y - start_y) * dy) / len_sq;
+        let t = ((target_state.x - start_x) * dx + (target_state.y - start_y) * dy) / len_sq;
         if !(0.0..=1.0).contains(&t) {
             continue;
         }
         let hit_x = start_x + dx * t;
         let hit_y = start_y + dy * t;
-        let dist_x = target.x - hit_x;
-        let dist_y = target.y - hit_y;
+        let dist_x = target_state.x - hit_x;
+        let dist_y = target_state.y - hit_y;
         let dist_sq = dist_x * dist_x + dist_y * dist_y;
         if dist_sq > HITSCAN_PLAYER_RADIUS * HITSCAN_PLAYER_RADIUS {
             continue;
         }
         if t < closest_t {
             closest_t = t;
-            closest_id = Some(target.id);
+            closest_id = Some(target_state.id);
         }
     }
     closest_id
@@ -702,23 +731,24 @@ fn find_melee_target(
     attacker_id: u64,
     hit_x: f32,
     hit_y: f32,
-    players: &[PlayerState],
+    players: &[impl PlayerStateAccess],
 ) -> Option<u64> {
     let mut closest_id = None;
     let mut closest_dist_sq = f32::INFINITY;
     for target in players {
-        if target.dead || target.id == attacker_id {
+        let target_state = target.state();
+        if target_state.dead || target_state.id == attacker_id {
             continue;
         }
-        let dx = target.x - hit_x;
-        let dy = target.y - hit_y;
+        let dx = target_state.x - hit_x;
+        let dy = target_state.y - hit_y;
         let dist_sq = dx * dx + dy * dy;
         if dist_sq > GAUNTLET_PLAYER_RADIUS * GAUNTLET_PLAYER_RADIUS {
             continue;
         }
         if dist_sq < closest_dist_sq {
             closest_dist_sq = dist_sq;
-            closest_id = Some(target.id);
+            closest_id = Some(target_state.id);
         }
     }
     closest_id

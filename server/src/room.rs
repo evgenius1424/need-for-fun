@@ -21,7 +21,7 @@ use crate::constants::{
 use crate::game::{
     apply_explosions, apply_hit_actions, apply_projectile_hits, process_item_pickups,
     respawn_if_ready_with_rng, try_fire, update_projectiles, EventVec, Explosion, HitAction, IdGen,
-    Projectile, WeaponId,
+    PlayerStateAccess, Projectile, WeaponId,
 };
 use crate::map::{GameMap, MapItem};
 use crate::physics::{step_player, PlayerState};
@@ -192,16 +192,29 @@ struct RoomTask {
 }
 
 struct PlayerStore {
-    players: Vec<PlayerConn>,
-    player_states: Vec<PlayerState>,
+    players: Vec<RoomPlayer>,
     player_index: HashMap<PlayerId, usize>,
+}
+
+struct RoomPlayer {
+    conn: PlayerConn,
+    state: PlayerState,
+}
+
+impl PlayerStateAccess for RoomPlayer {
+    fn state(&self) -> &PlayerState {
+        &self.state
+    }
+
+    fn state_mut(&mut self) -> &mut PlayerState {
+        &mut self.state
+    }
 }
 
 impl PlayerStore {
     fn new() -> Self {
         Self {
             players: Vec::new(),
-            player_states: Vec::new(),
             player_index: HashMap::new(),
         }
     }
@@ -219,30 +232,30 @@ impl PlayerStore {
     }
 
     fn player_mut(&mut self, idx: usize) -> &mut PlayerConn {
-        &mut self.players[idx]
+        &mut self.players[idx].conn
     }
 
     fn pair_mut(&mut self, idx: usize) -> (&mut PlayerConn, &mut PlayerState) {
-        (&mut self.players[idx], &mut self.player_states[idx])
+        let (_, tail) = self.players.split_at_mut(idx);
+        let player = &mut tail[0];
+        (&mut player.conn, &mut player.state)
     }
 
-    fn states_mut(&mut self) -> &mut [PlayerState] {
-        &mut self.player_states
+    fn players_mut(&mut self) -> &mut [RoomPlayer] {
+        &mut self.players
     }
 
-    fn states(&self) -> &[PlayerState] {
-        &self.player_states
-    }
-
-    fn players(&self) -> &[PlayerConn] {
+    fn players(&self) -> &[RoomPlayer] {
         &self.players
     }
 
     fn insert(&mut self, player: PlayerConn, state: PlayerState) {
         let idx = self.players.len();
         self.player_index.insert(player.id, idx);
-        self.players.push(player);
-        self.player_states.push(state);
+        self.players.push(RoomPlayer {
+            conn: player,
+            state,
+        });
     }
 
     fn remove(&mut self, player_id: PlayerId) -> bool {
@@ -252,10 +265,9 @@ impl PlayerStore {
 
         let last_idx = self.players.len() - 1;
         self.players.swap_remove(idx);
-        self.player_states.swap_remove(idx);
 
         if idx != last_idx {
-            let moved_id = self.players[idx].id;
+            let moved_id = self.players[idx].conn.id;
             self.player_index.insert(moved_id, idx);
         }
 
@@ -263,10 +275,9 @@ impl PlayerStore {
     }
 
     fn validate(&self) {
-        debug_assert_eq!(self.players.len(), self.player_states.len());
         debug_assert_eq!(self.players.len(), self.player_index.len());
         for (idx, player) in self.players.iter().enumerate() {
-            debug_assert_eq!(self.player_index.get(&player.id), Some(&idx));
+            debug_assert_eq!(self.player_index.get(&player.conn.id), Some(&idx));
         }
     }
 }
@@ -418,11 +429,10 @@ impl RoomTask {
             .player_store
             .players()
             .iter()
-            .zip(self.player_store.states().iter())
-            .map(|(player, state)| RoomStatePlayer {
-                username: &player.username,
-                last_input_seq: player.last_input_seq,
-                state,
+            .map(|player| RoomStatePlayer {
+                username: &player.conn.username,
+                last_input_seq: player.conn.last_input_seq,
+                state: &player.state,
             })
             .collect();
 
@@ -484,20 +494,20 @@ impl RoomTask {
 
         apply_hit_actions(
             &self.scratch_hit_actions,
-            self.player_store.states_mut(),
+            self.player_store.players_mut(),
             &mut self.scratch_events,
         );
 
         update_projectiles(map, &mut self.projectiles, &mut self.scratch_explosions);
         apply_projectile_hits(
             &mut self.projectiles,
-            self.player_store.states_mut(),
+            self.player_store.players_mut(),
             &mut self.scratch_events,
             &mut self.scratch_explosions,
         );
         apply_explosions(
             &self.scratch_explosions,
-            self.player_store.states_mut(),
+            self.player_store.players_mut(),
             &mut self.scratch_events,
             &mut self.scratch_pending_hits,
         );
@@ -510,7 +520,7 @@ impl RoomTask {
             });
         }
 
-        process_item_pickups(self.player_store.states_mut(), &mut self.items);
+        process_item_pickups(self.player_store.players_mut(), &mut self.items);
 
         self.pending_snapshot_events
             .extend(self.scratch_events.drain(..));
@@ -540,10 +550,12 @@ impl RoomTask {
 
         self.scratch_player_snapshots
             .reserve(self.player_store.len());
-        for (idx, player) in self.player_store.players().iter().enumerate() {
-            let state = &self.player_store.states()[idx];
+        for player in self.player_store.players() {
             self.scratch_player_snapshots
-                .push(player_snapshot_from_state(player.last_input_seq, state));
+                .push(player_snapshot_from_state(
+                    player.conn.last_input_seq,
+                    &player.state,
+                ));
         }
 
         self.scratch_item_snapshots.reserve(self.items.len());
@@ -572,10 +584,10 @@ impl RoomTask {
     fn broadcast(&mut self, payload: Bytes) {
         let mut disconnected_ids = Vec::new();
         for player in self.player_store.players() {
-            match player.tx.try_send(payload.clone()) {
+            match player.conn.tx.try_send(payload.clone()) {
                 Ok(()) => {}
                 Err(err) => {
-                    let disconnected_id = player.id;
+                    let disconnected_id = player.conn.id;
                     match err {
                         mpsc::error::TrySendError::Full(_) => {
                             warn!(
@@ -607,16 +619,16 @@ impl RoomTask {
 
     fn broadcast_after_disconnect(&mut self, payload: Bytes) {
         for player in self.player_store.players() {
-            let _ = player.tx.try_send(payload.clone());
+            let _ = player.conn.tx.try_send(payload.clone());
         }
     }
 
     fn broadcast_except(&mut self, payload: Bytes, skip_player_id: PlayerId) {
         for player in self.player_store.players() {
-            if player.id == skip_player_id {
+            if player.conn.id == skip_player_id {
                 continue;
             }
-            let _ = player.tx.try_send(payload.clone());
+            let _ = player.conn.tx.try_send(payload.clone());
         }
     }
 }
