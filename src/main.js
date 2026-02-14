@@ -606,7 +606,10 @@ function applySnapshotEvents(events) {
                 Render.addGauntletSpark(event.x, event.y)
                 break
             case 'projectile_remove':
-                Projectiles.removeById(event.id, event.x, event.y, event.kind)
+                // Explosion visuals/sounds come from the explicit `explosion` event.
+                Projectiles.removeById(event.id, event.x, event.y, event.kind, {
+                    emitEffects: false,
+                })
                 break
             case 'explosion':
                 Render.addExplosion(event.x, event.y, event.kind)

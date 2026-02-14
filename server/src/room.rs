@@ -12,7 +12,7 @@ use tracing::{debug, warn};
 
 use crate::binary::{
     encode_player_joined, encode_player_left, encode_room_state, player_snapshot_from_state,
-    ItemSnapshot, ProjectileSnapshot, SnapshotEncoder,
+    ItemSnapshot, SnapshotEncoder,
 };
 use crate::binary::{EffectEvent, PlayerSnapshot};
 use crate::constants::{
@@ -186,7 +186,6 @@ struct RoomTask {
     rng: ChaCha8Rng,
     scratch_player_snapshots: Vec<PlayerSnapshot>,
     scratch_item_snapshots: Vec<ItemSnapshot>,
-    scratch_projectile_snapshots: Vec<ProjectileSnapshot>,
     scratch_events: EventVec,
     pending_snapshot_events: EventVec,
     scratch_hit_actions: Vec<HitAction>,
@@ -297,7 +296,6 @@ impl RoomTask {
             rng: ChaCha8Rng::seed_from_u64(seed),
             scratch_player_snapshots: Vec::new(),
             scratch_item_snapshots: Vec::new(),
-            scratch_projectile_snapshots: Vec::new(),
             scratch_events: EventVec::new(),
             pending_snapshot_events: EventVec::new(),
             scratch_hit_actions: Vec::new(),
@@ -528,7 +526,6 @@ impl RoomTask {
     fn build_snapshot_buffers(&mut self) {
         self.scratch_player_snapshots.clear();
         self.scratch_item_snapshots.clear();
-        self.scratch_projectile_snapshots.clear();
 
         self.scratch_player_snapshots
             .reserve(self.player_store.len());
@@ -545,20 +542,6 @@ impl RoomTask {
             self.scratch_item_snapshots.push(ItemSnapshot {
                 active: item.active,
                 respawn_timer: item.respawn_timer as i16,
-            });
-        }
-
-        self.scratch_projectile_snapshots
-            .reserve(self.projectiles.len());
-        for projectile in &self.projectiles {
-            self.scratch_projectile_snapshots.push(ProjectileSnapshot {
-                id: projectile.id,
-                x: projectile.x,
-                y: projectile.y,
-                velocity_x: projectile.velocity_x,
-                velocity_y: projectile.velocity_y,
-                owner_id: projectile.owner_id as i64,
-                kind: projectile.kind.as_u8(),
             });
         }
     }

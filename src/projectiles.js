@@ -192,7 +192,8 @@ export const Projectiles = {
         state.nextId = Math.max(state.nextId, id + 1)
     },
 
-    removeById(id, x, y, kind) {
+    removeById(id, x, y, kind, options = {}) {
+        const emitEffects = options.emitEffects !== false
         const numId = normalizeHostId(id)
         if (numId == null) return
         for (let i = 0; i < state.projectiles.length; i++) {
@@ -201,12 +202,14 @@ export const Projectiles = {
             proj.x = x
             proj.y = y
             proj.active = false
-            proj.wasm?.free()
             state.projectiles.splice(i, 1)
-            EXPLODE_SOUND[proj.type]?.()
-            for (const cb of state.explosionCallbacks) {
-                cb(proj.x, proj.y, proj.type, proj)
+            if (emitEffects) {
+                EXPLODE_SOUND[proj.type]?.()
+                for (const cb of state.explosionCallbacks) {
+                    cb(proj.x, proj.y, proj.type, proj)
+                }
             }
+            proj.wasm?.free()
             return
         }
     },
