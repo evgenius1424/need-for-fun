@@ -473,6 +473,15 @@ export function get_default_ammo(weapon_id) {
 }
 
 /**
+ * @param {number} explosion_kind
+ * @returns {number}
+ */
+export function get_explosion_base_damage(explosion_kind) {
+    const ret = wasm.get_explosion_base_damage(explosion_kind);
+    return ret;
+}
+
+/**
  * @returns {number}
  */
 export function get_explosion_radius() {
@@ -875,6 +884,21 @@ export function get_weapon_push(weapon_id) {
 export function wasm_apply_knockback(player, explosion_x, explosion_y, explosion_kind, owner_id) {
     _assertClass(player, WasmPlayerState);
     const ret = wasm.wasm_apply_knockback(player.__wbg_ptr, explosion_x, explosion_y, explosion_kind, owner_id);
+    return ret;
+}
+
+/**
+ * @param {WasmPlayerState} player
+ * @param {number} explosion_x
+ * @param {number} explosion_y
+ * @param {number} explosion_kind
+ * @param {bigint} owner_id
+ * @param {number} push_scale
+ * @returns {number}
+ */
+export function wasm_apply_knockback_scaled(player, explosion_x, explosion_y, explosion_kind, owner_id, push_scale) {
+    _assertClass(player, WasmPlayerState);
+    const ret = wasm.wasm_apply_knockback_scaled(player.__wbg_ptr, explosion_x, explosion_y, explosion_kind, owner_id, push_scale);
     return ret;
 }
 
