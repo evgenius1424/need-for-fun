@@ -227,12 +227,13 @@ impl PlayerStore {
         self.players.is_empty()
     }
 
-    fn get_index(&self, player_id: PlayerId) -> Option<usize> {
-        self.player_index.get(&player_id).copied()
+    fn contains(&self, player_id: PlayerId) -> bool {
+        self.player_index.contains_key(&player_id)
     }
 
-    fn player_mut(&mut self, idx: usize) -> &mut PlayerConn {
-        &mut self.players[idx].conn
+    fn player_mut_by_id(&mut self, player_id: PlayerId) -> Option<&mut PlayerConn> {
+        let idx = self.player_index.get(&player_id).copied()?;
+        Some(&mut self.players[idx].conn)
     }
 
     fn pair_mut(&mut self, idx: usize) -> (&mut PlayerConn, &mut PlayerState) {
@@ -371,8 +372,7 @@ impl RoomTask {
                 seq,
                 input,
             } => {
-                if let Some(idx) = self.player_store.get_index(player_id) {
-                    let player = self.player_store.player_mut(idx);
+                if let Some(player) = self.player_store.player_mut_by_id(player_id) {
                     if seq >= player.last_input_seq {
                         player.last_input_seq = seq;
                         player.input = input;
@@ -384,7 +384,7 @@ impl RoomTask {
                 player_id,
                 response,
             } => {
-                let _ = response.send(self.player_store.get_index(player_id).is_some());
+                let _ = response.send(self.player_store.contains(player_id));
             }
         }
     }
@@ -396,8 +396,7 @@ impl RoomTask {
         tx: mpsc::Sender<Bytes>,
     ) -> JoinResult {
         let joined_name = username.clone();
-        let broadcast_join = if let Some(idx) = self.player_store.get_index(player_id) {
-            let player = self.player_store.player_mut(idx);
+        let broadcast_join = if let Some(player) = self.player_store.player_mut_by_id(player_id) {
             player.username = username;
             player.tx = tx;
             false
