@@ -238,34 +238,7 @@ function getRemoteBotWrappers(remotePlayers) {
 }
 
 function processBotFireResult(botPlayer, result) {
-    const otherPlayers = BotManager.getOtherPlayers(botPlayer)
-
-    if (result?.type === 'rail') {
-        applyHitscanShot(botPlayer, result, otherPlayers, 'rail')
-    }
-    if (result?.type === 'shaft') {
-        applyHitscanShot(botPlayer, result, otherPlayers, 'shaft')
-    }
-    if (result?.type === 'hitscan') {
-        applyHitscanShot(botPlayer, result, otherPlayers, 'bullet', 2.5)
-    }
-    if (result?.type === 'shotgun') {
-        for (const pellet of result.pellets) {
-            const shot = { startX: result.startX, startY: result.startY, trace: pellet.trace }
-            applyHitscanShot(
-                botPlayer,
-                { ...shot, damage: pellet.damage },
-                otherPlayers,
-                'bullet',
-                2,
-            )
-        }
-    }
-    if (result?.type === 'gauntlet') {
-        const { x, y } = getWeaponTip(botPlayer, GAUNTLET_SPARK_OFFSET)
-        Render.addGauntletSpark(x, y)
-        applyMeleeDamage(botPlayer, result, otherPlayers)
-    }
+    processFireResult(botPlayer, result, BotManager.getOtherPlayers(botPlayer))
 }
 
 function processMovementInput(player) {
@@ -803,22 +776,28 @@ function processFiring(player) {
 
     const otherPlayers = BotManager.getOtherPlayers(player)
     const result = player.fire()
+    processFireResult(player, result, otherPlayers)
+}
+
+function processFireResult(player, result, otherPlayers) {
     if (result?.type === 'rail') {
         applyHitscanShot(player, result, otherPlayers, 'rail')
-    }
-    if (result?.type === 'shaft') {
+    } else if (result?.type === 'shaft') {
         applyHitscanShot(player, result, otherPlayers, 'shaft')
-    }
-    if (result?.type === 'hitscan') {
+    } else if (result?.type === 'hitscan') {
         applyHitscanShot(player, result, otherPlayers, 'bullet', 2.5)
-    }
-    if (result?.type === 'shotgun') {
+    } else if (result?.type === 'shotgun') {
         for (const pellet of result.pellets) {
             const shot = { startX: result.startX, startY: result.startY, trace: pellet.trace }
-            applyHitscanShot(player, { ...shot, damage: pellet.damage }, otherPlayers, 'bullet', 2)
+            applyHitscanShot(
+                player,
+                { ...shot, damage: pellet.damage },
+                otherPlayers,
+                'bullet',
+                2,
+            )
         }
-    }
-    if (result?.type === 'gauntlet') {
+    } else if (result?.type === 'gauntlet') {
         const { x, y } = getWeaponTip(player, GAUNTLET_SPARK_OFFSET)
         Render.addGauntletSpark(x, y)
         applyMeleeDamage(player, result, otherPlayers)
@@ -896,31 +875,33 @@ function applyHitscanShot(attacker, shot, targets, effect, radius = 2.5) {
     const impact = resolveHitscanImpact(attacker, shot, targets)
     if (!impact) return
 
-    const impactShot = {
-        ...shot,
-        trace: { x: impact.x, y: impact.y },
-    }
-
     switch (effect) {
         case 'rail':
-            Render.addRailShot(impactShot)
+            Render.addRailShot({
+                startX: shot.startX,
+                startY: shot.startY,
+                trace: { x: impact.x, y: impact.y },
+            })
             break
         case 'shaft':
-            Render.addShaftShot(impactShot)
+            Render.addShaftShot({
+                startX: shot.startX,
+                startY: shot.startY,
+                trace: { x: impact.x, y: impact.y },
+            })
             break
         default:
             Render.addBulletImpact(impact.x, impact.y, { radius })
             break
     }
 
-    applyHitscanDamage(attacker, shot, impact)
+    applyHitscanDamage(attacker, shot.damage, impact)
 }
 
-function applyHitscanDamage(attacker, shot, impact) {
-    if (!shot?.trace || !impact) return
-
+function applyHitscanDamage(attacker, damage, impact) {
+    if (!impact?.target) return
     const multiplier = attacker.quadDamage ? PhysicsConstants.QUAD_MULTIPLIER : 1
-    impact.target?.takeDamage(shot.damage * multiplier, attacker.id)
+    impact.target.takeDamage(damage * multiplier, attacker.id)
 }
 
 function applyMeleeDamage(attacker, hit, targets) {
@@ -965,6 +946,10 @@ function resolveHitscanImpact(attacker, shot, targets) {
     const dx = endX - startX
     const dy = endY - startY
     const lenSq = dx * dx + dy * dy || 1
+
+    if (!Array.isArray(targets) || targets.length === 0) {
+        return { x: endX, y: endY, target: null }
+    }
 
     let closest = null
     let closestT = Infinity

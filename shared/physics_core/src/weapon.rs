@@ -118,14 +118,18 @@ pub fn ray_trace(
     let step_x = if dir_x < 0.0 { -1 } else { 1 };
     let step_y = if dir_y < 0.0 { -1 } else { 1 };
 
-    let mut t_max_x = if dir_x < 0.0 {
+    let mut t_max_x = if dir_x == 0.0 {
+        f32::INFINITY
+    } else if dir_x < 0.0 {
         let boundary_x = cell_x as f32 * TILE_W;
         (boundary_x - start_x) / dir_x
     } else {
         let boundary_x = (cell_x as f32 + 1.0) * TILE_W;
         (boundary_x - start_x) / dir_x
     };
-    let mut t_max_y = if dir_y < 0.0 {
+    let mut t_max_y = if dir_y == 0.0 {
+        f32::INFINITY
+    } else if dir_y < 0.0 {
         let boundary_y = cell_y as f32 * TILE_H;
         (boundary_y - start_y) / dir_y
     } else {
@@ -180,6 +184,7 @@ pub fn ray_trace(
 #[cfg(test)]
 mod tests {
     use super::ray_trace;
+    use crate::constants::{TILE_H, TILE_W};
     use crate::tilemap::FlatTileMap;
 
     #[test]
@@ -226,5 +231,21 @@ mod tests {
         assert!((hit.distance - 64.0).abs() < 1e-4);
         assert!((hit.x - (48.0 + angle.cos() * 64.0)).abs() < 1e-4);
         assert!((hit.y - (48.0 + angle.sin() * 64.0)).abs() < 1e-4);
+    }
+
+    #[test]
+    fn ray_trace_horizontal_from_tile_boundary_is_stable() {
+        let rows = 8;
+        let cols = 8;
+        let map = FlatTileMap::new(rows, cols, vec![0_u8; (rows * cols) as usize]);
+        let start_x = TILE_W * 1.5;
+        let start_y = TILE_H; // exactly on an interior tile boundary
+        let hit = ray_trace(&map, start_x, start_y, 0.0, 500.0);
+
+        assert!(hit.hit_wall);
+        assert!(hit.x.is_finite());
+        assert!(hit.y.is_finite());
+        assert!((hit.x - (cols as f32 * TILE_W)).abs() < 1e-4, "unexpected x={}", hit.x);
+        assert!((hit.y - start_y).abs() < 1e-4, "unexpected y={}", hit.y);
     }
 }

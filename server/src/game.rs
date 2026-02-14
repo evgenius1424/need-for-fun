@@ -670,6 +670,7 @@ fn has_quad_damage(players: &[PlayerState], player_id: u64) -> bool {
         .unwrap_or(false)
 }
 
+#[derive(Debug)]
 struct HitscanImpact {
     x: f32,
     y: f32,
