@@ -5,7 +5,6 @@ pub mod constants;
 pub mod explosion;
 pub mod projectile;
 pub mod step;
-pub mod test_vectors;
 pub mod tilemap;
 pub mod types;
 pub mod weapon;

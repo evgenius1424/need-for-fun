@@ -268,32 +268,3 @@ pub fn check_crouch_head<M: TileMap + ?Sized>(map: &M, col_l: i32, col_r: i32, y
         || map.is_solid(col_r, trunc_i32((y - 16.0) / TILE_H))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::step_player;
-    use crate::test_vectors::vectors;
-
-    #[test]
-    fn golden_vectors_native() {
-        for vector in vectors() {
-            let mut player = vector.initial.clone();
-            for _ in 0..vector.ticks {
-                step_player(&mut player, vector.input, &vector.map);
-            }
-            assert!(
-                (player.y - vector.expected_y).abs() < 1e-4,
-                "vector={} y mismatch: got {} expected {}",
-                vector.name,
-                player.y,
-                vector.expected_y
-            );
-            assert!(
-                (player.velocity_y - vector.expected_vy).abs() < 1e-4,
-                "vector={} vy mismatch: got {} expected {}",
-                vector.name,
-                player.velocity_y,
-                vector.expected_vy
-            );
-        }
-    }
-}

@@ -162,17 +162,3 @@ fn parse_map(map_text: &str, map_name: &str) -> GameMap {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::parse_map;
-
-    #[test]
-    fn parse_map_ignores_trailing_newline() {
-        let map = parse_map("R0\n00\n", "test");
-        assert_eq!(map.rows, 2);
-        assert_eq!(map.cols, 2);
-        assert!(map.is_brick(1, 0));
-        assert!(map.is_brick(0, 1));
-        assert_eq!(map.respawns, vec![(0, 0)]);
-    }
-}

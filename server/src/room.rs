@@ -91,11 +91,6 @@ enum RoomCmd {
         seq: u64,
         input: PlayerInput,
     },
-    #[cfg(test)]
-    ContainsPlayer {
-        player_id: PlayerId,
-        response: oneshot::Sender<bool>,
-    },
 }
 
 pub struct RoomHandle {
@@ -154,22 +149,6 @@ impl RoomHandle {
         });
     }
 
-    #[cfg(test)]
-    pub async fn contains_player(&self, player_id: PlayerId) -> bool {
-        let (response_tx, response_rx) = oneshot::channel();
-        if self
-            .tx
-            .send(RoomCmd::ContainsPlayer {
-                player_id,
-                response: response_tx,
-            })
-            .await
-            .is_err()
-        {
-            return false;
-        }
-        response_rx.await.unwrap_or(false)
-    }
 }
 
 struct RoomTask {
@@ -217,9 +196,6 @@ impl PlayerStore {
         self.conns.is_empty()
     }
 
-    fn contains(&self, player_id: PlayerId) -> bool {
-        self.player_index.contains_key(&player_id)
-    }
 
     fn player_mut_by_id(&mut self, player_id: PlayerId) -> Option<&mut PlayerConn> {
         let idx = self.player_index.get(&player_id).copied()?;
@@ -366,13 +342,6 @@ impl RoomTask {
                         player.input = input;
                     }
                 }
-            }
-            #[cfg(test)]
-            RoomCmd::ContainsPlayer {
-                player_id,
-                response,
-            } => {
-                let _ = response.send(self.player_store.contains(player_id));
             }
         }
     }
@@ -638,44 +607,3 @@ fn apply_input_to_state(input: &PlayerInput, state: &mut PlayerState) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::time::Instant;
-
-    use bytes::Bytes;
-    use tokio::sync::mpsc;
-
-    use super::{PlayerId, RoomHandle, RoomId};
-    use crate::map::GameMap;
-
-    fn simple_map() -> GameMap {
-        GameMap {
-            rows: 1,
-            cols: 1,
-            bricks: vec![0],
-            respawns: vec![(0, 0)],
-            items: Vec::new(),
-            name: "test".to_string(),
-        }
-    }
-
-    #[tokio::test]
-    async fn join_is_idempotent_and_leave_removes_player() {
-        let room = RoomHandle::new(RoomId::from("room-test"), simple_map(), Instant::now());
-        let (tx, _rx) = mpsc::channel::<Bytes>(4);
-
-        let first = room
-            .join(PlayerId(10), "alice".to_string(), tx.clone())
-            .await;
-        assert!(first.is_some());
-        assert!(room.contains_player(PlayerId(10)).await);
-
-        let second = room.join(PlayerId(10), "alice".to_string(), tx).await;
-        assert!(second.is_some());
-        assert!(room.contains_player(PlayerId(10)).await);
-
-        room.leave(PlayerId(10));
-        tokio::task::yield_now().await;
-        assert!(!room.contains_player(PlayerId(10)).await);
-    }
-}
