@@ -80,90 +80,100 @@ pub fn ray_trace(
     angle: f32,
     max_distance: f32,
 ) -> RayTraceResult {
+    if max_distance <= 0.0 {
+        return RayTraceResult {
+            hit_wall: false,
+            x: start_x,
+            y: start_y,
+            distance: 0.0,
+        };
+    }
+
     let dir_x = angle.cos();
     let dir_y = angle.sin();
 
-    let mut map_x = (start_x / TILE_W).floor() as i32;
-    let mut map_y = (start_y / TILE_H).floor() as i32;
+    let mut cell_x = (start_x / TILE_W).floor() as i32;
+    let mut cell_y = (start_y / TILE_H).floor() as i32;
 
-    let delta_dist_x = if dir_x == 0.0 {
-        1e30
+    if map.is_solid(cell_x, cell_y) {
+        return RayTraceResult {
+            hit_wall: true,
+            x: start_x,
+            y: start_y,
+            distance: 0.0,
+        };
+    }
+
+    let t_delta_x = if dir_x == 0.0 {
+        f32::INFINITY
     } else {
-        (1.0 / dir_x).abs()
+        TILE_W / dir_x.abs()
     };
-    let delta_dist_y = if dir_y == 0.0 {
-        1e30
+    let t_delta_y = if dir_y == 0.0 {
+        f32::INFINITY
     } else {
-        (1.0 / dir_y).abs()
+        TILE_H / dir_y.abs()
     };
 
     let step_x = if dir_x < 0.0 { -1 } else { 1 };
     let step_y = if dir_y < 0.0 { -1 } else { 1 };
 
-    let mut side_dist_x = if dir_x < 0.0 {
-        (start_x / TILE_W - map_x as f32) * delta_dist_x
+    let mut t_max_x = if dir_x < 0.0 {
+        let boundary_x = cell_x as f32 * TILE_W;
+        (boundary_x - start_x) / dir_x
     } else {
-        (map_x as f32 + 1.0 - start_x / TILE_W) * delta_dist_x
+        let boundary_x = (cell_x as f32 + 1.0) * TILE_W;
+        (boundary_x - start_x) / dir_x
+    };
+    let mut t_max_y = if dir_y < 0.0 {
+        let boundary_y = cell_y as f32 * TILE_H;
+        (boundary_y - start_y) / dir_y
+    } else {
+        let boundary_y = (cell_y as f32 + 1.0) * TILE_H;
+        (boundary_y - start_y) / dir_y
     };
 
-    let mut side_dist_y = if dir_y < 0.0 {
-        (start_y / TILE_H - map_y as f32) * delta_dist_y
-    } else {
-        (map_y as f32 + 1.0 - start_y / TILE_H) * delta_dist_y
-    };
-
-    let max_dist_sq = max_distance * max_distance;
-    let mut hit = false;
-    let mut side = 0;
-
-    while !hit {
-        if side_dist_x < side_dist_y {
-            side_dist_x += delta_dist_x;
-            map_x += step_x;
-            side = 0;
+    loop {
+        let (next_t, side) = if t_max_x < t_max_y {
+            (t_max_x, 0_u8)
         } else {
-            side_dist_y += delta_dist_y;
-            map_y += step_y;
-            side = 1;
-        }
+            (t_max_y, 1_u8)
+        };
 
-        let check_x = (map_x as f32 + 0.5) * TILE_W - start_x;
-        let check_y = (map_y as f32 + 0.5) * TILE_H - start_y;
-        if check_x * check_x + check_y * check_y > max_dist_sq {
+        if next_t > max_distance {
             break;
         }
 
-        if map.is_solid(map_x, map_y) {
-            hit = true;
+        if side == 0 {
+            cell_x += step_x;
+            if map.is_solid(cell_x, cell_y) {
+                return RayTraceResult {
+                    hit_wall: true,
+                    x: start_x + dir_x * next_t,
+                    y: start_y + dir_y * next_t,
+                    distance: next_t,
+                };
+            }
+            t_max_x += t_delta_x;
+        } else {
+            cell_y += step_y;
+            if map.is_solid(cell_x, cell_y) {
+                return RayTraceResult {
+                    hit_wall: true,
+                    x: start_x + dir_x * next_t,
+                    y: start_y + dir_y * next_t,
+                    distance: next_t,
+                };
+            }
+            t_max_y += t_delta_y;
         }
     }
 
-    if !hit {
-        return RayTraceResult {
-            hit_wall: false,
-            x: start_x + dir_x * max_distance,
-            y: start_y + dir_y * max_distance,
-            distance: max_distance,
-        };
-    }
-
-    let (hit_x, hit_y, distance) = if side == 0 {
-        let x = (map_x + if step_x == -1 { 1 } else { 0 }) as f32 * TILE_W;
-        let y = start_y + ((x - start_x) / dir_x) * dir_y;
-        let d = ((x - start_x) / dir_x).abs();
-        (x, y, d)
-    } else {
-        let y = (map_y + if step_y == -1 { 1 } else { 0 }) as f32 * TILE_H;
-        let x = start_x + ((y - start_y) / dir_y) * dir_x;
-        let d = ((y - start_y) / dir_y).abs();
-        (x, y, d)
-    };
-
     RayTraceResult {
-        hit_wall: true,
-        x: hit_x,
-        y: hit_y,
-        distance,
+        hit_wall: false,
+        x: start_x + dir_x * max_distance,
+        y: start_y + dir_y * max_distance,
+        distance: max_distance,
     }
 }
 
@@ -194,5 +204,27 @@ mod tests {
         assert!((hit.x - 57.0).abs() < 1e-4);
         assert!((hit.y - 16.0).abs() < 1e-4);
         assert!((hit.distance - 25.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn ray_trace_hits_map_boundary() {
+        let map = FlatTileMap::new(4, 4, vec![0_u8; 16]);
+        let hit = ray_trace(&map, 96.0, 48.0, 0.0, 500.0);
+
+        assert!(hit.hit_wall);
+        assert!((hit.x - 128.0).abs() < 1e-4);
+        assert!((hit.y - 48.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn ray_trace_does_not_stop_mid_air_near_corner() {
+        let map = FlatTileMap::new(8, 8, vec![0_u8; 64]);
+        let angle = std::f32::consts::FRAC_PI_4;
+        let hit = ray_trace(&map, 48.0, 48.0, angle, 64.0);
+
+        assert!(!hit.hit_wall);
+        assert!((hit.distance - 64.0).abs() < 1e-4);
+        assert!((hit.x - (48.0 + angle.cos() * 64.0)).abs() < 1e-4);
+        assert!((hit.y - (48.0 + angle.sin() * 64.0)).abs() < 1e-4);
     }
 }

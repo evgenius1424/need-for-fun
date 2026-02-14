@@ -128,11 +128,6 @@ pub fn try_fire(
                     trace_y: trace.y,
                     damage: damage_for(weapon),
                 });
-                events.push(EffectEvent::BulletImpact {
-                    x: trace.x,
-                    y: trace.y,
-                    radius: 2.0,
-                });
             }
         }
         WeaponId::Machine | WeaponId::Rail | WeaponId::Shaft => {
@@ -149,25 +144,6 @@ pub fn try_fire(
                 trace_y: trace.y,
                 damage: damage_for(weapon),
             });
-            match weapon {
-                WeaponId::Rail => events.push(EffectEvent::Rail {
-                    start_x: x,
-                    start_y: y,
-                    end_x: trace.x,
-                    end_y: trace.y,
-                }),
-                WeaponId::Shaft => events.push(EffectEvent::Shaft {
-                    start_x: x,
-                    start_y: y,
-                    end_x: trace.x,
-                    end_y: trace.y,
-                }),
-                _ => events.push(EffectEvent::BulletImpact {
-                    x: trace.x,
-                    y: trace.y,
-                    radius: 2.5,
-                }),
-            }
         }
         WeaponId::Grenade | WeaponId::Rocket | WeaponId::Plasma | WeaponId::Bfg => {
             let (x, y) = get_weapon_origin(player);
@@ -242,9 +218,34 @@ pub fn apply_hit_actions(
                 trace_y,
                 damage,
             } => {
-                if let Some(target_id) =
-                    find_hitscan_target(attacker_id, start_x, start_y, trace_x, trace_y, players)
-                {
+                let impact =
+                    find_hitscan_impact(attacker_id, start_x, start_y, trace_x, trace_y, players);
+                match weapon_id {
+                    WeaponId::Rail => events.push(EffectEvent::Rail {
+                        start_x,
+                        start_y,
+                        end_x: impact.x,
+                        end_y: impact.y,
+                    }),
+                    WeaponId::Shaft => events.push(EffectEvent::Shaft {
+                        start_x,
+                        start_y,
+                        end_x: impact.x,
+                        end_y: impact.y,
+                    }),
+                    WeaponId::Shotgun => events.push(EffectEvent::BulletImpact {
+                        x: impact.x,
+                        y: impact.y,
+                        radius: 2.0,
+                    }),
+                    _ => events.push(EffectEvent::BulletImpact {
+                        x: impact.x,
+                        y: impact.y,
+                        radius: 2.5,
+                    }),
+                }
+
+                if let Some(target_id) = impact.target_id {
                     apply_damage(attacker_id, target_id, damage, players, events);
                     if let Some((sx, sy)) = get_player_pos(attacker_id, players) {
                         apply_push_on_hit(attacker_id, target_id, weapon_id, sx, sy, players);
@@ -669,14 +670,20 @@ fn has_quad_damage(players: &[PlayerState], player_id: u64) -> bool {
         .unwrap_or(false)
 }
 
-fn find_hitscan_target(
+struct HitscanImpact {
+    x: f32,
+    y: f32,
+    target_id: Option<u64>,
+}
+
+fn find_hitscan_impact(
     attacker_id: u64,
     start_x: f32,
     start_y: f32,
     end_x: f32,
     end_y: f32,
     players: &[PlayerState],
-) -> Option<u64> {
+) -> HitscanImpact {
     let dx = end_x - start_x;
     let dy = end_y - start_y;
     let len_sq = if dx == 0.0 && dy == 0.0 {
@@ -709,7 +716,22 @@ fn find_hitscan_target(
             closest_id = Some(target.id);
         }
     }
-    closest_id
+
+    if let Some(target_id) = closest_id {
+        let impact_x = start_x + dx * closest_t;
+        let impact_y = start_y + dy * closest_t;
+        return HitscanImpact {
+            x: impact_x,
+            y: impact_y,
+            target_id: Some(target_id),
+        };
+    }
+
+    HitscanImpact {
+        x: end_x,
+        y: end_y,
+        target_id: None,
+    }
 }
 
 fn find_melee_target(

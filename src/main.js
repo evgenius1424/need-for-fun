@@ -241,22 +241,24 @@ function processBotFireResult(botPlayer, result) {
     const otherPlayers = BotManager.getOtherPlayers(botPlayer)
 
     if (result?.type === 'rail') {
-        Render.addRailShot(result)
-        applyHitscanDamage(botPlayer, result, otherPlayers)
+        applyHitscanShot(botPlayer, result, otherPlayers, 'rail')
     }
     if (result?.type === 'shaft') {
-        Render.addShaftShot(result)
-        applyHitscanDamage(botPlayer, result, otherPlayers)
+        applyHitscanShot(botPlayer, result, otherPlayers, 'shaft')
     }
     if (result?.type === 'hitscan') {
-        Render.addBulletImpact(result.trace.x, result.trace.y, { radius: 2.5 })
-        applyHitscanDamage(botPlayer, result, otherPlayers)
+        applyHitscanShot(botPlayer, result, otherPlayers, 'bullet', 2.5)
     }
     if (result?.type === 'shotgun') {
         for (const pellet of result.pellets) {
             const shot = { startX: result.startX, startY: result.startY, trace: pellet.trace }
-            Render.addBulletImpact(shot.trace.x, shot.trace.y, { radius: 2 })
-            applyHitscanDamage(botPlayer, { ...shot, damage: pellet.damage }, otherPlayers)
+            applyHitscanShot(
+                botPlayer,
+                { ...shot, damage: pellet.damage },
+                otherPlayers,
+                'bullet',
+                2,
+            )
         }
     }
     if (result?.type === 'gauntlet') {
@@ -802,22 +804,18 @@ function processFiring(player) {
     const otherPlayers = BotManager.getOtherPlayers(player)
     const result = player.fire()
     if (result?.type === 'rail') {
-        Render.addRailShot(result)
-        applyHitscanDamage(player, result, otherPlayers)
+        applyHitscanShot(player, result, otherPlayers, 'rail')
     }
     if (result?.type === 'shaft') {
-        Render.addShaftShot(result)
-        applyHitscanDamage(player, result, otherPlayers)
+        applyHitscanShot(player, result, otherPlayers, 'shaft')
     }
     if (result?.type === 'hitscan') {
-        Render.addBulletImpact(result.trace.x, result.trace.y, { radius: 2.5 })
-        applyHitscanDamage(player, result, otherPlayers)
+        applyHitscanShot(player, result, otherPlayers, 'bullet', 2.5)
     }
     if (result?.type === 'shotgun') {
         for (const pellet of result.pellets) {
             const shot = { startX: result.startX, startY: result.startY, trace: pellet.trace }
-            Render.addBulletImpact(shot.trace.x, shot.trace.y, { radius: 2 })
-            applyHitscanDamage(player, { ...shot, damage: pellet.damage }, otherPlayers)
+            applyHitscanShot(player, { ...shot, damage: pellet.damage }, otherPlayers, 'bullet', 2)
         }
     }
     if (result?.type === 'gauntlet') {
@@ -894,14 +892,35 @@ function applyItemEffect(player, item) {
     }
 }
 
-function applyHitscanDamage(attacker, shot, targets) {
-    if (!shot?.trace || targets.length === 0) return
+function applyHitscanShot(attacker, shot, targets, effect, radius = 2.5) {
+    const impact = resolveHitscanImpact(attacker, shot, targets)
+    if (!impact) return
 
-    const hit = findHitscanTarget(attacker, shot, targets)
-    if (!hit) return
+    const impactShot = {
+        ...shot,
+        trace: { x: impact.x, y: impact.y },
+    }
+
+    switch (effect) {
+        case 'rail':
+            Render.addRailShot(impactShot)
+            break
+        case 'shaft':
+            Render.addShaftShot(impactShot)
+            break
+        default:
+            Render.addBulletImpact(impact.x, impact.y, { radius })
+            break
+    }
+
+    applyHitscanDamage(attacker, shot, impact)
+}
+
+function applyHitscanDamage(attacker, shot, impact) {
+    if (!shot?.trace || !impact) return
 
     const multiplier = attacker.quadDamage ? PhysicsConstants.QUAD_MULTIPLIER : 1
-    hit.target.takeDamage(shot.damage * multiplier, attacker.id)
+    impact.target?.takeDamage(shot.damage * multiplier, attacker.id)
 }
 
 function applyMeleeDamage(attacker, hit, targets) {
@@ -936,7 +955,9 @@ function findMeleeTarget(attacker, hit, targets) {
     return closest
 }
 
-function findHitscanTarget(attacker, shot, targets) {
+function resolveHitscanImpact(attacker, shot, targets) {
+    if (!shot?.trace) return null
+
     const startX = shot.startX
     const startY = shot.startY
     const endX = shot.trace.x
@@ -968,8 +989,12 @@ function findHitscanTarget(attacker, shot, targets) {
         }
     }
 
-    if (!closest) return null
-    return { target: closest }
+    if (!closest) return { x: endX, y: endY, target: null }
+    return {
+        x: startX + dx * closestT,
+        y: startY + dy * closestT,
+        target: closest,
+    }
 }
 
 function getWeaponTip(player, offset) {
