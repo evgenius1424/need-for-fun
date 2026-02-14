@@ -43,6 +43,8 @@ let netDebugEnabled = false
 let lastNetDebugUpdateAt = 0
 let cachedNetDebugText = ''
 let lastAppliedWorldSnapshotTick = -1
+let remoteBotWrappers = []
+let remoteBotWrapperSource = null
 
 await ensureModelLoaded(localPlayer.model, SkinId.RED)
 
@@ -119,9 +121,11 @@ function setupExplosionHandlers() {
 
 function gameLoop(timestamp, player) {
     if (network.isActive()) {
+        network.flushSnapshots()
         player.prevAimAngle = player.aimAngle
 
-        for (const remote of network.getRemotePlayers()) {
+        const remotePlayers = network.getRemotePlayers()
+        for (const remote of remotePlayers) {
             remote.prevAimAngle = remote.aimAngle
         }
 
@@ -152,13 +156,15 @@ function gameLoop(timestamp, player) {
             Input.weaponScroll = 0
         }
 
+        player.update()
         // Local prediction for movement only; server snapshots will correct.
         Physics.updateAllPlayers([player], timestamp)
         Projectiles.update()
+        player.decayVisualCorrection(0.85)
 
         network.updateInterpolation()
         updateNetDebugOverlay(timestamp)
-        const remoteBots = network.getRemotePlayers().map((p) => ({ player: p }))
+        const remoteBots = getRemoteBotWrappers(remotePlayers)
         Render.renderGame(player, remoteBots)
         requestAnimationFrame((ts) => gameLoop(ts, player))
         return
@@ -214,6 +220,21 @@ function gameLoop(timestamp, player) {
 
     Render.renderGame(player, BotManager.getBots())
     requestAnimationFrame((ts) => gameLoop(ts, player))
+}
+
+function getRemoteBotWrappers(remotePlayers) {
+    if (remotePlayers !== remoteBotWrapperSource) {
+        remoteBotWrapperSource = remotePlayers
+        if (remoteBotWrappers.length > remotePlayers.length) {
+            remoteBotWrappers.length = remotePlayers.length
+        }
+        for (let i = 0; i < remotePlayers.length; i++) {
+            const wrapper = remoteBotWrappers[i] ?? { player: remotePlayers[i] }
+            wrapper.player = remotePlayers[i]
+            remoteBotWrappers[i] = wrapper
+        }
+    }
+    return remoteBotWrappers
 }
 
 function processBotFireResult(botPlayer, result) {

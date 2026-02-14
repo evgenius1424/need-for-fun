@@ -32,6 +32,7 @@ const REMOTE_AIM_MICRO_SMOOTH = 0.35
 const REMOTE_FACING_CONFIRM_FRAMES = 3
 const INPUT_MIN_SEND_HZ = 30
 const INPUT_MAX_SEND_HZ = 90
+const TELEPORT_THRESHOLD_UNITS = 40
 const DEFAULT_TUNING = Object.freeze({
     interpBaseSnapshots: 2.25,
     interpRttFactor: 0.25,
@@ -102,8 +103,11 @@ export class NetworkClient {
         this.connected = false
         this.handlers = {}
         this.remotePlayers = new Map()
+        this._remotePlayerCache = []
+        this._remotePlayersDirty = true
         this.localPlayer = null
         this.pendingInputs = []
+        this.pendingSnapshots = []
         this.snapshotBuffer = []
         this.lastReconciledServerTick = -1
         this.lastCorrectionErrorUnits = 0
@@ -149,7 +153,11 @@ export class NetworkClient {
     }
 
     getRemotePlayers() {
-        return [...this.remotePlayers.values()]
+        if (this._remotePlayersDirty) {
+            this._remotePlayerCache = [...this.remotePlayers.values()]
+            this._remotePlayersDirty = false
+        }
+        return this._remotePlayerCache
     }
 
     getNetStats() {
@@ -539,6 +547,7 @@ export class NetworkClient {
         this.lastPingSentAt = -Infinity
         this.snapshotBuffer.length = 0
         this.pendingInputs.length = 0
+        this.pendingSnapshots.length = 0
         this.lastReconciledServerTick = -1
         this.lastCorrectionErrorUnits = 0
         this.lastCorrectionBlend = 1
@@ -553,6 +562,8 @@ export class NetworkClient {
         this.lastSentInputSignature = ''
         this.currentInputSendHz = INPUT_SEND_RATE_HZ
         this.remotePlayers.clear()
+        this._remotePlayerCache = []
+        this._remotePlayersDirty = true
     }
 
     handleTransportClosed() {
@@ -613,8 +624,7 @@ export class NetworkClient {
                 this.handlers.onPlayerLeft?.(msg.player_id)
                 break
             case 'snapshot':
-                this.applySnapshot(msg)
-                this.handlers.onSnapshot?.(msg)
+                this.pendingSnapshots.push(msg)
                 break
             case 'pong':
                 this.handlePong(msg)
@@ -631,6 +641,15 @@ export class NetworkClient {
         }
     }
 
+    flushSnapshots() {
+        if (!this.pendingSnapshots.length) return
+        for (const snapshot of this.pendingSnapshots) {
+            this.applySnapshot(snapshot)
+            this.handlers.onSnapshot?.(snapshot)
+        }
+        this.pendingSnapshots.length = 0
+    }
+
     async upsertRemotePlayer(playerInfo) {
         if (!playerInfo?.id) return
         if (playerInfo.id === this.playerId) return
@@ -645,6 +664,7 @@ export class NetworkClient {
         const player = new Player({ model: playerInfo.model, skin: playerInfo.skin })
         player.id = playerInfo.id
         this.remotePlayers.set(playerInfo.id, player)
+        this._remotePlayersDirty = true
         await ensureModelLoaded(player.model, player.skin ?? SkinId.RED)
         if (playerInfo.state) {
             applyPlayerState(player, playerInfo.state, true)
@@ -652,7 +672,9 @@ export class NetworkClient {
     }
 
     removeRemotePlayer(playerId) {
-        this.remotePlayers.delete(playerId)
+        if (this.remotePlayers.delete(playerId)) {
+            this._remotePlayersDirty = true
+        }
     }
 
     applySnapshot(snapshot) {
@@ -668,6 +690,7 @@ export class NetworkClient {
                     player = new Player()
                     player.id = state.id
                     this.remotePlayers.set(state.id, player)
+                    this._remotePlayersDirty = true
                     applyPlayerState(player, state, true)
                 }
             }
@@ -688,6 +711,8 @@ export class NetworkClient {
         const predictedBefore = this.localPlayer ? captureMovementState(this.localPlayer) : null
 
         if (!this.localPlayer) return
+        const savedPrevX = this.localPlayer.prevX
+        const savedPrevY = this.localPlayer.prevY
         applyPlayerState(this.localPlayer, serverState, false)
 
         if (this.pendingInputs.length) {
@@ -706,41 +731,26 @@ export class NetworkClient {
             correctedAfter.y - predictedBefore.y,
         )
         this.lastCorrectionErrorUnits = correctionError
-        this.lastCorrectionBlend = 1
+        this.lastCorrectionBlend = 0
 
         if (correctionError <= this.tuning.reconcileDeadzoneUnits) {
             applyMovementState(this.localPlayer, predictedBefore)
             this.lastCorrectionBlend = 0
+        } else if (correctionError >= TELEPORT_THRESHOLD_UNITS) {
+            this.localPlayer.visualCorrectionX = 0
+            this.localPlayer.visualCorrectionY = 0
+            this.lastCorrectionBlend = 1
+            this.localPlayer.prevX = this.localPlayer.x
+            this.localPlayer.prevY = this.localPlayer.y
             return
+        } else {
+            this.localPlayer.visualCorrectionX += predictedBefore.x - correctedAfter.x
+            this.localPlayer.visualCorrectionY += predictedBefore.y - correctedAfter.y
+            this.lastCorrectionBlend = correctionError / TELEPORT_THRESHOLD_UNITS
         }
 
-        if (correctionError >= this.tuning.reconcileSmoothMaxUnits) {
-            return
-        }
-
-        const normalized = correctionError / this.tuning.reconcileSmoothMaxUnits
-        const blend = clamp(
-            this.tuning.reconcileMinBlend +
-                (this.tuning.reconcileMaxBlend - this.tuning.reconcileMinBlend) * normalized,
-            this.tuning.reconcileMinBlend,
-            this.tuning.reconcileMaxBlend,
-        )
-        this.lastCorrectionBlend = blend
-
-        applyMovementState(this.localPlayer, {
-            x: lerp(predictedBefore.x, correctedAfter.x, blend),
-            y: lerp(predictedBefore.y, correctedAfter.y, blend),
-            prevX: lerp(predictedBefore.prevX, correctedAfter.prevX, blend),
-            prevY: lerp(predictedBefore.prevY, correctedAfter.prevY, blend),
-            velocityX: lerp(predictedBefore.velocityX, correctedAfter.velocityX, blend),
-            velocityY: lerp(predictedBefore.velocityY, correctedAfter.velocityY, blend),
-            aimAngle: lerpAngle(predictedBefore.aimAngle, correctedAfter.aimAngle, blend),
-            prevAimAngle: lerpAngle(
-                predictedBefore.prevAimAngle,
-                correctedAfter.prevAimAngle,
-                blend,
-            ),
-        })
+        this.localPlayer.prevX = savedPrevX
+        this.localPlayer.prevY = savedPrevY
     }
 
     updateInterpolation(now = performance.now()) {

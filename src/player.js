@@ -18,6 +18,8 @@ export class Player {
     y = 0
     prevX = 0
     prevY = 0
+    visualCorrectionX = 0
+    visualCorrectionY = 0
     velocityX = 0
     velocityY = 0
 
@@ -90,6 +92,13 @@ export class Player {
         if (this.quadDamage && --this.quadTimer <= 0) {
             this.quadDamage = false
         }
+    }
+
+    decayVisualCorrection(factor = 0.85) {
+        this.visualCorrectionX *= factor
+        this.visualCorrectionY *= factor
+        if (Math.abs(this.visualCorrectionX) < 0.01) this.visualCorrectionX = 0
+        if (Math.abs(this.visualCorrectionY) < 0.01) this.visualCorrectionY = 0
     }
 
     // Check and handle respawn for local player

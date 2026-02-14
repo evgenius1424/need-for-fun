@@ -84,9 +84,11 @@ export function getRenderPosition(player) {
     const prevY = Number.isFinite(player.prevY) ? player.prevY : player.y
     const prevAim = Number.isFinite(player.prevAimAngle) ? player.prevAimAngle : player.aimAngle
     const alpha = Math.min(1, Math.max(0, Physics.getAlpha()))
+    const renderX = prevX + (player.x - prevX) * alpha + (player.visualCorrectionX ?? 0)
+    const renderY = prevY + (player.y - prevY) * alpha + (player.visualCorrectionY ?? 0)
     return {
-        x: prevX + (player.x - prevX) * alpha,
-        y: prevY + (player.y - prevY) * alpha,
+        x: renderX,
+        y: renderY,
         aimAngle: lerpAngle(prevAim, player.aimAngle, alpha),
     }
 }
