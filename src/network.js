@@ -12,6 +12,7 @@ import {
 
 const DEFAULT_SERVER_URL = 'ws://localhost:3001/ws'
 const DEFAULT_MAP = 'dm2'
+const DEFAULT_TRANSPORT_MODE = 'auto'
 const INPUT_SEND_RATE_HZ = 60
 const INPUT_SEND_INTERVAL_MS = 1000 / INPUT_SEND_RATE_HZ
 const SERVER_TICK_MILLIS = 16
@@ -128,6 +129,7 @@ export class NetworkClient {
         this.inputSendIntervalMs = INPUT_SEND_INTERVAL_MS
         this.lastInputSentAt = -Infinity
         this.predictor = null
+        this.connectOptions = null
     }
 
     setHandlers(handlers) {
@@ -152,6 +154,7 @@ export class NetworkClient {
 
     getNetStats() {
         return {
+            transport: this.transport,
             rttMs: this.rttMs,
             jitterMs: this.rttJitterMs,
             clockOffsetMs: this.clockOffsetMs,
@@ -268,12 +271,41 @@ export class NetworkClient {
         return true
     }
 
-    connect({ url = DEFAULT_SERVER_URL, username, roomId, map = DEFAULT_MAP } = {}) {
+    connect({
+        url = DEFAULT_SERVER_URL,
+        username,
+        roomId,
+        map = DEFAULT_MAP,
+        transport = DEFAULT_TRANSPORT_MODE,
+    } = {}) {
         if (this.connected) return Promise.resolve()
         if (!username) return Promise.reject(new Error('Username required'))
 
+        const resolvedTransport = normalizeTransportMode(transport)
+        if (!resolvedTransport) {
+            return Promise.reject(new Error("transport must be 'auto', 'webrtc', or 'ws'"))
+        }
+
+        this.connectOptions = {
+            url,
+            username,
+            roomId,
+            map,
+            transport: resolvedTransport,
+        }
+
         return initBinaryProtocol().then(async () => {
             this.resetConnectionState()
+            if (resolvedTransport === 'ws') {
+                await this.connectWebSocket({ url, username, roomId, map })
+                return
+            }
+
+            if (resolvedTransport === 'webrtc') {
+                await this.connectWebRtc({ url, username, roomId, map })
+                return
+            }
+
             try {
                 await this.connectWebRtc({ url, username, roomId, map })
             } catch (err) {
@@ -416,16 +448,7 @@ export class NetworkClient {
 
             await waitForWebSocketOpen(this.signalSocket)
 
-            this.peerConnection = new RTCPeerConnection({
-                iceServers: [
-                    { urls: ['stun:stun.l.google.com:19302'] },
-                    {
-                        urls: ['turn:turn.example.com:3478'],
-                        username: 'user',
-                        credential: 'pass',
-                    }, // TODO: replace with real TURN credentials
-                ],
-            })
+            this.peerConnection = new RTCPeerConnection({ iceServers: buildIceServers() })
             this.transport = 'webrtc'
 
             this.peerConnection.addEventListener('connectionstatechange', () => {
@@ -1059,6 +1082,22 @@ function buildInputSignature(input) {
 
 function quantize(value, scale) {
     return Math.round(value * scale) / scale
+}
+
+function normalizeTransportMode(value) {
+    const mode = String(value ?? '').toLowerCase()
+    if (mode === 'auto' || mode === 'webrtc' || mode === 'ws') {
+        return mode
+    }
+    return null
+}
+
+function buildIceServers() {
+    const configured = globalThis?.__NFK_ICE_SERVERS__
+    if (Array.isArray(configured) && configured.length > 0) {
+        return configured
+    }
+    return [{ urls: ['stun:stun.l.google.com:19302'] }]
 }
 
 function toRtcSignalingUrl(baseUrl) {

@@ -330,26 +330,31 @@ function setupConsoleCommands() {
             const action = args[0]?.toLowerCase()
 
             if (!action) {
-                Console.writeText(`Multiplayer: ${network.isActive() ? 'connected' : 'disconnected'}`)
+                Console.writeText(
+                    `Multiplayer: ${network.isActive() ? 'connected' : 'disconnected'}`,
+                )
                 return
             }
 
             if (action === 'connect') {
                 const username = args[1]?.trim()
                 if (!username) {
-                    Console.writeText('Usage: mp connect <username> [room]')
+                    Console.writeText('Usage: mp connect <username> [room] [auto|webrtc|ws]')
                     return
                 }
                 const roomId = args[2]?.trim() || 'room-1'
+                const transport = args[3]?.trim()?.toLowerCase() || 'auto'
                 const isSecure = window.location.protocol === 'https:'
                 const url = isSecure
                     ? 'wss://need-for-fun.duckdns.org/ws'
                     : 'ws://localhost:3001/ws'
 
                 try {
-                    Console.writeText(`Connecting to ${roomId}...`)
-                    await network.connect({ url, username, roomId })
-                    Console.writeText(`Connected as ${username}`)
+                    Console.writeText(`Connecting to ${roomId} (${transport})...`)
+                    await network.connect({ url, username, roomId, transport })
+                    Console.writeText(
+                        `Connected as ${username} via ${network.transport.toUpperCase()}`,
+                    )
                 } catch (err) {
                     Console.writeText(`Connection failed: ${err.message}`)
                 }
@@ -362,7 +367,9 @@ function setupConsoleCommands() {
                 return
             }
 
-            Console.writeText('Usage: mp connect <username> [room] | mp disconnect')
+            Console.writeText(
+                'Usage: mp connect <username> [room] [auto|webrtc|ws] | mp disconnect',
+            )
         },
         'connect/disconnect multiplayer',
     )
