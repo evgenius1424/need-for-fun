@@ -120,23 +120,24 @@ pub fn player_snapshot_from_state(
     }
 }
 
-pub struct RoomStatePlayer<'a> {
-    pub username: &'a str,
-    pub last_input_seq: u64,
-    pub state: &'a crate::physics::PlayerState,
-}
-
 pub fn encode_room_state(
     room_id: &str,
     map_name: &str,
-    players: &[RoomStatePlayer<'_>],
+    players: &[crate::room::PlayerConn],
+    player_states: &[crate::physics::PlayerState],
 ) -> Vec<u8> {
+    assert_eq!(
+        players.len(),
+        player_states.len(),
+        "players/player_states length mismatch"
+    );
     let players_data: Vec<(String, PlayerSnapshot)> = players
         .iter()
-        .map(|player| {
+        .enumerate()
+        .map(|(idx, player)| {
             (
-                player.username.to_string(),
-                player_snapshot_from_state(player.last_input_seq, player.state),
+                player.username.clone(),
+                player_snapshot_from_state(player.last_input_seq, &player_states[idx]),
             )
         })
         .collect();

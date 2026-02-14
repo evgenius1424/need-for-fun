@@ -96,6 +96,10 @@ impl GameMap {
         let idx = rng.gen_range(0..self.respawns.len());
         self.respawns.get(idx).copied()
     }
+
+    pub fn take_items(&mut self) -> Vec<MapItem> {
+        std::mem::take(&mut self.items)
+    }
 }
 
 impl physics_core::tilemap::TileMap for GameMap {
