@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 use crate::constants;
-use crate::explosion::apply_knockback;
+use crate::explosion::{apply_knockback, apply_knockback_with_scale};
 use crate::projectile::{calculate_bounds, step_projectile, Projectile, ProjectileKind};
 use crate::step::step_player;
 use crate::tilemap::FlatTileMap;
@@ -228,7 +228,8 @@ impl WasmWeaponKernel {
         origin_y: f32,
         aim_angle: f32,
     ) -> bool {
-        if let Some(spawn) = weapon::compute_projectile_spawn(weapon_id, origin_x, origin_y, aim_angle)
+        if let Some(spawn) =
+            weapon::compute_projectile_spawn(weapon_id, origin_x, origin_y, aim_angle)
         {
             self.has_spawn = true;
             self.spawn_kind = spawn.kind.as_u8();
@@ -433,6 +434,31 @@ pub fn wasm_apply_knockback(
         owner_id,
     };
     apply_knockback(&mut player.inner, &explosion).unwrap_or(-1.0)
+}
+
+#[wasm_bindgen]
+pub fn wasm_apply_knockback_scaled(
+    player: &mut WasmPlayerState,
+    explosion_x: f32,
+    explosion_y: f32,
+    explosion_kind: u8,
+    owner_id: u64,
+    push_scale: f32,
+) -> f32 {
+    let kind = ProjectileKind::from_u8(explosion_kind).unwrap_or(ProjectileKind::Rocket);
+    let explosion = crate::projectile::Explosion {
+        x: explosion_x,
+        y: explosion_y,
+        kind,
+        owner_id,
+    };
+    apply_knockback_with_scale(&mut player.inner, &explosion, push_scale).unwrap_or(-1.0)
+}
+
+#[wasm_bindgen]
+pub fn get_explosion_base_damage(explosion_kind: u8) -> f32 {
+    let kind = ProjectileKind::from_u8(explosion_kind).unwrap_or(ProjectileKind::Rocket);
+    crate::explosion::base_damage(kind)
 }
 
 // Constants getters for JS

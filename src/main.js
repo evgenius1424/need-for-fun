@@ -18,6 +18,7 @@ const GAUNTLET_PLAYER_RADIUS = PhysicsConstants.GAUNTLET_PLAYER_RADIUS
 const GAUNTLET_SPARK_OFFSET = PhysicsConstants.TILE_W * 0.55
 
 const PROJECTILE_WEAPONS = new Set(['rocket', 'grenade', 'plasma', 'bfg'])
+const PROJECTILE_KIND = Object.freeze({ rocket: 0, grenade: 1, plasma: 2, bfg: 3 })
 
 await loadAssets()
 await Map.loadFromQuery()
@@ -91,29 +92,31 @@ function setupPointerLock() {
 
 function setupExplosionHandlers() {
     Projectiles.onExplosion((x, y, type, proj) => {
-        if (type !== 'rocket') return
+        const projectileKind = PROJECTILE_KIND[type]
+        if (projectileKind == null) return
 
-        const explosionRadius = PhysicsConstants.EXPLOSION_RADIUS
+        const ownerId = proj?.ownerId ?? 0
+        const attacker = BotManager.getAllPlayers().find((player) => player.id === ownerId)
+        const pushScale = attacker?.quadDamage ? PhysicsConstants.QUAD_MULTIPLIER : 1
+        const baseDamage = Physics.getExplosionBaseDamage(projectileKind)
+
         for (const player of BotManager.getAllPlayers()) {
             if (player.dead) continue
 
-            const dx = player.x - x
-            const dy = player.y - y
-            const distance = Math.hypot(dx, dy)
+            const falloff = Physics.applyExplosionKnockback(
+                player,
+                x,
+                y,
+                projectileKind,
+                ownerId,
+                pushScale,
+            )
+            if (falloff < 0) continue
 
-            if (distance >= explosionRadius) continue
-
-            const falloff = 1 - distance / explosionRadius
-            const damage = PhysicsConstants.getDamage(WeaponId.ROCKET) * falloff
+            const damage = baseDamage * falloff
 
             if (damage > 0) {
-                player.takeDamage(damage, proj?.ownerId ?? player.id)
-            }
-
-            if (distance > 0) {
-                const knockback = (4 * falloff) / distance
-                player.velocityX += dx * knockback
-                player.velocityY += dy * knockback
+                player.takeDamage(damage, ownerId || player.id)
             }
         }
     })

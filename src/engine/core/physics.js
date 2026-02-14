@@ -6,6 +6,7 @@ const MAX_TICKS_PER_FRAME = 5
 const runtime = {
     time: 0,
     alpha: 1,
+    module: null,
     kernel: null,
     map: null,
     mapRows: 0,
@@ -21,6 +22,7 @@ export let PhysicsConstants = null
 async function initKernel() {
     const module = await import('../wasm/physics_core.js')
     await module.default()
+    runtime.module = module
     runtime.kernel = new module.WasmPhysicsKernel()
     runtime.map = null
     runtime.scratchInput = new module.WasmPlayerInput()
@@ -234,6 +236,48 @@ export const Physics = {
         out.velocityX = runtime.weaponKernel.spawn_velocity_x()
         out.velocityY = runtime.weaponKernel.spawn_velocity_y()
         return out
+    },
+
+    getExplosionBaseDamage(projectileKind) {
+        return runtime.module.get_explosion_base_damage(projectileKind)
+    },
+
+    applyExplosionKnockback(player, explosionX, explosionY, projectileKind, ownerId, pushScale = 1) {
+        let entry = runtime.playerStates.get(player.id)
+        if (!entry) {
+            entry = createEntry(player)
+            runtime.playerStates.set(player.id, entry)
+        }
+
+        if (hasHostDiverged(player, entry.mirror)) {
+            entry.state.import_host_state(
+                player.x,
+                player.y,
+                player.prevX,
+                player.prevY,
+                player.velocityX,
+                player.velocityY,
+                player.crouch,
+                player.doublejumpCountdown,
+                player.speedJump,
+                player.dead,
+                runtime.map,
+            )
+            entry.mirror.dead = player.dead
+        }
+
+        const owner = toWasmPlayerId(ownerId)
+        const falloff = runtime.module.wasm_apply_knockback_scaled(
+            entry.state,
+            explosionX,
+            explosionY,
+            projectileKind,
+            owner,
+            pushScale,
+        )
+        entry.state.export_to_host(runtime.scratchOutput)
+        applyOutput(player, entry.mirror, runtime.scratchOutput)
+        return falloff
     },
 }
 

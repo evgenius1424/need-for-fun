@@ -2,13 +2,11 @@ use rand::Rng;
 
 use crate::binary::EffectEvent;
 use crate::constants::{
-    ARMOR_ABSORPTION, DAMAGE, DEFAULT_AMMO, EXPLOSION_FAR_BIAS, EXPLOSION_FAR_SCALE,
-    EXPLOSION_MID_BIAS, EXPLOSION_MID_SCALE, FIRE_RATE, GAUNTLET_PLAYER_RADIUS, GAUNTLET_RANGE,
+    ARMOR_ABSORPTION, DAMAGE, DEFAULT_AMMO, FIRE_RATE, GAUNTLET_PLAYER_RADIUS, GAUNTLET_RANGE,
     GRENADE_HIT_GRACE, HITSCAN_PLAYER_RADIUS, MACHINE_RANGE, MAX_ARMOR, MAX_HEALTH, MEGA_HEALTH,
-    PICKUP_AMMO, PICKUP_RADIUS, PLASMA_SPLASH_DMG, PLASMA_SPLASH_PUSH, PLASMA_SPLASH_RADIUS,
-    PLAYER_HALF_H, QUAD_DURATION, QUAD_MULTIPLIER, RESPAWN_TIME, SELF_DAMAGE_REDUCTION,
-    SELF_HIT_GRACE, SHOTGUN_PELLETS, SHOTGUN_RANGE, SHOTGUN_SPREAD, SPAWN_OFFSET_X,
-    SPAWN_PROTECTION, SPLASH_RADIUS, TILE_H, TILE_W, WEAPON_ORIGIN_CROUCH_LIFT, WEAPON_PUSH,
+    PICKUP_AMMO, PICKUP_RADIUS, PLAYER_HALF_H, QUAD_DURATION, QUAD_MULTIPLIER, RESPAWN_TIME,
+    SELF_DAMAGE_REDUCTION, SELF_HIT_GRACE, SHOTGUN_PELLETS, SHOTGUN_RANGE, SHOTGUN_SPREAD,
+    SPAWN_OFFSET_X, SPAWN_PROTECTION, TILE_H, TILE_W, WEAPON_ORIGIN_CROUCH_LIFT, WEAPON_PUSH,
 };
 use crate::map::GameMap;
 use crate::physics::PlayerState;
@@ -362,55 +360,30 @@ pub fn apply_explosions(
     pending_hits: &mut Vec<(u64, u64, f32)>,
 ) {
     for explosion in explosions {
-        let (radius, base_damage, push) = match explosion.kind {
-            ProjectileKind::Rocket => (
-                SPLASH_RADIUS[WeaponId::Rocket as usize],
-                damage_for(WeaponId::Rocket),
-                WEAPON_PUSH[WeaponId::Rocket as usize],
-            ),
-            ProjectileKind::Grenade => (
-                SPLASH_RADIUS[WeaponId::Grenade as usize],
-                damage_for(WeaponId::Grenade),
-                WEAPON_PUSH[WeaponId::Grenade as usize],
-            ),
-            ProjectileKind::Plasma => (PLASMA_SPLASH_RADIUS, PLASMA_SPLASH_DMG, PLASMA_SPLASH_PUSH),
-            ProjectileKind::Bfg => (
-                SPLASH_RADIUS[WeaponId::Bfg as usize],
-                damage_for(WeaponId::Bfg),
-                WEAPON_PUSH[WeaponId::Bfg as usize],
-            ),
-        };
-
-        if radius <= 0.0 {
-            continue;
-        }
-        let radius_sq = radius * radius;
+        let base_damage = physics_core::explosion::base_damage(explosion.kind);
 
         let attacker_quad = has_quad_damage(players, explosion.owner_id);
-        let push_scale = if attacker_quad {
-            push * QUAD_MULTIPLIER
-        } else {
-            push
-        };
+        let knockback_scale = if attacker_quad { QUAD_MULTIPLIER } else { 1.0 };
 
         for player in players.iter_mut() {
             if player.dead {
                 continue;
             }
-            let dx = player.x - explosion.x;
-            let dy = player.y - explosion.y;
-            let distance_sq = dx * dx + dy * dy;
-            if distance_sq >= radius_sq {
-                continue;
-            }
 
-            let distance = distance_sq.sqrt();
-            let damage = explosion_falloff_damage(base_damage, radius, distance);
+            let damage = match physics_core::explosion::apply_knockback_with_scale(
+                player,
+                explosion,
+                knockback_scale,
+            ) {
+                Some(falloff) => {
+                    physics_core::explosion::calculate_explosion_damage(falloff, base_damage)
+                }
+                None => continue,
+            };
+
             if damage > 0.0 {
                 pending_hits.push((explosion.owner_id, player.id, damage));
             }
-
-            apply_push_explosion(player, explosion.x, explosion.y, push_scale);
         }
     }
     for (attacker_id, target_id, damage) in pending_hits.drain(..) {
@@ -543,13 +516,6 @@ fn apply_push_on_hit(
     }
 }
 
-fn apply_push_explosion(player: &mut PlayerState, source_x: f32, source_y: f32, strength: f32) {
-    if strength <= 0.0 {
-        return;
-    }
-    apply_push_impulse(player, source_x, source_y, strength);
-}
-
 fn apply_push_impulse(player: &mut PlayerState, source_x: f32, source_y: f32, strength: f32) {
     let dx = source_x - player.x;
     let dy = source_y - player.y;
@@ -561,23 +527,6 @@ fn apply_push_impulse(player: &mut PlayerState, source_x: f32, source_y: f32, st
     if dy > 0.01 {
         player.velocity_y -= strength * PUSH_LATERAL_FACTOR;
     }
-}
-
-fn explosion_falloff_damage(base: f32, radius: f32, distance: f32) -> f32 {
-    if radius <= 0.0 || distance <= 0.0 {
-        return base.max(0.0);
-    }
-    let r3 = radius / 3.0;
-    if distance <= r3 {
-        return base;
-    }
-    if distance < 2.0 * r3 {
-        let scaled = (2.0 * radius - distance * 3.0 + EXPLOSION_MID_BIAS) / EXPLOSION_MID_SCALE;
-        return (base * scaled).max(0.0);
-    }
-    let scaled = ((radius - distance) * EXPLOSION_FAR_SCALE / radius + EXPLOSION_FAR_BIAS)
-        / EXPLOSION_MID_SCALE;
-    (base * scaled).max(0.0)
 }
 
 fn is_player_near_item(player: &PlayerState, item: &crate::map::MapItem) -> bool {

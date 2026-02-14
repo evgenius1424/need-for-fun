@@ -48,6 +48,10 @@ pub const BOUNDS_MARGIN: f32 = 100.0;
 pub const SELF_HIT_GRACE: i32 = 8;
 pub const GRENADE_HIT_GRACE: i32 = 12;
 pub const EXPLOSION_RADIUS: f32 = 90.0;
+pub const EXPLOSION_MID_BIAS: f32 = 40.0;
+pub const EXPLOSION_MID_SCALE: f32 = 100.0;
+pub const EXPLOSION_FAR_SCALE: f32 = 60.0;
+pub const EXPLOSION_FAR_BIAS: f32 = 20.0;
 
 pub const GRENADE_AIR_FRICTION: f32 = 1.003;
 pub const GRENADE_BOUNCE_FRICTION: f32 = 1.07;
