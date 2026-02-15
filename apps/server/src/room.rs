@@ -217,10 +217,6 @@ impl PlayerStore {
         self.conns.is_empty()
     }
 
-    fn contains(&self, player_id: PlayerId) -> bool {
-        self.player_index.contains_key(&player_id)
-    }
-
     fn player_mut_by_id(&mut self, player_id: PlayerId) -> Option<&mut PlayerConn> {
         let idx = self.player_index.get(&player_id).copied()?;
         Some(&mut self.conns[idx])

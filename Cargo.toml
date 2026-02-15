@@ -1,8 +1,8 @@
 [workspace]
 members = [
   "apps/server",
-  "crates/shared/binary_protocol",
-  "crates/shared/physics_core",
+  "crates/binary_protocol",
+  "crates/physics_core",
 ]
 resolver = "2"
 

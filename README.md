@@ -4,7 +4,7 @@ Need For Fun is a fast 2D arena shooter with a modern monorepo setup:
 
 - **Web client**: Vite + Pixi (`apps/web`)
 - **Realtime server**: Rust + Axum WebSocket (`apps/server`)
-- **Shared game kernel**: Rust crates compiled natively and to WASM (`crates/shared/*`)
+- **Shared game kernel**: Rust crates compiled natively and to WASM (`crates/*`)
 
 ## Project Layout
 
