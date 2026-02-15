@@ -3,10 +3,11 @@ node_modules
 
 # Build output
 dist
-server/target
+target
+apps/server/target
+crates/shared/physics_core/target
+crates/shared/physics_core/pkg
 AGENTS.md
-shared/physics_core/target
-shared/physics_core/pkg
 
 # Logs
 *.log

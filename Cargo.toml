@@ -1,0 +1,11 @@
+[workspace]
+members = [
+  "apps/server",
+  "crates/shared/binary_protocol",
+  "crates/shared/physics_core",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"

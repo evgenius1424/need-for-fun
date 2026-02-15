@@ -1,37 +1,43 @@
 {
-    "name": "need-for-fun",
-    "version": "0.0.0",
-    "description": "Need For Fun - 2D arena deathmatch",
-    "type": "module",
-    "scripts": {
-        "build:wasm": "wasm-pack build shared/physics_core --target web --out-dir ../../src/engine/wasm --out-name physics_core --features wasm",
-        "dev": "vite",
-        "build": "vite build",
-        "preview": "vite preview",
-        "format": "prettier --write .",
-        "format:check": "prettier --check ."
-    },
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/evgenius1424/need-for-fun"
-    },
-    "keywords": [
-        "nfk",
-        "quake3",
-        "2d",
-        "game"
-    ],
-    "author": "evgenius1424",
-    "license": "MIT",
-    "bugs": {
-        "url": "https://github.com/evgenius1424/need-for-fun/issues"
-    },
-    "devDependencies": {
-        "prettier": "^3.8.0",
-        "vite": "^7.3.1"
-    },
-    "dependencies": {
-        "howler": "^2.2.4",
-        "pixi.js": "^7.4.2"
-    }
+  "name": "need-for-fun",
+  "version": "0.0.0",
+  "description": "Need For Fun - 2D arena deathmatch",
+  "type": "module",
+  "scripts": {
+    "wasm:build": "wasm-pack build crates/shared/physics_core --target web --out-dir ../../../apps/web/src/engine/wasm --out-name physics_core --features wasm",
+    "web:dev": "vite --config apps/web/vite.config.js",
+    "web:build": "vite build --config apps/web/vite.config.js",
+    "web:preview": "vite preview --config apps/web/vite.config.js --host 0.0.0.0 --port 4173",
+    "server:dev": "MAP_DIR=apps/web/public/maps cargo run --manifest-path apps/server/Cargo.toml",
+    "server:build": "cargo build --manifest-path apps/server/Cargo.toml --release",
+    "server:preview": "MAP_DIR=apps/web/public/maps cargo run --manifest-path apps/server/Cargo.toml --release",
+    "dev": "npm run wasm:build && (npm run web:dev & npm run server:dev & wait)",
+    "build": "npm run wasm:build && npm run web:build && npm run server:build",
+    "preview": "(npm run web:preview & npm run server:preview & wait)",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/evgenius1424/need-for-fun"
+  },
+  "keywords": [
+    "nfk",
+    "quake3",
+    "2d",
+    "game"
+  ],
+  "author": "evgenius1424",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/evgenius1424/need-for-fun/issues"
+  },
+  "devDependencies": {
+    "prettier": "^3.8.0",
+    "vite": "^7.3.1"
+  },
+  "dependencies": {
+    "howler": "^2.2.4",
+    "pixi.js": "^7.4.2"
+  }
 }

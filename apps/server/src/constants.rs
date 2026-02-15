@@ -11,7 +11,7 @@ pub use physics_core::constants::{PLAYER_HALF_H, TILE_H, TILE_W};
 pub const DEFAULT_PORT: &str = "3001";
 pub const DEFAULT_ROOM_ID: &str = "room-1";
 pub const DEFAULT_MAP_NAME: &str = "dm2";
-pub const DEFAULT_MAP_DIR: &str = "../public/maps";
+pub const DEFAULT_MAP_DIR: &str = "apps/web/public/maps";
 
 pub const TICK_MILLIS: u64 = 16;
 pub const SNAPSHOT_INTERVAL_TICKS: u64 = 2;
