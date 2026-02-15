@@ -1,11 +1,11 @@
 let wasmModule = null
 let wasmModulePromise = null
 
-export async function ensureWasmModule() {
+export async function initWasm() {
     if (wasmModule) return wasmModule
 
     if (!wasmModulePromise) {
-        wasmModulePromise = import('../wasm/wasm.js')
+        wasmModulePromise = import('./wasm/wasm.js')
             .then(async (module) => {
                 await module.default()
                 wasmModule = module

@@ -1,5 +1,4 @@
-import { initWasm } from '../wasmRuntime/initWasm'
-import { getWasmModuleSync } from '../wasmRuntime/wasmLoader'
+import { getWasmModuleSync, initWasm } from '../wasmClient'
 
 const FRAME_MS = 16
 const MAX_TICKS_PER_FRAME = 5

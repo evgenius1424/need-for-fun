@@ -1,4 +1,4 @@
-import { initWasm } from './engine/wasmRuntime/initWasm'
+import { initWasm } from './engine/wasmClient'
 
 await initWasm()
 await import('./main')
