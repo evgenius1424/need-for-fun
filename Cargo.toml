@@ -2,6 +2,7 @@
 members = [
   "apps/server",
   "crates/binary_protocol",
+  "crates/client_wasm",
   "crates/physics_core",
 ]
 resolver = "2"

@@ -1,12 +1,12 @@
 use wasm_bindgen::prelude::*;
 
-use crate::constants;
-use crate::explosion::{apply_knockback, apply_knockback_with_scale};
-use crate::projectile::{calculate_bounds, step_projectile, Projectile, ProjectileKind};
-use crate::step::step_player;
-use crate::tilemap::FlatTileMap;
-use crate::types::{PlayerInput, PlayerState};
-use crate::weapon;
+use physics_core::constants;
+use physics_core::explosion::{apply_knockback, apply_knockback_with_scale};
+use physics_core::projectile::{calculate_bounds, step_projectile, Projectile, ProjectileKind};
+use physics_core::step::step_player;
+use physics_core::tilemap::FlatTileMap;
+use physics_core::types::{PlayerInput, PlayerState};
+use physics_core::weapon;
 
 pub use binary_protocol::wasm::{
     wasm_decode_server_message, wasm_encode_hello, wasm_encode_input, wasm_encode_join_room,
@@ -427,7 +427,7 @@ pub fn wasm_apply_knockback(
     owner_id: u64,
 ) -> f32 {
     let kind = ProjectileKind::from_u8(explosion_kind).unwrap_or(ProjectileKind::Rocket);
-    let explosion = crate::projectile::Explosion {
+    let explosion = physics_core::projectile::Explosion {
         x: explosion_x,
         y: explosion_y,
         kind,
@@ -446,7 +446,7 @@ pub fn wasm_apply_knockback_scaled(
     push_scale: f32,
 ) -> f32 {
     let kind = ProjectileKind::from_u8(explosion_kind).unwrap_or(ProjectileKind::Rocket);
-    let explosion = crate::projectile::Explosion {
+    let explosion = physics_core::projectile::Explosion {
         x: explosion_x,
         y: explosion_y,
         kind,
@@ -458,7 +458,7 @@ pub fn wasm_apply_knockback_scaled(
 #[wasm_bindgen]
 pub fn get_explosion_base_damage(explosion_kind: u8) -> f32 {
     let kind = ProjectileKind::from_u8(explosion_kind).unwrap_or(ProjectileKind::Rocket);
-    crate::explosion::base_damage(kind)
+    physics_core::explosion::base_damage(kind)
 }
 
 // Constants getters for JS

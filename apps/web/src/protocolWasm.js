@@ -1,5 +1,5 @@
 import { initWasm } from './engine/wasmRuntime/initWasm'
-import { getPhysicsCoreWasmSync } from './engine/wasmRuntime/physicsCoreLoader'
+import { getWasmModuleSync } from './engine/wasmRuntime/wasmLoader'
 
 export const MSG = {
     HELLO: 0x01,
@@ -23,7 +23,7 @@ export function getProtocolConstants() {
 }
 
 function getProtocolModule() {
-    return getPhysicsCoreWasmSync()
+    return getWasmModuleSync()
 }
 
 export function encodeHello(username) {

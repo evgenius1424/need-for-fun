@@ -12,6 +12,3 @@ pub mod weapon;
 pub use explosion::apply_knockback;
 pub use projectile::{calculate_bounds, step_projectile, Explosion, Projectile, ProjectileKind};
 pub use step::step_player;
-
-#[cfg(feature = "wasm")]
-pub mod wasm;

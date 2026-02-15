@@ -1,4 +1,4 @@
-/* @ts-self-types="./physics_core.d.ts" */
+/* @ts-self-types="./wasm.d.ts" */
 
 export class WasmMap {
     __destroy_into_raw() {
@@ -1024,7 +1024,7 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        "./physics_core_bg.js": import0,
+        "./wasm_bg.js": import0,
     };
 }
 
@@ -1255,7 +1255,7 @@ async function __wbg_init(module_or_path) {
     }
 
     if (module_or_path === undefined) {
-        module_or_path = new URL('physics_core_bg.wasm', import.meta.url);
+        module_or_path = new URL('wasm_bg.wasm', import.meta.url);
     }
     const imports = __wbg_get_imports();
 

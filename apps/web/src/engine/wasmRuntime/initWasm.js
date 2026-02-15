@@ -1,10 +1,10 @@
-import { ensurePhysicsCoreWasm } from './physicsCoreLoader'
+import { ensureWasmModule } from './wasmLoader'
 
 let wasmReadyPromise = null
 
 export function initWasm() {
     if (!wasmReadyPromise) {
-        wasmReadyPromise = ensurePhysicsCoreWasm().catch((error) => {
+        wasmReadyPromise = ensureWasmModule().catch((error) => {
             wasmReadyPromise = null
             throw error
         })
