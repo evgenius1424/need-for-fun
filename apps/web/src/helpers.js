@@ -13,11 +13,6 @@ export const WeaponId = {
     BFG: 8,
 }
 
-export const Constants = {
-    BRICK_WIDTH: 32,
-    BRICK_HEIGHT: 16,
-}
-
 export const WeaponConstants = {
     NAMES: [
         'Gauntlet',

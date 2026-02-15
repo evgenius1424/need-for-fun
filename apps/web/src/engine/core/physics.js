@@ -1,4 +1,3 @@
-import { Constants } from '../../helpers'
 import { initWasm } from '../wasmRuntime/initWasm'
 import { getPhysicsCoreWasmSync } from '../wasmRuntime/physicsCoreLoader'
 
@@ -118,14 +117,6 @@ async function initKernel() {
         TILE_H: module.get_tile_h(),
     }
 
-    // Assert tile sizes match between JS and WASM to catch configuration drift
-    const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
-    if (PhysicsConstants.TILE_W !== BRICK_WIDTH || PhysicsConstants.TILE_H !== BRICK_HEIGHT) {
-        throw new Error(
-            `Tile size mismatch: WASM has ${PhysicsConstants.TILE_W}x${PhysicsConstants.TILE_H}, ` +
-                `JS has ${BRICK_WIDTH}x${BRICK_HEIGHT}`,
-        )
-    }
 }
 
 await initKernel()

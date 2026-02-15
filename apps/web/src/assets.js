@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js'
-import { Constants, WeaponId } from './helpers'
+import { WeaponId } from './helpers'
+import { PhysicsConstants } from './engine/core/physics'
 import {
     DEFAULT_MODEL,
     DEFAULT_SKIN,
@@ -7,8 +8,6 @@ import {
     getAnimationFile,
     getModelSkinKey,
 } from './models'
-
-const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
 
 const WEAPON_PATHS = {
     [WeaponId.GAUNTLET]: '/assets/weapons/gauntlet.png',
@@ -145,12 +144,12 @@ function createCanvas(w, h) {
 }
 
 function genBrickTexture() {
-    const { canvas, ctx } = createCanvas(BRICK_WIDTH, BRICK_HEIGHT)
+    const { canvas, ctx } = createCanvas(PhysicsConstants.TILE_W, PhysicsConstants.TILE_H)
 
     ctx.fillStyle = '#888888'
-    ctx.fillRect(0, 0, BRICK_WIDTH, BRICK_HEIGHT)
+    ctx.fillRect(0, 0, PhysicsConstants.TILE_W, PhysicsConstants.TILE_H)
 
-    const imageData = ctx.getImageData(0, 0, BRICK_WIDTH, BRICK_HEIGHT)
+    const imageData = ctx.getImageData(0, 0, PhysicsConstants.TILE_W, PhysicsConstants.TILE_H)
     const data = imageData.data
     for (let i = 0; i < data.length; i += 4) {
         const noise = (Math.random() - 0.5) * 20
@@ -161,17 +160,17 @@ function genBrickTexture() {
     ctx.putImageData(imageData, 0, 0)
 
     ctx.fillStyle = 'rgba(255,255,255,0.3)'
-    ctx.fillRect(0, 0, BRICK_WIDTH, 2)
+    ctx.fillRect(0, 0, PhysicsConstants.TILE_W, 2)
     ctx.fillStyle = 'rgba(255,255,255,0.2)'
-    ctx.fillRect(0, 0, 2, BRICK_HEIGHT)
+    ctx.fillRect(0, 0, 2, PhysicsConstants.TILE_H)
     ctx.fillStyle = 'rgba(0,0,0,0.3)'
-    ctx.fillRect(0, BRICK_HEIGHT - 2, BRICK_WIDTH, 2)
+    ctx.fillRect(0, PhysicsConstants.TILE_H - 2, PhysicsConstants.TILE_W, 2)
     ctx.fillStyle = 'rgba(0,0,0,0.2)'
-    ctx.fillRect(BRICK_WIDTH - 2, 0, 2, BRICK_HEIGHT)
+    ctx.fillRect(PhysicsConstants.TILE_W - 2, 0, 2, PhysicsConstants.TILE_H)
 
     ctx.strokeStyle = 'rgba(0,0,0,0.15)'
     ctx.lineWidth = 1
-    ctx.strokeRect(1, 1, BRICK_WIDTH - 2, BRICK_HEIGHT - 2)
+    ctx.strokeRect(1, 1, PhysicsConstants.TILE_W - 2, PhysicsConstants.TILE_H - 2)
 
     return PIXI.Texture.from(canvas)
 }

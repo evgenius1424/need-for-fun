@@ -1,8 +1,6 @@
-import { Constants } from '../../helpers'
 import { Map } from '../../map'
 import { Physics } from './physics'
-
-const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
+import { PhysicsConstants } from './physics'
 
 const camera = { float: false, halfW: 0, halfH: 0, dx: 0, dy: 0, scale: 1 }
 
@@ -22,8 +20,8 @@ export function recalcCamera() {
     if (!rendererRef || !worldRef || !hudRef) return
 
     rendererRef.resize(innerWidth - 20, innerHeight)
-    const mapW = Map.getCols() * BRICK_WIDTH
-    const mapH = Map.getRows() * BRICK_HEIGHT
+    const mapW = Map.getCols() * PhysicsConstants.TILE_W
+    const mapH = Map.getRows() * PhysicsConstants.TILE_H
     camera.float = mapH > innerHeight || mapW > innerWidth - 20
 
     if (camera.float) {

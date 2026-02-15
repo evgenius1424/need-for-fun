@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js'
-import { Constants, Settings } from '../../helpers'
+import { Settings } from '../../helpers'
 import { Projectiles } from '../../projectiles'
 import { getProjectileTexture, getTexture } from '../../assets'
 import {
@@ -18,10 +18,8 @@ import {
     ROCKET_SMOKE_INTERVAL,
     SMOKE_MAX_AGE,
 } from './constants'
-import { Physics } from '../core/physics'
+import { Physics, PhysicsConstants } from '../core/physics'
 import { getRenderPosition } from '../core/camera'
-
-const { BRICK_WIDTH } = Constants
 const SPARK_COUNT = 8
 const CROUCH_Y_OFFSET = 4
 
@@ -155,8 +153,8 @@ export function renderAimLine(player) {
 
     const { x, y, aimAngle } = getRenderPosition(player)
     const originY = player.crouch ? y + CROUCH_Y_OFFSET : y
-    const dist = BRICK_WIDTH * 2.6
-    const half = Math.max(2, BRICK_WIDTH * 0.1)
+    const dist = PhysicsConstants.TILE_W * 2.6
+    const half = Math.max(2, PhysicsConstants.TILE_W * 0.1)
     const crossX = x + Math.cos(aimAngle) * dist
     const crossY = originY + Math.sin(aimAngle) * dist
 

@@ -1,12 +1,10 @@
 import * as PIXI from 'pixi.js'
-import { Constants } from '../../helpers'
 import { Map } from '../../map'
 import { getItemIcon, getTexture, getWeaponIcon } from '../../assets'
 import { app, items, tiles } from './app'
 import { WEAPON_ITEM_MAP } from './constants'
 import { recalcCamera } from '../core/camera'
-
-const { BRICK_WIDTH, BRICK_HEIGHT } = Constants
+import { PhysicsConstants } from '../core/physics'
 const { isBrick } = Map
 
 const itemSprites = []
@@ -24,8 +22,8 @@ export function renderMap() {
         for (let col = 0; col < cols; col++) {
             if (!isBrick(col, row)) continue
             const sprite = new PIXI.Sprite(brickTex)
-            sprite.x = col * BRICK_WIDTH
-            sprite.y = row * BRICK_HEIGHT
+            sprite.x = col * PhysicsConstants.TILE_W
+            sprite.y = row * PhysicsConstants.TILE_H
             const tint = Map.getTileColor?.(col, row)
             if (tint) sprite.tint = tint
             tiles.addChild(sprite)
@@ -39,11 +37,11 @@ export function renderMap() {
         if (!tex) continue
 
         const sprite = new PIXI.Sprite(tex)
-        const scale = (BRICK_HEIGHT * 1.2) / Math.max(tex.width, tex.height)
+        const scale = (PhysicsConstants.TILE_H * 1.2) / Math.max(tex.width, tex.height)
         sprite.anchor.set(0.5)
         sprite.scale.set(scale)
-        sprite.x = item.col * BRICK_WIDTH + BRICK_WIDTH / 2
-        sprite.y = item.row * BRICK_HEIGHT + BRICK_HEIGHT / 2
+        sprite.x = item.col * PhysicsConstants.TILE_W + PhysicsConstants.TILE_W / 2
+        sprite.y = item.row * PhysicsConstants.TILE_H + PhysicsConstants.TILE_H / 2
         sprite.visible = item.active
         itemSprites.push({ item, sprite })
         items.addChild(sprite)
