@@ -1,4 +1,6 @@
 import { Constants } from '../../helpers'
+import { initWasm } from '../wasmRuntime/initWasm'
+import { getPhysicsCoreWasmSync } from '../wasmRuntime/physicsCoreLoader'
 
 const FRAME_MS = 16
 const MAX_TICKS_PER_FRAME = 5
@@ -20,8 +22,8 @@ const runtime = {
 export let PhysicsConstants = null
 
 async function initKernel() {
-    const module = await import('../wasm/physics_core.js')
-    await module.default()
+    await initWasm()
+    const module = getPhysicsCoreWasmSync()
     runtime.module = module
     runtime.kernel = new module.WasmPhysicsKernel()
     runtime.map = null

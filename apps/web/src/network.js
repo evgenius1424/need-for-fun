@@ -7,8 +7,8 @@ import {
     encodeInput,
     encodeJoinRoom,
     encodePing,
-    initBinaryProtocol,
-} from './binaryProtocolWasm'
+    initProtocolWasm,
+} from './protocolWasm'
 
 const DEFAULT_SERVER_URL = 'ws://localhost:3001/ws'
 const DEFAULT_MAP = 'dm2'
@@ -302,7 +302,7 @@ export class NetworkClient {
             transport: resolvedTransport,
         }
 
-        return initBinaryProtocol().then(async () => {
+        return initProtocolWasm().then(async () => {
             this.resetConnectionState()
             if (resolvedTransport === 'ws') {
                 await this.connectWebSocket({ url, username, roomId, map })
