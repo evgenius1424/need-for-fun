@@ -1,4 +1,4 @@
-import { Console, MapEditor } from './helpers'
+import { Console, MapEditor } from '../core/helpers'
 
 const TEAM_COLORS = { neutral: null, red: 0xff4444, blue: 0x4444ff }
 

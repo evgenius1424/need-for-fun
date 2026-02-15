@@ -1,4 +1,4 @@
-import { getWasmModuleSync, initWasm } from './engine/wasmClient'
+import { getWasmModuleSync, initWasm } from '../wasm/client'
 
 export const MSG = {
     HELLO: 0x01,

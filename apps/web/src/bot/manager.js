@@ -1,7 +1,7 @@
 import { Bot } from './bot'
-import { Map } from './map'
-import { Render } from './engine/render'
-import { PhysicsConstants } from './engine/core/physics'
+import { Map } from '../game/map'
+import { Render } from '../render'
+import { PhysicsConstants } from '../game/physics'
 
 const MIN_SPAWN_DISTANCE = 100
 const SPAWN_PROTECTION_FRAMES = PhysicsConstants.SPAWN_PROTECTION

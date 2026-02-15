@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js'
-import { getTexture } from '../../assets'
+import { getTexture } from './assets'
 import { app, renderer, stage, world } from './app'
 import { BG_TILE_SCALE } from './constants'
 import { createHUD, updateHUD } from './hud'
@@ -27,7 +27,7 @@ import {
     renderShaftShots,
     renderSmoke,
 } from './effects'
-import { initCamera, recalcCamera, updateCamera } from '../core/camera'
+import { initCamera, recalcCamera, updateCamera } from './camera'
 
 let bgSprite = null
 const hud = createHUD()

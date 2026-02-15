@@ -1,6 +1,6 @@
-import { Sound, WeaponId } from './helpers'
+import { Sound, WeaponId } from '../core/helpers'
 import { Projectiles } from './projectiles'
-import { Physics, PhysicsConstants } from './engine/core/physics'
+import { Physics, PhysicsConstants } from './physics'
 
 const HITSCAN_CONFIG = {
     [WeaponId.MACHINE]: { type: 'hitscan', sound: Sound.machinegun },

@@ -1,10 +1,10 @@
 import * as PIXI from 'pixi.js'
-import { Map } from '../../map'
-import { getItemIcon, getTexture, getWeaponIcon } from '../../assets'
+import { Map } from '../game/map'
+import { getItemIcon, getTexture, getWeaponIcon } from './assets'
 import { app, items, tiles } from './app'
 import { WEAPON_ITEM_MAP } from './constants'
-import { recalcCamera } from '../core/camera'
-import { PhysicsConstants } from '../core/physics'
+import { recalcCamera } from './camera'
+import { PhysicsConstants } from '../game/physics'
 const { isBrick } = Map
 
 const itemSprites = []

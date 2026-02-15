@@ -1,7 +1,7 @@
-import { Sound, WeaponId } from './helpers'
-import { PhysicsConstants } from './engine/core/physics'
+import { Sound, WeaponId } from '../core/helpers'
+import { PhysicsConstants } from './physics'
 import { Map } from './map'
-import { DEFAULT_MODEL, DEFAULT_SKIN } from './models'
+import { DEFAULT_MODEL, DEFAULT_SKIN } from '../core/models'
 import { Weapons } from './weapons'
 
 const HALF_PI = Math.PI / 2

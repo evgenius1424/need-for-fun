@@ -1,5 +1,5 @@
-import { WeaponId } from '../../helpers'
-import { PhysicsConstants } from '../core/physics'
+import { WeaponId } from '../core/helpers'
+import { PhysicsConstants } from '../game/physics'
 
 export const PLAYER_HEIGHT = PhysicsConstants.PLAYER_HALF_H * 2
 

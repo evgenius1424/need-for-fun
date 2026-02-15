@@ -1,5 +1,5 @@
-import { Sound } from './helpers'
-import { Physics, PhysicsConstants } from './engine/core/physics'
+import { Sound } from '../core/helpers'
+import { Physics, PhysicsConstants } from './physics'
 
 const EXPLODE_SOUND = {
     rocket: Sound.rocketExplode,

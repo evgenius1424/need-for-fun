@@ -1,6 +1,6 @@
-import { ensureModelLoaded } from './assets'
-import { Player } from './player'
-import { SkinId } from './models'
+import { ensureModelLoaded } from '../render/assets'
+import { Player } from '../game/player'
+import { SkinId } from '../core/models'
 import {
     decodeServerMessage,
     encodeHello,
@@ -8,8 +8,8 @@ import {
     encodeJoinRoom,
     encodePing,
     initProtocolWasm,
-} from './protocolWasm'
-import { getBackendWsUrl } from './config/network'
+} from './protocol'
+import { getBackendWsUrl } from './wsEndpoint'
 
 const DEFAULT_SERVER_URL = getBackendWsUrl()
 const DEFAULT_MAP = 'dm2'

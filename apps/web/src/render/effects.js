@@ -1,7 +1,7 @@
 import * as PIXI from 'pixi.js'
-import { Settings } from '../../helpers'
-import { Projectiles } from '../../projectiles'
-import { getProjectileTexture, getTexture } from '../../assets'
+import { Settings } from '../core/helpers'
+import { Projectiles } from '../game/projectiles'
+import { getProjectileTexture, getTexture } from './assets'
 import {
     aimLine,
     bulletImpacts,
@@ -18,8 +18,8 @@ import {
     ROCKET_SMOKE_INTERVAL,
     SMOKE_MAX_AGE,
 } from './constants'
-import { Physics, PhysicsConstants } from '../core/physics'
-import { getRenderPosition } from '../core/camera'
+import { Physics, PhysicsConstants } from '../game/physics'
+import { getRenderPosition } from './camera'
 const SPARK_COUNT = 8
 const CROUCH_Y_OFFSET = 4
 

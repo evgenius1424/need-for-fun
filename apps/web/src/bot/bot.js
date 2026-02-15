@@ -1,8 +1,8 @@
-import { Player } from './player'
-import { Map } from './map'
-import { WeaponId } from './helpers'
-import { DEFAULT_MODEL, SkinId } from './models'
-import { PhysicsConstants } from './engine/core/physics'
+import { Player } from '../game/player'
+import { Map } from '../game/map'
+import { WeaponId } from '../core/helpers'
+import { DEFAULT_MODEL, SkinId } from '../core/models'
+import { PhysicsConstants } from '../game/physics'
 
 const HALF_PI = Math.PI / 2
 const TWO_PI = Math.PI * 2

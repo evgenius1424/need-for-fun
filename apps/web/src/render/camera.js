@@ -1,6 +1,5 @@
-import { Map } from '../../map'
-import { Physics } from './physics'
-import { PhysicsConstants } from './physics'
+import { Map } from '../game/map'
+import { Physics, PhysicsConstants } from '../game/physics'
 
 const camera = { float: false, halfW: 0, halfH: 0, dx: 0, dy: 0, scale: 1 }
 

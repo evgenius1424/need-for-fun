@@ -1,13 +1,13 @@
 import * as PIXI from 'pixi.js'
-import { WeaponId } from './helpers'
-import { PhysicsConstants } from './engine/core/physics'
+import { WeaponId } from '../core/helpers'
+import { PhysicsConstants } from '../game/physics'
 import {
     DEFAULT_MODEL,
     DEFAULT_SKIN,
     getAnimationConfig,
     getAnimationFile,
     getModelSkinKey,
-} from './models'
+} from '../core/models'
 
 const WEAPON_PATHS = {
     [WeaponId.GAUNTLET]: '/assets/weapons/gauntlet.png',

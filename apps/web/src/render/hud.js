@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js'
-import { WeaponConstants } from '../../helpers'
+import { WeaponConstants } from '../core/helpers'
 
 const HEALTH_THRESHOLDS = [
     { min: 100, color: 0x00aaff },

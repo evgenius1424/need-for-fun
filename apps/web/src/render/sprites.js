@@ -1,7 +1,7 @@
 import * as PIXI from 'pixi.js'
-import { getModelAnimationFrames, getWeaponIcon } from '../../assets'
-import { DEFAULT_MODEL, DEFAULT_SKIN } from '../../models'
-import { getRenderPosition } from '../core/camera'
+import { getModelAnimationFrames, getWeaponIcon } from './assets'
+import { DEFAULT_MODEL, DEFAULT_SKIN } from '../core/models'
+import { getRenderPosition } from './camera'
 import { world } from './app'
 import { ANIMATION, PLAYER_SCALE_X, PLAYER_SCALE_Y, WEAPON_SCALE } from './constants'
 

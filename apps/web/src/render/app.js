@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js'
-import { Console } from '../../helpers'
+import { Console } from '../core/helpers'
 
 export const app = await initApp()
 export const { renderer, stage } = app
