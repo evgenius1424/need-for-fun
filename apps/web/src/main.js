@@ -9,6 +9,7 @@ import { loadAssets, ensureModelLoaded } from './assets'
 import { BotManager } from './botManager'
 import { SkinId } from './models'
 import { NetworkClient } from './network'
+import { getBackendWsUrl } from './config/network'
 
 const AIM_INPUT_SCALE = 0.5
 const PICKUP_RADIUS = PhysicsConstants.PICKUP_RADIUS
@@ -343,10 +344,7 @@ function setupConsoleCommands() {
                 }
                 const roomId = args[2]?.trim() || 'room-1'
                 const transport = args[3]?.trim()?.toLowerCase() || 'auto'
-                const isSecure = window.location.protocol === 'https:'
-                const url = isSecure
-                    ? 'wss://need-for-fun.duckdns.org/ws'
-                    : 'ws://localhost:3001/ws'
+                const url = getBackendWsUrl()
 
                 try {
                     Console.writeText(`Connecting to ${roomId} (${transport})...`)

@@ -9,8 +9,9 @@ import {
     encodePing,
     initProtocolWasm,
 } from './protocolWasm'
+import { getBackendWsUrl } from './config/network'
 
-const DEFAULT_SERVER_URL = 'ws://localhost:3001/ws'
+const DEFAULT_SERVER_URL = getBackendWsUrl()
 const DEFAULT_MAP = 'dm2'
 const DEFAULT_TRANSPORT_MODE = 'auto'
 const INPUT_SEND_RATE_HZ = 60
