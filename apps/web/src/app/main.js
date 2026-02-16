@@ -16,7 +16,7 @@ const PICKUP_RADIUS = PhysicsConstants.PICKUP_RADIUS
 const MAX_AIM_DELTA = 12
 const HITSCAN_PLAYER_RADIUS = PhysicsConstants.HITSCAN_PLAYER_RADIUS
 const GAUNTLET_PLAYER_RADIUS = PhysicsConstants.GAUNTLET_PLAYER_RADIUS
-const GAUNTLET_SPARK_OFFSET = PhysicsConstants.TILE_W * 0.55
+const GAUNTLET_SPARK_OFFSET = PhysicsConstants.TILE_W * 0.42
 
 const PROJECTILE_WEAPONS = new Set(['rocket', 'grenade', 'plasma', 'bfg'])
 const PROJECTILE_KIND = Object.freeze({ rocket: 0, grenade: 1, plasma: 2, bfg: 3 })
@@ -790,17 +790,14 @@ function processFireResult(player, result, otherPlayers) {
     } else if (result?.type === 'shotgun') {
         for (const pellet of result.pellets) {
             const shot = { startX: result.startX, startY: result.startY, trace: pellet.trace }
-            applyHitscanShot(
-                player,
-                { ...shot, damage: pellet.damage },
-                otherPlayers,
-                'bullet',
-                2,
-            )
+            applyHitscanShot(player, { ...shot, damage: pellet.damage }, otherPlayers, 'bullet', 2)
         }
     } else if (result?.type === 'gauntlet') {
         const { x, y } = getWeaponTip(player, GAUNTLET_SPARK_OFFSET)
-        Render.addGauntletSpark(x, y)
+        Render.addGauntletSpark(x, y, {
+            followPlayer: player,
+            weaponTipOffset: GAUNTLET_SPARK_OFFSET,
+        })
         applyMeleeDamage(player, result, otherPlayers)
     }
 }

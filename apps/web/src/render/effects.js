@@ -99,6 +99,8 @@ export function addGauntletSpark(x, y, options = {}) {
         radius: options.radius ?? 5,
         color: options.color ?? 0x6ff2ff,
         alpha: options.alpha ?? 0.9,
+        followPlayer: options.followPlayer ?? null,
+        weaponTipOffset: options.weaponTipOffset ?? 0,
     })
 }
 
@@ -302,19 +304,32 @@ function renderBulletHit(hit) {
 }
 
 function renderGauntletHit(hit) {
+    const center = getGauntletSparkCenter(hit)
     const alpha = (1 - hit.age / hit.maxAge) * hit.alpha
-    const jitter = hit.radius * 0.55
+    const jitter = hit.radius * 0.4
 
     for (let j = 0; j < SPARK_COUNT; j++) {
         const angle = Math.random() * Math.PI * 2
-        const dist = hit.radius * (0.4 + Math.random() * 0.7)
-        const x1 = hit.x + Math.cos(angle) * dist
-        const y1 = hit.y + Math.sin(angle) * dist
+        const dist = hit.radius * (0.3 + Math.random() * 0.4)
+        const x1 = center.x + Math.cos(angle) * dist
+        const y1 = center.y + Math.sin(angle) * dist
         const x2 = x1 + (Math.random() - 0.5) * jitter
         const y2 = y1 + (Math.random() - 0.5) * jitter
 
-        drawLine(gauntletSparks, hit.x, hit.y, x1, y1, 2, hit.color, alpha * 0.7)
+        drawLine(gauntletSparks, center.x, center.y, x1, y1, 2, hit.color, alpha * 0.7)
         drawLine(gauntletSparks, x1, y1, x2, y2, 1, 0xffffff, alpha)
+    }
+}
+
+function getGauntletSparkCenter(hit) {
+    const player = hit.followPlayer
+    if (!player || player.dead) return hit
+
+    const { x, y, aimAngle } = getRenderPosition(player)
+    const offsetY = player.crouch ? CROUCH_Y_OFFSET : 0
+    return {
+        x: x + Math.cos(aimAngle) * hit.weaponTipOffset,
+        y: y + offsetY + Math.sin(aimAngle) * hit.weaponTipOffset,
     }
 }
 
