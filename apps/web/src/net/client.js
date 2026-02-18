@@ -120,6 +120,7 @@ export class NetworkClient {
         this.interpUnderrunBoostMs = 0
         this.staleSnapshotCount = 0
         this.clockOffsetMs = DEFAULT_CLOCK_OFFSET_MS
+        this.clockOffsetInitialized = false
         this.rttMs = DEFAULT_RTT_MS
         this.rttJitterMs = DEFAULT_JITTER_MS
         this.lastPingSentAt = -Infinity
@@ -546,6 +547,10 @@ export class NetworkClient {
         this.roomId = null
         this.lastInputSentAt = -Infinity
         this.lastPingSentAt = -Infinity
+        this.clockOffsetMs = DEFAULT_CLOCK_OFFSET_MS
+        this.clockOffsetInitialized = false
+        this.rttMs = DEFAULT_RTT_MS
+        this.rttJitterMs = DEFAULT_JITTER_MS
         this.snapshotBuffer.length = 0
         this.pendingInputs.length = 0
         this.pendingSnapshots.length = 0
@@ -644,6 +649,12 @@ export class NetworkClient {
 
     flushSnapshots() {
         if (!this.pendingSnapshots.length) return
+        // Sort by tick before processing so events are always applied in tick order.
+        // Critical for WebRTC (unordered channel): without this, a late-arriving
+        // snapshot at tick N+1 advances lastAppliedWorldSnapshotTick, then the earlier
+        // tick N snapshot hits the monotonic guard and all of its events (kills, damage,
+        // sounds, rail shots) are silently discarded.
+        this.pendingSnapshots.sort((a, b) => Number(a.tick ?? 0) - Number(b.tick ?? 0))
         for (const snapshot of this.pendingSnapshots) {
             this.applySnapshot(snapshot)
             this.handlers.onSnapshot?.(snapshot)
@@ -865,8 +876,20 @@ export class NetworkClient {
         const alpha = 0.12
         const beta = 0.2
 
-        this.rttMs += (rttSample - this.rttMs) * alpha
-        this.clockOffsetMs += (offsetSample - this.clockOffsetMs) * alpha
+        if (!this.clockOffsetInitialized) {
+            // Cold-start: trust the first pong directly instead of EMA-ing from 0.
+            // The server reports time as elapsed-ms-since-boot (e.g. 600 000 ms for a
+            // 10-minute-old server). With alpha=0.12 and one ping per second the EMA
+            // would need ~24 seconds to converge, during which every snapshot's
+            // serverTimeMs >> targetServerTime, making remote players frozen at the
+            // oldest buffered snapshot (~3 s stale once the 90-entry buffer is full).
+            this.clockOffsetMs = offsetSample
+            this.rttMs = rttSample
+            this.clockOffsetInitialized = true
+        } else {
+            this.rttMs += (rttSample - this.rttMs) * alpha
+            this.clockOffsetMs += (offsetSample - this.clockOffsetMs) * alpha
+        }
         this.rttJitterMs += (Math.abs(rttSample - this.rttMs) - this.rttJitterMs) * beta
     }
 
