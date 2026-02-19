@@ -339,19 +339,16 @@ function setupConsoleCommands() {
             if (action === 'connect') {
                 const username = args[1]?.trim()
                 if (!username) {
-                    Console.writeText('Usage: mp connect <username> [room] [auto|webrtc|ws]')
+                    Console.writeText('Usage: mp connect <username> [room]')
                     return
                 }
                 const roomId = args[2]?.trim() || 'room-1'
-                const transport = args[3]?.trim()?.toLowerCase() || 'auto'
                 const url = getBackendWsUrl()
 
                 try {
-                    Console.writeText(`Connecting to ${roomId} (${transport})...`)
-                    await network.connect({ url, username, roomId, transport })
-                    Console.writeText(
-                        `Connected as ${username} via ${network.transport.toUpperCase()}`,
-                    )
+                    Console.writeText(`Connecting to ${roomId}...`)
+                    await network.connect({ url, username, roomId })
+                    Console.writeText(`Connected as ${username} via WebRTC`)
                 } catch (err) {
                     Console.writeText(`Connection failed: ${err.message}`)
                 }
@@ -364,9 +361,7 @@ function setupConsoleCommands() {
                 return
             }
 
-            Console.writeText(
-                'Usage: mp connect <username> [room] [auto|webrtc|ws] | mp disconnect',
-            )
+            Console.writeText('Usage: mp connect <username> [room] | mp disconnect')
         },
         'connect/disconnect multiplayer',
     )

@@ -13,7 +13,6 @@ import { getBackendWsUrl } from './wsEndpoint'
 
 const DEFAULT_SERVER_URL = getBackendWsUrl()
 const DEFAULT_MAP = 'dm2'
-const DEFAULT_TRANSPORT_MODE = 'auto'
 const INPUT_SEND_RATE_HZ = 60
 const INPUT_SEND_INTERVAL_MS = 1000 / INPUT_SEND_RATE_HZ
 const SERVER_TICK_MILLIS = 16
@@ -92,12 +91,10 @@ const DEFAULT_TUNING_PROFILE = 'balanced'
 
 export class NetworkClient {
     constructor() {
-        this.socket = null
         this.signalSocket = null
         this.peerConnection = null
         this.controlDataChannel = null
         this.gameDataChannel = null
-        this.transport = 'none'
         this.playerId = null
         this.roomId = null
         this.inputSeq = 0
@@ -164,7 +161,6 @@ export class NetworkClient {
 
     getNetStats() {
         return {
-            transport: this.transport,
             rttMs: this.rttMs,
             jitterMs: this.rttJitterMs,
             clockOffsetMs: this.clockOffsetMs,
@@ -281,48 +277,13 @@ export class NetworkClient {
         return true
     }
 
-    connect({
-        url = DEFAULT_SERVER_URL,
-        username,
-        roomId,
-        map = DEFAULT_MAP,
-        transport = DEFAULT_TRANSPORT_MODE,
-    } = {}) {
+    connect({ url = DEFAULT_SERVER_URL, username, roomId, map = DEFAULT_MAP } = {}) {
         if (this.connected) return Promise.resolve()
         if (!username) return Promise.reject(new Error('Username required'))
 
-        const resolvedTransport = normalizeTransportMode(transport)
-        if (!resolvedTransport) {
-            return Promise.reject(new Error("transport must be 'auto', 'webrtc', or 'ws'"))
-        }
-
-        this.connectOptions = {
-            url,
-            username,
-            roomId,
-            map,
-            transport: resolvedTransport,
-        }
-
         return initProtocolWasm().then(async () => {
             this.resetConnectionState()
-            if (resolvedTransport === 'ws') {
-                await this.connectWebSocket({ url, username, roomId, map })
-                return
-            }
-
-            if (resolvedTransport === 'webrtc') {
-                await this.connectWebRtc({ url, username, roomId, map })
-                return
-            }
-
-            try {
-                await this.connectWebRtc({ url, username, roomId, map })
-            } catch (err) {
-                console.warn('WebRTC connect failed, falling back to WebSocket', err)
-                this.handleTransportClosed()
-                await this.connectWebSocket({ url, username, roomId, map })
-            }
+            await this.connectWebRtc({ url, username, roomId, map })
         })
     }
 
@@ -332,8 +293,7 @@ export class NetworkClient {
 
     sendInput(input, now = performance.now()) {
         if (!this.connected) return false
-        if (this.transport === 'ws' && !this.socket) return false
-        if (this.transport === 'webrtc' && !this.gameDataChannel) return false
+        if (!this.gameDataChannel) return false
         const signature = buildInputSignature(input)
         const inputChanged = signature !== this.lastSentInputSignature
 
@@ -357,93 +317,14 @@ export class NetworkClient {
         return true
     }
 
-    send(payload) {
-        if (this.transport === 'ws') {
-            if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return
-            this.socket.send(payload)
-        }
-    }
-
     sendControl(payload) {
-        if (this.transport === 'webrtc') {
-            if (!this.controlDataChannel || this.controlDataChannel.readyState !== 'open') return
-            this.controlDataChannel.send(payload)
-            return
-        }
-        this.send(payload)
+        if (!this.controlDataChannel || this.controlDataChannel.readyState !== 'open') return
+        this.controlDataChannel.send(payload)
     }
 
     sendGame(payload) {
-        if (this.transport === 'webrtc') {
-            if (!this.gameDataChannel || this.gameDataChannel.readyState !== 'open') return
-            this.gameDataChannel.send(payload)
-            return
-        }
-        this.send(payload)
-    }
-
-    async connectWebSocket({ url, username, roomId, map }) {
-        await new Promise((resolve, reject) => {
-            let settled = false
-            const resolveOnce = () => {
-                if (settled) return
-                settled = true
-                resolve()
-            }
-            const rejectOnce = (err) => {
-                if (settled) return
-                settled = true
-                reject(err)
-            }
-
-            this.socket = new WebSocket(url)
-            this.socket.binaryType = 'arraybuffer'
-            this.transport = 'ws'
-
-            this.socket.addEventListener(
-                'open',
-                () => {
-                    this.connected = true
-                    this.lastInputSentAt = -Infinity
-                    this.lastPingSentAt = -Infinity
-                    this.lastAckProgressAtMs = performance.now()
-                    this.lastAckedInputSeq = 0
-                    this.lastSentInputSignature = ''
-                    this.currentInputSendHz = INPUT_SEND_RATE_HZ
-                    this.sendControl(encodeHello(username))
-                    this.sendControl(encodeJoinRoom(roomId ?? '', map))
-                    this.handlers.onOpen?.()
-                    resolveOnce()
-                },
-                { once: true },
-            )
-
-            this.socket.addEventListener('message', (event) => {
-                if (event.data instanceof ArrayBuffer) {
-                    const msg = decodeServerMessage(event.data)
-                    if (msg) this.handleMessage(msg)
-                    return
-                }
-                console.warn('Unexpected text message', event.data)
-            })
-
-            this.socket.addEventListener('close', () => {
-                const wasConnected = this.connected
-                this.handleTransportClosed()
-                if (!wasConnected) {
-                    rejectOnce(new Error('WebSocket closed before connection'))
-                }
-            })
-
-            this.socket.addEventListener(
-                'error',
-                (event) => {
-                    this.handlers.onError?.(event)
-                    rejectOnce(new Error('WebSocket error'))
-                },
-                { once: true },
-            )
-        })
+        if (!this.gameDataChannel || this.gameDataChannel.readyState !== 'open') return
+        this.gameDataChannel.send(payload)
     }
 
     async connectWebRtc({ url, username, roomId, map }) {
@@ -459,7 +340,6 @@ export class NetworkClient {
             await waitForWebSocketOpen(this.signalSocket)
 
             this.peerConnection = new RTCPeerConnection({ iceServers: buildIceServers() })
-            this.transport = 'webrtc'
 
             this.peerConnection.addEventListener('connectionstatechange', () => {
                 const state = this.peerConnection?.connectionState
@@ -592,13 +472,6 @@ export class NetworkClient {
             } catch {}
             this.peerConnection = null
         }
-        if (this.socket) {
-            try {
-                this.socket.close()
-            } catch {}
-            this.socket = null
-        }
-        this.transport = 'none'
         this.resetConnectionState()
         if (wasConnected) {
             this.handlers.onClose?.()
@@ -1116,14 +989,6 @@ function buildInputSignature(input) {
 
 function quantize(value, scale) {
     return Math.round(value * scale) / scale
-}
-
-function normalizeTransportMode(value) {
-    const mode = String(value ?? '').toLowerCase()
-    if (mode === 'auto' || mode === 'webrtc' || mode === 'ws') {
-        return mode
-    }
-    return null
 }
 
 function buildIceServers() {

@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
 use axum::response::IntoResponse;
 use axum::routing::get;
@@ -53,11 +53,6 @@ struct AppState {
     started_at: Instant,
 }
 
-enum ControlOut {
-    Pong(Bytes),
-    Close,
-}
-
 enum RtcCmd {
     Client(ClientMsg),
     Shutdown,
@@ -96,7 +91,6 @@ async fn main() -> std::io::Result<()> {
     });
 
     let app = Router::new()
-        .route("/ws", get(ws_handler))
         .route("/rtc", get(rtc_ws_handler))
         .with_state(state);
 
@@ -108,116 +102,11 @@ async fn main() -> std::io::Result<()> {
     axum::serve(listener, app).tcp_nodelay(true).await
 }
 
-async fn ws_handler(State(state): State<Arc<AppState>>, ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(state, socket))
-}
-
 async fn rtc_ws_handler(
     State(state): State<Arc<AppState>>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_rtc_socket(state, socket))
-}
-
-async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
-    let (mut ws_sender, mut ws_receiver) = socket.split();
-
-    let (outbound_tx, mut outbound_rx) = mpsc::channel::<Bytes>(OUTBOUND_CHANNEL_CAPACITY);
-    let (control_tx, mut control_rx) = mpsc::channel::<ControlOut>(8);
-
-    let send_task = tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                Some(control) = control_rx.recv() => {
-                    let result = match control {
-                        ControlOut::Pong(payload) => {
-                            ws_sender.send(Message::Pong(payload.to_vec())).await
-                        }
-                        ControlOut::Close => ws_sender.send(Message::Close(Some(CloseFrame {
-                            code: axum::extract::ws::close_code::PROTOCOL,
-                            reason: "protocol error".into(),
-                        }))).await,
-                    };
-                    if result.is_err() {
-                        break;
-                    }
-                }
-                Some(msg) = outbound_rx.recv() => {
-                    if ws_sender.send(Message::Binary(msg.to_vec())).await.is_err() {
-                        break;
-                    }
-                }
-                else => break,
-            }
-        }
-    });
-
-    let player_id = PlayerId(state.next_player_id.fetch_add(1, Ordering::Relaxed));
-    let mut username = format!("player{}", player_id.0);
-    let mut current_room: Option<Arc<RoomHandle>> = None;
-
-    if outbound_tx
-        .try_send(Bytes::from(encode_welcome(player_id.0)))
-        .is_err()
-    {
-        let _ = send_task.await;
-        return;
-    }
-
-    while let Some(result) = ws_receiver.next().await {
-        let Ok(msg) = result else {
-            break;
-        };
-
-        let keep_running = match msg {
-            Message::Text(_) => {
-                warn!(
-                    player_id = player_id.0,
-                    "closing socket after unexpected text frame"
-                );
-                let _ = control_tx.try_send(ControlOut::Close);
-                false
-            }
-            Message::Binary(bytes) => match decode_client_message(&bytes) {
-                Ok(client_msg) => {
-                    handle_client_msg(
-                        &state,
-                        &mut current_room,
-                        &mut username,
-                        player_id,
-                        client_msg,
-                        &outbound_tx,
-                    )
-                    .await
-                }
-                Err(err) => {
-                    warn!(player_id = player_id.0, "bad message: {err:?}");
-                    true
-                }
-            },
-            Message::Ping(payload) => {
-                let _ = control_tx.try_send(ControlOut::Pong(Bytes::from(payload)));
-                true
-            }
-            Message::Close(_) => false,
-            Message::Pong(_) => true,
-        };
-
-        if !keep_running {
-            break;
-        }
-    }
-
-    if let Some(room) = current_room.take() {
-        room.leave(player_id);
-    }
-
-    drop(outbound_tx);
-    drop(control_tx);
-
-    if let Err(err) = send_task.await {
-        error!(player_id = player_id.0, "send task join error: {err}");
-    }
 }
 
 async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
