@@ -1,6 +1,6 @@
 import { ensureModelLoaded } from '../render/assets'
 import { Player } from '../game/player'
-import { SkinId } from '../core/models'
+import { pickMultiplayerSkin } from '../core/models'
 import {
     decodeServerMessage,
     encodeHello,
@@ -282,6 +282,11 @@ export class NetworkClient {
 
         return initProtocolWasm().then(async () => {
             this.resetConnectionState()
+            if (this.localPlayer) {
+                const skin = pickMultiplayerSkin(username)
+                await ensureModelLoaded(this.localPlayer.model, skin)
+                this.localPlayer.skin = skin
+            }
             await this.connectWebRtc({ url, username, roomId, map })
         })
     }
@@ -534,22 +539,27 @@ export class NetworkClient {
         this.pendingSnapshots.length = 0
     }
 
-    async upsertRemotePlayer(playerInfo) {
+    upsertRemotePlayer(playerInfo) {
         if (!playerInfo?.id) return
         if (playerInfo.id === this.playerId) return
+        const chosenSkin = pickMultiplayerSkin(playerInfo.username ?? playerInfo.id)
         if (this.remotePlayers.has(playerInfo.id)) {
             const player = this.remotePlayers.get(playerInfo.id)
+            if (player.skin !== chosenSkin) {
+                player.skin = chosenSkin
+                void ensureModelLoaded(player.model, player.skin)
+            }
             if (playerInfo.state) {
                 applyPlayerState(player, playerInfo.state, true)
             }
             return
         }
 
-        const player = new Player({ model: playerInfo.model, skin: playerInfo.skin })
+        const player = new Player({ model: playerInfo.model, skin: chosenSkin })
         player.id = playerInfo.id
         this.remotePlayers.set(playerInfo.id, player)
         this._remotePlayersDirty = true
-        await ensureModelLoaded(player.model, player.skin ?? SkinId.RED)
+        void ensureModelLoaded(player.model, player.skin)
         if (playerInfo.state) {
             applyPlayerState(player, playerInfo.state, true)
         }

@@ -37,6 +37,30 @@ const MODEL_CONFIGS = {
 
 export const DEFAULT_MODEL = ModelId.SARGE
 export const DEFAULT_SKIN = SkinId.BLUE
+export const MULTIPLAYER_SKINS = Object.freeze([
+    SkinId.BLUE,
+    SkinId.RED,
+    SkinId.WHITE,
+    SkinId.DARK,
+    SkinId.BROWN,
+    SkinId.NUKER,
+])
+
+export function pickMultiplayerSkin(seed) {
+    const text = String(seed ?? '')
+        .trim()
+        .toLowerCase()
+    if (!text) return DEFAULT_SKIN
+
+    // Stable FNV-1a hash so all clients derive the same skin from the same seed.
+    let hash = 2166136261
+    for (let i = 0; i < text.length; i++) {
+        hash ^= text.charCodeAt(i)
+        hash = Math.imul(hash, 16777619)
+    }
+    const idx = (hash >>> 0) % MULTIPLAYER_SKINS.length
+    return MULTIPLAYER_SKINS[idx]
+}
 
 export function getModelSkinKey(modelId, skinId) {
     return `${modelId}:${skinId}`

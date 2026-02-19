@@ -7,7 +7,6 @@ import { Render } from '../render'
 import { Projectiles } from '../game/projectiles'
 import { loadAssets, ensureModelLoaded } from '../render/assets'
 import { BotManager } from '../bot/manager'
-import { SkinId } from '../core/models'
 import { NetworkClient } from '../net/client'
 import { getBackendWsUrl } from '../net/wsEndpoint'
 
@@ -48,7 +47,7 @@ let lastAppliedWorldSnapshotTick = -1
 let remoteBotWrappers = []
 let remoteBotWrapperSource = null
 
-await ensureModelLoaded(localPlayer.model, SkinId.RED)
+await ensureModelLoaded(localPlayer.model, localPlayer.skin)
 
 Render.initSprites(localPlayer)
 Render.renderMap()
