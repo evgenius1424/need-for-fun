@@ -718,14 +718,15 @@ export class NetworkClient {
             playerMap: toPlayerMap(snapshot.players),
         }
         // Binary search: find the insertion point (first index whose tick >= entry.tick).
-        // O(log n) vs the previous O(n) findIndex + O(n log n) sort.
+        // Search drops from O(n) (findIndex) to O(log n); insertion via splice still shifts
+        // tail elements, so the overall insertion path remains O(n) in the worst case.
         const idx = snapshotBinarySearch(this.snapshotBuffer, tick)
         if (idx < this.snapshotBuffer.length && this.snapshotBuffer[idx].tick === tick) {
             this.snapshotBuffer[idx] = entry
             return
         }
         this.snapshotBuffer.splice(idx, 0, entry)
-        if (this.snapshotBuffer.length > SNAPSHOT_BUFFER_MAX) {
+        while (this.snapshotBuffer.length > SNAPSHOT_BUFFER_MAX) {
             this.snapshotBuffer.shift()
         }
     }
