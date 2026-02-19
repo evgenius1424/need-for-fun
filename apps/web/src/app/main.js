@@ -124,6 +124,8 @@ function setupExplosionHandlers() {
 }
 
 function gameLoop(timestamp, player) {
+    const isFiring = Input.mouseDown || Input.fireKeyDown
+
     if (network.isActive()) {
         network.flushSnapshots()
         player.prevAimAngle = player.aimAngle
@@ -146,7 +148,7 @@ function gameLoop(timestamp, player) {
                 key_down: player.keyDown,
                 key_left: player.keyLeft,
                 key_right: player.keyRight,
-                mouse_down: Input.mouseDown,
+                mouse_down: isFiring,
                 weapon_switch: weaponSwitch,
                 weapon_scroll: weaponScroll,
                 aim_angle: player.aimAngle,
@@ -773,7 +775,7 @@ function updateFacingDirection(player) {
 }
 
 function processFiring(player) {
-    if (!Input.mouseDown || player.dead) return
+    if ((!Input.mouseDown && !Input.fireKeyDown) || player.dead) return
 
     const otherPlayers = BotManager.getOtherPlayers(player)
     const result = player.fire()
