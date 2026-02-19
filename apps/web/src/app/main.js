@@ -350,7 +350,7 @@ function setupConsoleCommands() {
                 try {
                     Console.writeText(`Connecting to ${roomId}...`)
                     await network.connect({ url, username, roomId })
-                    Console.writeText(`Connected as ${username} via WebRTC`)
+                    Console.writeText(`Connected as ${username}`)
                 } catch (err) {
                     Console.writeText(`Connection failed: ${err.message}`)
                 }
