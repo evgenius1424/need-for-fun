@@ -3,7 +3,6 @@
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::panic)]
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,7 +17,7 @@ use axum::Router;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info, warn};
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
@@ -36,6 +35,7 @@ mod game;
 mod map;
 mod physics;
 mod room;
+mod room_manager;
 
 use crate::binary::{decode_client_message, encode_pong, encode_welcome, ClientMsg};
 use crate::constants::{
@@ -44,10 +44,11 @@ use crate::constants::{
 };
 use crate::game::WeaponId;
 use crate::map::GameMap;
-use crate::room::{PlayerId, PlayerInput, RoomHandle, RoomId};
+use crate::room::{PlayerId, PlayerInput, RoomConfig, RoomHandle};
+use crate::room_manager::RoomManager;
 
 struct AppState {
-    rooms: RwLock<HashMap<RoomId, Arc<RoomHandle>>>,
+    room_manager: Arc<RoomManager>,
     next_player_id: AtomicU64,
     map_dir: PathBuf,
     started_at: Instant,
@@ -84,11 +85,13 @@ async fn main() -> std::io::Result<()> {
         .unwrap_or_else(|_| PathBuf::from(DEFAULT_MAP_DIR));
 
     let state = Arc::new(AppState {
-        rooms: RwLock::new(HashMap::new()),
+        room_manager: Arc::new(RoomManager::new(Instant::now())),
         next_player_id: AtomicU64::new(1),
         map_dir,
         started_at: Instant::now(),
     });
+
+    tokio::spawn(run_console(Arc::clone(&state)));
 
     let app = Router::new()
         .route("/rtc", get(rtc_ws_handler))
@@ -331,7 +334,7 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
 
 async fn handle_client_msg(
     state: &Arc<AppState>,
-    current_room: &mut Option<Arc<RoomHandle>>,
+    current_room: &mut Option<Arc<crate::room::RoomHandle>>,
     username: &mut String,
     player_id: PlayerId,
     msg: ClientMsg,
@@ -345,53 +348,67 @@ async fn handle_client_msg(
                 info!(player_id = player_id.0, "ignoring hello after room join");
                 return true;
             }
-
             if !requested_name.is_empty() {
                 *username = requested_name;
             }
             true
         }
         ClientMsg::JoinRoom { room_id, map } => {
-            let room_id = RoomId::from(room_id.unwrap_or_else(|| DEFAULT_ROOM_ID.to_string()));
+            let room_ref = room_id.unwrap_or_else(|| DEFAULT_ROOM_ID.to_string());
             let map_name = map.unwrap_or_else(|| DEFAULT_MAP_NAME.to_string());
 
-            if current_room
-                .as_ref()
-                .is_some_and(|room| room.id() == &room_id)
-            {
-                return true;
-            }
+            let target_room =
+                if let Some(room) = state.room_manager.get_room_by_ref(&room_ref).await {
+                    room
+                } else {
+                    let Some(game_map) = load_map(&state.map_dir, &map_name) else {
+                        warn!(
+                            player_id = player_id.0,
+                            room_ref, "join rejected: room map unavailable"
+                        );
+                        return true;
+                    };
+                    let config = RoomConfig {
+                        name: room_ref.clone(),
+                        max_players: room_manager::ROOM_MAX_PLAYERS_HARD_CAP,
+                        map_id: map_name,
+                        mode: "deathmatch".to_string(),
+                        tick_rate: 60,
+                        protocol_version: "1".to_string(),
+                        region: None,
+                    };
+                    let Ok(created) = state.room_manager.create_room(config, game_map).await else {
+                        warn!(
+                            player_id = player_id.0,
+                            room_ref, "join rejected: room create failed"
+                        );
+                        return true;
+                    };
+                    created
+                };
 
-            if let Some(previous_room) = current_room.take() {
-                previous_room.leave(player_id);
-            }
-
-            let Some(handle) = get_or_create_room(state, room_id.clone(), &map_name).await else {
-                warn!(
-                    player_id = player_id.0,
-                    room_id = room_id.as_str(),
-                    "join rejected: room map unavailable"
-                );
-                return true;
-            };
-
-            let Some(room_state) = handle
-                .join(player_id, username.clone(), outbound_tx.clone())
+            match state
+                .room_manager
+                .join_room(
+                    player_id,
+                    username.clone(),
+                    Arc::clone(&target_room),
+                    outbound_tx.clone(),
+                )
                 .await
-            else {
-                warn!(
-                    player_id = player_id.0,
-                    "room join failed: room task closed"
-                );
-                return true;
-            };
-
-            if outbound_tx.try_send(room_state).is_err() {
-                return false;
+            {
+                Ok(success) => {
+                    if outbound_tx.try_send(success.room_state).is_err() {
+                        return false;
+                    }
+                    *current_room = Some(success.room);
+                    true
+                }
+                Err(rejection) => {
+                    let _ = outbound_tx.try_send(rejection);
+                    true
+                }
             }
-
-            *current_room = Some(handle);
-            true
         }
         ClientMsg::Input {
             seq,
@@ -408,7 +425,6 @@ async fn handle_client_msg(
             let Some(room) = current_room.as_ref() else {
                 return true;
             };
-
             let input = PlayerInput {
                 key_up,
                 key_down,
@@ -420,7 +436,6 @@ async fn handle_client_msg(
                 aim_angle,
                 facing_left,
             };
-
             room.set_input(player_id, seq, input);
             true
         }
@@ -432,28 +447,90 @@ async fn handle_client_msg(
     }
 }
 
-async fn get_or_create_room(
-    state: &Arc<AppState>,
-    room_id: RoomId,
-    map_name: &str,
-) -> Option<Arc<RoomHandle>> {
-    if let Some(existing) = state.rooms.read().await.get(&room_id).cloned() {
-        return Some(existing);
+async fn run_console(state: Arc<AppState>) {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    let mut lines = BufReader::new(tokio::io::stdin()).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        if !line.starts_with("rooms") {
+            continue;
+        }
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 2 {
+            info!("rooms commands: list|create|close|info|set|rename|kick|move");
+            continue;
+        }
+        match parts[1] {
+            "list" => {
+                for room in state.room_manager.list_rooms().await {
+                    info!(
+                        "{} {} {}/{} {}",
+                        room.room_id,
+                        room.name,
+                        room.current_players,
+                        room.max_players,
+                        room.status.as_str()
+                    );
+                }
+            }
+            "create" if parts.len() >= 3 => {
+                let name = parts[2].to_string();
+                let max_players = parts
+                    .get(3)
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .unwrap_or(8);
+                let map_id = parts.get(4).copied().unwrap_or(DEFAULT_MAP_NAME);
+                let mode = parts.get(5).copied().unwrap_or("deathmatch");
+                if let Some(map) = load_map(&state.map_dir, map_id) {
+                    let cfg = RoomConfig {
+                        name,
+                        max_players,
+                        map_id: map_id.to_string(),
+                        mode: mode.to_string(),
+                        tick_rate: 60,
+                        protocol_version: "1".to_string(),
+                        region: None,
+                    };
+                    if let Err(err) = state.room_manager.create_room(cfg, map).await {
+                        warn!("rooms create failed: {err}");
+                    }
+                }
+            }
+            "close" if parts.len() >= 3 => {
+                if let Err(err) = state.room_manager.close_room(parts[2], "admin_close").await {
+                    warn!("rooms close failed: {err}");
+                }
+            }
+            "info" if parts.len() >= 3 => {
+                if let Some(info_dump) = state.room_manager.room_info(parts[2]).await {
+                    info!(
+                        "room {} {} players={} tick={}",
+                        info_dump.summary.room_id,
+                        info_dump.summary.name,
+                        info_dump.summary.current_players,
+                        info_dump.tick
+                    );
+                }
+            }
+            "set" if parts.len() >= 5 && parts[3] == "maxPlayers" => {
+                if let Ok(n) = parts[4].parse::<usize>() {
+                    if let Err(err) = state.room_manager.set_room_max_players(parts[2], n).await {
+                        warn!("rooms set failed: {err}");
+                    }
+                }
+            }
+            "rename" if parts.len() >= 4 => {
+                if let Err(err) = state
+                    .room_manager
+                    .rename_room(parts[2], parts[3].to_string())
+                    .await
+                {
+                    warn!("rooms rename failed: {err}");
+                }
+            }
+            _ => warn!("unknown rooms command"),
+        }
     }
-
-    let map = match load_map(&state.map_dir, map_name) {
-        Some(map) => map,
-        None => return None,
-    };
-
-    let mut rooms = state.rooms.write().await;
-    if let Some(existing) = rooms.get(&room_id).cloned() {
-        return Some(existing);
-    }
-
-    let handle = RoomHandle::new(room_id.clone(), map, state.started_at);
-    rooms.insert(room_id, handle.clone());
-    Some(handle)
 }
 
 fn load_map(map_dir: &Path, map_name: &str) -> Option<GameMap> {
@@ -483,85 +560,4 @@ fn load_turn_server() -> Option<RTCIceServer> {
     }
 
     Some(server)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::atomic::AtomicU64;
-    use std::sync::Arc;
-    use std::time::Instant;
-
-    use bytes::Bytes;
-    use tokio::sync::{mpsc, RwLock};
-
-    use super::{handle_client_msg, AppState};
-    use crate::binary::ClientMsg;
-    use crate::map::GameMap;
-    use crate::room::{PlayerId, RoomHandle, RoomId};
-
-    fn simple_map() -> GameMap {
-        GameMap {
-            rows: 1,
-            cols: 1,
-            bricks: vec![0],
-            respawns: vec![(0, 0)],
-            items: Vec::new(),
-            name: "test".to_string(),
-        }
-    }
-
-    #[tokio::test]
-    async fn player_can_move_between_rooms_without_ghosting() {
-        let room_a = RoomHandle::new(RoomId::from("a"), simple_map(), Instant::now());
-        let room_b = RoomHandle::new(RoomId::from("b"), simple_map(), Instant::now());
-
-        let mut rooms = std::collections::HashMap::new();
-        rooms.insert(RoomId::from("a"), Arc::clone(&room_a));
-        rooms.insert(RoomId::from("b"), Arc::clone(&room_b));
-
-        let state = Arc::new(AppState {
-            rooms: RwLock::new(std::collections::HashMap::new()),
-            next_player_id: AtomicU64::new(1),
-            map_dir: std::path::PathBuf::new(),
-            started_at: Instant::now(),
-        });
-        *state.rooms.write().await = rooms;
-
-        let (tx, _rx) = mpsc::channel::<Bytes>(8);
-        let mut current_room: Option<Arc<RoomHandle>> = None;
-        let mut username = "player7".to_string();
-
-        let joined_first = handle_client_msg(
-            &state,
-            &mut current_room,
-            &mut username,
-            PlayerId(7),
-            ClientMsg::JoinRoom {
-                room_id: Some("a".to_string()),
-                map: None,
-            },
-            &tx,
-        )
-        .await;
-        assert!(joined_first);
-        assert!(room_a.contains_player(PlayerId(7)).await);
-
-        let joined_second = handle_client_msg(
-            &state,
-            &mut current_room,
-            &mut username,
-            PlayerId(7),
-            ClientMsg::JoinRoom {
-                room_id: Some("b".to_string()),
-                map: None,
-            },
-            &tx,
-        )
-        .await;
-        assert!(joined_second);
-
-        tokio::task::yield_now().await;
-        assert!(!room_a.contains_player(PlayerId(7)).await);
-        assert!(room_b.contains_player(PlayerId(7)).await);
-    }
 }

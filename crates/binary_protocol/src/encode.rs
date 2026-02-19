@@ -112,6 +112,28 @@ pub fn encode_pong(client_time_ms: u64, server_time_ms: u64) -> Vec<u8> {
     out
 }
 
+fn encode_reasoned_message(msg_type: u8, reason: &str) -> Vec<u8> {
+    let reason_bytes = reason.as_bytes();
+    let len = reason_bytes.len().min(255);
+    let mut out = Vec::with_capacity(2 + len);
+    out.push(msg_type);
+    out.push(len as u8);
+    out.extend_from_slice(&reason_bytes[..len]);
+    out
+}
+
+pub fn encode_join_rejected(reason: &str) -> Vec<u8> {
+    encode_reasoned_message(MSG_JOIN_REJECTED, reason)
+}
+
+pub fn encode_room_closed(reason: &str) -> Vec<u8> {
+    encode_reasoned_message(MSG_ROOM_CLOSED, reason)
+}
+
+pub fn encode_kicked(reason: &str) -> Vec<u8> {
+    encode_reasoned_message(MSG_KICKED, reason)
+}
+
 pub fn encode_player_joined(id: u64, username: &str) -> Vec<u8> {
     let name_bytes = username.as_bytes();
     let len = name_bytes.len().min(255);

@@ -66,3 +66,46 @@ npm run web:build       # Build only web client
 npm run server:dev      # Start only Rust server (debug)
 npm run server:build    # Build only Rust server (release)
 ```
+
+## Server room management (in-memory, console-first)
+
+The server now has an in-memory room subsystem intended for both current console administration and future UI/API usage.
+
+### Lifecycle
+
+Each room transitions through:
+
+- `created` -> room exists and can accept joins.
+- `running` -> at least one player is connected; simulation ticks are active.
+- `empty` -> last player left.
+- `closing` -> cleanup/teardown in progress.
+- `closed` -> task ended and room removed from manager listing.
+
+When the last player leaves, the room automatically goes to `empty`/`closing` and stops ticking.
+
+### Console commands
+
+The server reads console input from stdin. Use:
+
+- `rooms list`
+- `rooms create <name> [maxPlayers] [mapId] [mode]`
+- `rooms close <roomId|name>`
+- `rooms info <roomId|name>`
+- `rooms set <roomId|name> maxPlayers <n>`
+- `rooms rename <roomId|name> <newName>`
+
+`maxPlayers` defaults to 8 and is hard-capped at 8 for this phase.
+
+### UI-ready API model (internal)
+
+`RoomManager` provides methods that are ready to be reused by a future HTTP/WebSocket UI layer:
+
+- create/list/get/join/leave/close/rename/set-max.
+- listing returns `RoomSummary` (id, name, current/max players, map, mode, status, timestamps, protocol/region placeholders).
+- `RoomInfo` returns details + player list for debug/admin inspection.
+
+### Notes
+
+- Rooms are public and passwordless.
+- No persistence: process restart resets all rooms.
+- Metrics are tracked in memory (`rooms_created_total`, `rooms_closed_total`, `players_joined_total`, `players_left_total`, plus current counters via manager state).
