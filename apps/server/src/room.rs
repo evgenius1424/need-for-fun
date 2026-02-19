@@ -55,7 +55,6 @@ impl From<&str> for RoomId {
 pub enum RoomStatus {
     Created,
     Running,
-    Empty,
     Closing,
     Closed,
 }
@@ -65,7 +64,6 @@ impl RoomStatus {
         match self {
             Self::Created => "created",
             Self::Running => "running",
-            Self::Empty => "empty",
             Self::Closing => "closing",
             Self::Closed => "closed",
         }
@@ -75,9 +73,8 @@ impl RoomStatus {
         match self {
             Self::Running => 0,
             Self::Created => 1,
-            Self::Empty => 2,
-            Self::Closing => 3,
-            Self::Closed => 4,
+            Self::Closing => 2,
+            Self::Closed => 3,
         }
     }
 }
@@ -299,8 +296,11 @@ impl RoomHandle {
         rx.await.unwrap_or_else(|_| Err("room_closed".to_string()))
     }
 
-    pub fn begin_close(&self, reason: String) {
-        let _ = self.tx.try_send(RoomCmd::BeginClose { reason });
+    pub async fn begin_close(&self, reason: String) -> Result<(), String> {
+        self.tx
+            .send(RoomCmd::BeginClose { reason })
+            .await
+            .map_err(|_| "room_closed".to_string())
     }
 
     pub async fn kick(&self, player_id: PlayerId, reason: String) -> bool {
@@ -407,6 +407,11 @@ impl PlayerStore {
 
     fn contains(&self, player_id: PlayerId) -> bool {
         self.player_index.contains_key(&player_id)
+    }
+
+    fn player_tx(&self, player_id: PlayerId) -> Option<mpsc::Sender<Bytes>> {
+        let idx = self.player_index.get(&player_id).copied()?;
+        Some(self.conns[idx].tx.clone())
     }
 
     fn insert(&mut self, player: PlayerConn, state: PlayerState) {
@@ -525,11 +530,7 @@ impl RoomTask {
                 tx,
                 response,
             } => {
-                if matches!(
-                    self.status,
-                    RoomStatus::Closing | RoomStatus::Closed | RoomStatus::Empty
-                ) && self.player_store.is_empty()
-                {
+                if matches!(self.status, RoomStatus::Closing | RoomStatus::Closed) {
                     let _ = response.send(Err(JoinError::RoomClosing));
                     return false;
                 }
@@ -562,10 +563,13 @@ impl RoomTask {
                 reason,
                 response,
             } => {
+                let player_tx = self.player_store.player_tx(player_id);
                 let removed = self.remove_player(player_id);
                 if removed {
                     self.broadcast(encode_player_left(player_id.0).into());
-                    let _ = self.send_to_player(player_id, Bytes::from(encode_kicked(&reason)));
+                    if let Some(player_tx) = player_tx {
+                        let _ = player_tx.try_send(Bytes::from(encode_kicked(&reason)));
+                    }
                     self.transition_empty_if_needed();
                 }
                 let _ = response.send(removed);
@@ -718,16 +722,8 @@ impl RoomTask {
 
     fn transition_empty_if_needed(&mut self) {
         if self.player_store.is_empty() {
-            self.status = RoomStatus::Empty;
             self.status = RoomStatus::Closing;
         }
-    }
-
-    fn send_to_player(&self, player_id: PlayerId, payload: Bytes) -> bool {
-        let Some(idx) = self.player_store.player_index.get(&player_id).copied() else {
-            return false;
-        };
-        self.player_store.conns[idx].tx.try_send(payload).is_ok()
     }
 
     fn simulate_tick(&mut self) {

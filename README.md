@@ -77,11 +77,10 @@ Each room transitions through:
 
 - `created` -> room exists and can accept joins.
 - `running` -> at least one player is connected; simulation ticks are active.
-- `empty` -> last player left.
-- `closing` -> cleanup/teardown in progress.
+- `closing` -> cleanup/teardown in progress (triggered when last player leaves).
 - `closed` -> task ended and room removed from manager listing.
 
-When the last player leaves, the room automatically goes to `empty`/`closing` and stops ticking.
+When the last player leaves, the room automatically goes to `closing` and stops ticking.
 
 ### Console commands
 

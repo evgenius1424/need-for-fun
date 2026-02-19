@@ -113,12 +113,15 @@ pub fn encode_pong(client_time_ms: u64, server_time_ms: u64) -> Vec<u8> {
 }
 
 fn encode_reasoned_message(msg_type: u8, reason: &str) -> Vec<u8> {
-    let reason_bytes = reason.as_bytes();
-    let len = reason_bytes.len().min(255);
-    let mut out = Vec::with_capacity(2 + len);
+    let mut len = reason.len().min(255);
+    while len > 0 && !reason.is_char_boundary(len) {
+        len -= 1;
+    }
+    let reason = &reason[..len];
+    let mut out = Vec::with_capacity(2 + reason.len());
     out.push(msg_type);
-    out.push(len as u8);
-    out.extend_from_slice(&reason_bytes[..len]);
+    out.push(reason.len() as u8);
+    out.extend_from_slice(reason.as_bytes());
     out
 }
 

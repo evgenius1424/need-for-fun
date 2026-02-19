@@ -357,35 +357,33 @@ async fn handle_client_msg(
             let room_ref = room_id.unwrap_or_else(|| DEFAULT_ROOM_ID.to_string());
             let map_name = map.unwrap_or_else(|| DEFAULT_MAP_NAME.to_string());
 
-            let target_room =
-                if let Some(room) = state.room_manager.get_room_by_ref(&room_ref).await {
-                    room
-                } else {
-                    let Some(game_map) = load_map(&state.map_dir, &map_name) else {
-                        warn!(
-                            player_id = player_id.0,
-                            room_ref, "join rejected: room map unavailable"
-                        );
-                        return true;
-                    };
-                    let config = RoomConfig {
-                        name: room_ref.clone(),
-                        max_players: room_manager::ROOM_MAX_PLAYERS_HARD_CAP,
-                        map_id: map_name,
-                        mode: "deathmatch".to_string(),
-                        tick_rate: 60,
-                        protocol_version: "1".to_string(),
-                        region: None,
-                    };
-                    let Ok(created) = state.room_manager.create_room(config, game_map).await else {
-                        warn!(
-                            player_id = player_id.0,
-                            room_ref, "join rejected: room create failed"
-                        );
-                        return true;
-                    };
-                    created
-                };
+            let Some(game_map) = load_map(&state.map_dir, &map_name) else {
+                warn!(
+                    player_id = player_id.0,
+                    room_ref, "join rejected: room map unavailable"
+                );
+                return true;
+            };
+            let config = RoomConfig {
+                name: room_ref.clone(),
+                max_players: room_manager::ROOM_MAX_PLAYERS_HARD_CAP,
+                map_id: map_name,
+                mode: "deathmatch".to_string(),
+                tick_rate: 60,
+                protocol_version: "1".to_string(),
+                region: None,
+            };
+            let Ok(target_room) = state
+                .room_manager
+                .get_or_create_room(config, game_map)
+                .await
+            else {
+                warn!(
+                    player_id = player_id.0,
+                    room_ref, "join rejected: room create failed"
+                );
+                return true;
+            };
 
             match state
                 .room_manager
@@ -528,6 +526,36 @@ async fn run_console(state: Arc<AppState>) {
                     warn!("rooms rename failed: {err}");
                 }
             }
+            "kick" if parts.len() >= 4 => match parts[3].parse::<u64>() {
+                Ok(player_id) => {
+                    if let Err(err) = state
+                        .room_manager
+                        .kick(parts[2], PlayerId(player_id), "admin_kick".to_string())
+                        .await
+                    {
+                        warn!("rooms kick failed: {err}");
+                    }
+                }
+                Err(_) => warn!("rooms kick failed: invalid player id"),
+            },
+            "move" if parts.len() >= 4 => match parts[2].parse::<u64>() {
+                Ok(player_id) => {
+                    let (tx, _rx) = mpsc::channel::<Bytes>(1);
+                    if let Err(_) = state
+                        .room_manager
+                        .move_player(
+                            PlayerId(player_id),
+                            parts[3],
+                            format!("player{}", player_id),
+                            tx,
+                        )
+                        .await
+                    {
+                        warn!("rooms move failed");
+                    }
+                }
+                Err(_) => warn!("rooms move failed: invalid player id"),
+            },
             _ => warn!("unknown rooms command"),
         }
     }
