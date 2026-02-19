@@ -39,6 +39,7 @@ export const Input = {
     mouseDeltaX: 0,
     mouseDeltaY: 0,
     mouseDown: false,
+    fireKeyDown: false,
     pointerLocked: false,
     weaponSwitch: -1,
     weaponScroll: 0,
@@ -158,6 +159,13 @@ function initInputHandlers() {
 
     const handleKey = (e, pressed) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+
+        const isFireKey = e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar'
+        if (isFireKey) {
+            e.preventDefault()
+            Input.fireKeyDown = pressed
+            return
+        }
 
         const prop = KEY_MAP[e.key]
         if (prop) {
