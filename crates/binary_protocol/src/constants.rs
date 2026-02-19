@@ -9,6 +9,9 @@ pub const MSG_PLAYER_JOINED: u8 = 0x83;
 pub const MSG_PLAYER_LEFT: u8 = 0x84;
 pub const MSG_SNAPSHOT: u8 = 0x85;
 pub const MSG_PONG: u8 = 0x86;
+pub const MSG_JOIN_REJECTED: u8 = 0x87;
+pub const MSG_ROOM_CLOSED: u8 = 0x88;
+pub const MSG_KICKED: u8 = 0x89;
 
 // Event type constants
 pub const EVENT_WEAPON_FIRED: u8 = 0x01;

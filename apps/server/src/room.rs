@@ -8,11 +8,11 @@ use rand_chacha::ChaCha8Rng;
 use smallvec::SmallVec;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::interval;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::binary::{
-    encode_player_joined, encode_player_left, encode_room_state, player_snapshot_from_state,
-    ItemSnapshot, SnapshotEncoder,
+    encode_kicked, encode_player_joined, encode_player_left, encode_room_closed, encode_room_state,
+    player_snapshot_from_state, ItemSnapshot, SnapshotEncoder,
 };
 use crate::binary::{EffectEvent, PlayerSnapshot};
 use crate::constants::{
@@ -52,6 +52,82 @@ impl From<&str> for RoomId {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RoomStatus {
+    Created,
+    Running,
+    Closing,
+    Closed,
+}
+
+impl RoomStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Created => "created",
+            Self::Running => "running",
+            Self::Closing => "closing",
+            Self::Closed => "closed",
+        }
+    }
+
+    pub fn rank(self) -> u8 {
+        match self {
+            Self::Running => 0,
+            Self::Created => 1,
+            Self::Closing => 2,
+            Self::Closed => 3,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RoomConfig {
+    pub name: String,
+    pub max_players: usize,
+    pub map_id: String,
+    pub mode: String,
+    pub tick_rate: u64,
+    pub protocol_version: String,
+    pub region: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RoomSummary {
+    pub room_id: String,
+    pub name: String,
+    pub current_players: usize,
+    pub max_players: usize,
+    pub map_id: String,
+    pub mode: String,
+    pub status: RoomStatus,
+    pub created_at_ms: u64,
+    pub last_activity_at_ms: u64,
+    pub protocol_version: String,
+    pub region: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RoomInfo {
+    pub summary: RoomSummary,
+    pub players: Vec<(u64, String)>,
+    pub tick: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum JoinError {
+    RoomFull,
+    RoomClosing,
+}
+
+impl JoinError {
+    pub fn reason(self) -> &'static str {
+        match self {
+            Self::RoomFull => "room_full",
+            Self::RoomClosing => "room_closing",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Tick(pub u64);
 
 #[derive(Clone, Copy, Default)]
@@ -81,15 +157,36 @@ enum RoomCmd {
         player_id: PlayerId,
         username: String,
         tx: mpsc::Sender<Bytes>,
-        response: oneshot::Sender<Bytes>,
+        response: oneshot::Sender<Result<Bytes, JoinError>>,
     },
     Leave {
         player_id: PlayerId,
+    },
+    Kick {
+        player_id: PlayerId,
+        reason: String,
+        response: oneshot::Sender<bool>,
     },
     Input {
         player_id: PlayerId,
         seq: u64,
         input: PlayerInput,
+    },
+    Summary {
+        response: oneshot::Sender<RoomSummary>,
+    },
+    Info {
+        response: oneshot::Sender<RoomInfo>,
+    },
+    Rename {
+        name: String,
+    },
+    SetMaxPlayers {
+        max_players: usize,
+        response: oneshot::Sender<Result<(), String>>,
+    },
+    BeginClose {
+        reason: String,
     },
     #[cfg(test)]
     ContainsPlayer {
@@ -104,13 +201,19 @@ pub struct RoomHandle {
 }
 
 impl RoomHandle {
-    pub fn new(id: RoomId, map: GameMap, server_started_at: Instant) -> Arc<Self> {
+    pub fn new(
+        id: RoomId,
+        map: GameMap,
+        config: RoomConfig,
+        server_started_at: Instant,
+    ) -> Arc<Self> {
         let (tx, rx) = mpsc::channel(ROOM_COMMAND_CAPACITY);
         let handle = Arc::new(Self { id, tx });
 
         let task_handle = Arc::clone(&handle);
         tokio::spawn(async move {
-            let mut task = RoomTask::new(task_handle.id.clone(), map, rx, server_started_at);
+            let mut task =
+                RoomTask::new(task_handle.id.clone(), map, config, rx, server_started_at);
             task.run().await;
         });
 
@@ -126,7 +229,7 @@ impl RoomHandle {
         player_id: PlayerId,
         username: String,
         tx: mpsc::Sender<Bytes>,
-    ) -> Option<Bytes> {
+    ) -> Result<Bytes, JoinError> {
         let (response_tx, response_rx) = oneshot::channel();
         let cmd = RoomCmd::Join {
             player_id,
@@ -135,14 +238,12 @@ impl RoomHandle {
             response: response_tx,
         };
         if self.tx.send(cmd).await.is_err() {
-            return None;
+            return Err(JoinError::RoomClosing);
         }
-        response_rx.await.ok()
+        response_rx.await.unwrap_or(Err(JoinError::RoomClosing))
     }
 
     pub fn leave(&self, player_id: PlayerId) {
-        // Leave is best-effort and can be dropped under backpressure; stale peers are
-        // eventually removed by broadcast send failures.
         let _ = self.tx.try_send(RoomCmd::Leave { player_id });
     }
 
@@ -152,6 +253,71 @@ impl RoomHandle {
             seq,
             input,
         });
+    }
+
+    pub async fn summary(&self) -> Option<RoomSummary> {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .tx
+            .send(RoomCmd::Summary { response: tx })
+            .await
+            .is_err()
+        {
+            return None;
+        }
+        rx.await.ok()
+    }
+
+    pub async fn info(&self) -> Option<RoomInfo> {
+        let (tx, rx) = oneshot::channel();
+        if self.tx.send(RoomCmd::Info { response: tx }).await.is_err() {
+            return None;
+        }
+        rx.await.ok()
+    }
+
+    pub fn rename(&self, name: String) {
+        let _ = self.tx.try_send(RoomCmd::Rename { name });
+    }
+
+    pub async fn set_max_players(&self, max_players: usize) -> Result<(), String> {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .tx
+            .send(RoomCmd::SetMaxPlayers {
+                max_players,
+                response: tx,
+            })
+            .await
+            .is_err()
+        {
+            return Err("room_closed".to_string());
+        }
+        rx.await.unwrap_or_else(|_| Err("room_closed".to_string()))
+    }
+
+    pub async fn begin_close(&self, reason: String) -> Result<(), String> {
+        self.tx
+            .send(RoomCmd::BeginClose { reason })
+            .await
+            .map_err(|_| "room_closed".to_string())
+    }
+
+    pub async fn kick(&self, player_id: PlayerId, reason: String) -> bool {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .tx
+            .send(RoomCmd::Kick {
+                player_id,
+                reason,
+                response: tx,
+            })
+            .await
+            .is_err()
+        {
+            return false;
+        }
+        rx.await.unwrap_or(false)
     }
 
     #[cfg(test)]
@@ -175,7 +341,12 @@ impl RoomHandle {
 struct RoomTask {
     room_id: RoomId,
     map: Arc<GameMap>,
+    config: RoomConfig,
+    status: RoomStatus,
+    created_at: Instant,
+    last_activity_at: Instant,
     server_started_at: Instant,
+    close_reason: Option<String>,
     rx: mpsc::Receiver<RoomCmd>,
     tick: Tick,
     items: Vec<MapItem>,
@@ -234,6 +405,15 @@ impl PlayerStore {
         &self.conns
     }
 
+    fn contains(&self, player_id: PlayerId) -> bool {
+        self.player_index.contains_key(&player_id)
+    }
+
+    fn player_tx(&self, player_id: PlayerId) -> Option<mpsc::Sender<Bytes>> {
+        let idx = self.player_index.get(&player_id).copied()?;
+        Some(self.conns[idx].tx.clone())
+    }
+
     fn insert(&mut self, player: PlayerConn, state: PlayerState) {
         let idx = self.conns.len();
         self.player_index.insert(player.id, idx);
@@ -271,18 +451,25 @@ impl RoomTask {
     fn new(
         room_id: RoomId,
         mut map: GameMap,
+        config: RoomConfig,
         rx: mpsc::Receiver<RoomCmd>,
         server_started_at: Instant,
     ) -> Self {
         let seed = room_id.as_str().bytes().fold(0_u64, |acc, byte| {
             acc.wrapping_mul(31).wrapping_add(byte as u64)
         });
+        let now = Instant::now();
 
         Self {
             room_id,
             items: map.take_items(),
             map: Arc::new(map),
+            config,
+            status: RoomStatus::Created,
+            created_at: now,
+            last_activity_at: now,
             server_started_at,
+            close_reason: None,
             rx,
             tick: Tick(0),
             projectiles: Vec::new(),
@@ -309,24 +496,33 @@ impl RoomTask {
                     let Some(cmd) = maybe_cmd else {
                         break;
                     };
-                    self.handle_cmd(cmd);
+                    if self.handle_cmd(cmd) {
+                        break;
+                    }
                     self.drain_commands();
                 }
                 _ = tick_interval.tick() => {
                     self.drain_commands();
                     self.simulate_tick();
+                    if self.status == RoomStatus::Closing {
+                        break;
+                    }
                 }
             }
         }
+        self.status = RoomStatus::Closed;
+        info!(room_id = self.room_id.as_str(), "room closed");
     }
 
     fn drain_commands(&mut self) {
         while let Ok(cmd) = self.rx.try_recv() {
-            self.handle_cmd(cmd);
+            if self.handle_cmd(cmd) {
+                break;
+            }
         }
     }
 
-    fn handle_cmd(&mut self, cmd: RoomCmd) {
+    fn handle_cmd(&mut self, cmd: RoomCmd) -> bool {
         match cmd {
             RoomCmd::Join {
                 player_id,
@@ -334,8 +530,18 @@ impl RoomTask {
                 tx,
                 response,
             } => {
+                if matches!(self.status, RoomStatus::Closing | RoomStatus::Closed) {
+                    let _ = response.send(Err(JoinError::RoomClosing));
+                    return false;
+                }
+                if self.player_store.len() >= self.config.max_players
+                    && !self.player_store.contains(player_id)
+                {
+                    let _ = response.send(Err(JoinError::RoomFull));
+                    return false;
+                }
                 let join_result = self.handle_join(player_id, username, tx);
-                let _ = response.send(join_result.room_state.clone());
+                let _ = response.send(Ok(join_result.room_state.clone()));
                 if join_result.broadcast_join {
                     self.broadcast_except(
                         Bytes::from(encode_player_joined(
@@ -349,7 +555,24 @@ impl RoomTask {
             RoomCmd::Leave { player_id } => {
                 if self.remove_player(player_id) {
                     self.broadcast(encode_player_left(player_id.0).into());
+                    self.transition_empty_if_needed();
                 }
+            }
+            RoomCmd::Kick {
+                player_id,
+                reason,
+                response,
+            } => {
+                let player_tx = self.player_store.player_tx(player_id);
+                let removed = self.remove_player(player_id);
+                if removed {
+                    self.broadcast(encode_player_left(player_id.0).into());
+                    if let Some(player_tx) = player_tx {
+                        let _ = player_tx.try_send(Bytes::from(encode_kicked(&reason)));
+                    }
+                    self.transition_empty_if_needed();
+                }
+                let _ = response.send(removed);
             }
             RoomCmd::Input {
                 player_id,
@@ -363,6 +586,45 @@ impl RoomTask {
                     }
                 }
             }
+            RoomCmd::Summary { response } => {
+                let _ = response.send(self.summary());
+            }
+            RoomCmd::Info { response } => {
+                let players = self
+                    .player_store
+                    .conns()
+                    .iter()
+                    .map(|p| (p.id.0, p.username.clone()))
+                    .collect();
+                let _ = response.send(RoomInfo {
+                    summary: self.summary(),
+                    players,
+                    tick: self.tick.0,
+                });
+            }
+            RoomCmd::Rename { name } => {
+                self.config.name = name;
+                self.last_activity_at = Instant::now();
+            }
+            RoomCmd::SetMaxPlayers {
+                max_players,
+                response,
+            } => {
+                if max_players < self.player_store.len() {
+                    let _ = response.send(Err("maxPlayers_lower_than_current_players".to_string()));
+                } else {
+                    self.config.max_players = max_players;
+                    self.last_activity_at = Instant::now();
+                    let _ = response.send(Ok(()));
+                }
+            }
+            RoomCmd::BeginClose { reason } => {
+                self.close_reason = Some(reason.clone());
+                self.status = RoomStatus::Closing;
+                let payload = Bytes::from(encode_room_closed(&reason));
+                self.broadcast(payload);
+                return true;
+            }
             #[cfg(test)]
             RoomCmd::ContainsPlayer {
                 player_id,
@@ -370,6 +632,29 @@ impl RoomTask {
             } => {
                 let _ = response.send(self.player_store.contains(player_id));
             }
+        }
+        false
+    }
+
+    fn summary(&self) -> RoomSummary {
+        RoomSummary {
+            room_id: self.room_id.as_str().to_string(),
+            name: self.config.name.clone(),
+            current_players: self.player_store.len(),
+            max_players: self.config.max_players,
+            map_id: self.config.map_id.clone(),
+            mode: self.config.mode.clone(),
+            status: self.status,
+            created_at_ms: self
+                .created_at
+                .duration_since(self.server_started_at)
+                .as_millis() as u64,
+            last_activity_at_ms: self
+                .last_activity_at
+                .duration_since(self.server_started_at)
+                .as_millis() as u64,
+            protocol_version: self.config.protocol_version.clone(),
+            region: self.config.region.clone(),
         }
     }
 
@@ -408,6 +693,9 @@ impl RoomTask {
             true
         };
 
+        self.status = RoomStatus::Running;
+        self.last_activity_at = Instant::now();
+
         let room_state = Bytes::from(encode_room_state(
             self.room_id.as_str(),
             self.map.name.as_str(),
@@ -426,13 +714,20 @@ impl RoomTask {
     fn remove_player(&mut self, player_id: PlayerId) -> bool {
         let removed = self.player_store.remove(player_id);
         if removed {
+            self.last_activity_at = Instant::now();
             self.player_store.validate();
         }
         removed
     }
 
-    fn simulate_tick(&mut self) {
+    fn transition_empty_if_needed(&mut self) {
         if self.player_store.is_empty() {
+            self.status = RoomStatus::Closing;
+        }
+    }
+
+    fn simulate_tick(&mut self) {
+        if self.player_store.is_empty() || self.status != RoomStatus::Running {
             return;
         }
 
@@ -576,6 +871,8 @@ impl RoomTask {
                 self.broadcast_after_disconnect(left_payload);
             }
         }
+
+        self.transition_empty_if_needed();
     }
 
     fn broadcast_after_disconnect(&mut self, payload: Bytes) {
@@ -641,7 +938,7 @@ mod tests {
     use bytes::Bytes;
     use tokio::sync::mpsc;
 
-    use super::{PlayerId, RoomHandle, RoomId};
+    use super::{PlayerId, RoomConfig, RoomHandle, RoomId};
     use crate::map::GameMap;
 
     fn simple_map() -> GameMap {
@@ -655,19 +952,36 @@ mod tests {
         }
     }
 
+    fn cfg(name: &str, max_players: usize) -> RoomConfig {
+        RoomConfig {
+            name: name.to_string(),
+            max_players,
+            map_id: "test".to_string(),
+            mode: "dm".to_string(),
+            tick_rate: 60,
+            protocol_version: "1".to_string(),
+            region: None,
+        }
+    }
+
     #[tokio::test]
     async fn join_is_idempotent_and_leave_removes_player() {
-        let room = RoomHandle::new(RoomId::from("room-test"), simple_map(), Instant::now());
+        let room = RoomHandle::new(
+            RoomId::from("room-test"),
+            simple_map(),
+            cfg("room-test", 8),
+            Instant::now(),
+        );
         let (tx, _rx) = mpsc::channel::<Bytes>(4);
 
         let first = room
             .join(PlayerId(10), "alice".to_string(), tx.clone())
             .await;
-        assert!(first.is_some());
+        assert!(first.is_ok());
         assert!(room.contains_player(PlayerId(10)).await);
 
         let second = room.join(PlayerId(10), "alice".to_string(), tx).await;
-        assert!(second.is_some());
+        assert!(second.is_ok());
         assert!(room.contains_player(PlayerId(10)).await);
 
         room.leave(PlayerId(10));

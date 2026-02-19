@@ -245,7 +245,11 @@ mod tests {
         assert!(hit.hit_wall);
         assert!(hit.x.is_finite());
         assert!(hit.y.is_finite());
-        assert!((hit.x - (cols as f32 * TILE_W)).abs() < 1e-4, "unexpected x={}", hit.x);
+        assert!(
+            (hit.x - (cols as f32 * TILE_W)).abs() < 1e-4,
+            "unexpected x={}",
+            hit.x
+        );
         assert!((hit.y - start_y).abs() < 1e-4, "unexpected y={}", hit.y);
     }
 }
