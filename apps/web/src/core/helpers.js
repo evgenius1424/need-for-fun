@@ -43,6 +43,9 @@ export const Input = {
     pointerLocked: false,
     weaponSwitch: -1,
     weaponScroll: 0,
+    get isFiring() {
+        return this.mouseDown || this.fireKeyDown
+    },
 }
 
 export const Settings = createSettings()

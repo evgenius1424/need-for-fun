@@ -124,7 +124,7 @@ function setupExplosionHandlers() {
 }
 
 function gameLoop(timestamp, player) {
-    const isFiring = Input.mouseDown || Input.fireKeyDown
+    const isFiring = Input.isFiring
 
     if (network.isActive()) {
         network.flushSnapshots()
@@ -770,7 +770,7 @@ function updateFacingDirection(player) {
 }
 
 function processFiring(player) {
-    if ((!Input.mouseDown && !Input.fireKeyDown) || player.dead) return
+    if (!Input.isFiring || player.dead) return
 
     const otherPlayers = BotManager.getOtherPlayers(player)
     const result = player.fire()
