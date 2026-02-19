@@ -28,7 +28,6 @@ const DEFAULT_JITTER_MS = 5
 const MIN_INTERP_DELAY_MS = 40
 const MAX_INTERP_DELAY_MS = 180
 const PENDING_INPUT_MAX = 240
-const REMOTE_AIM_MICRO_SMOOTH = 0.35
 const REMOTE_FACING_CONFIRM_FRAMES = 3
 const INPUT_MIN_SEND_HZ = 30
 const INPUT_MAX_SEND_HZ = 90
@@ -718,14 +717,15 @@ export class NetworkClient {
             players: snapshot.players,
             playerMap: toPlayerMap(snapshot.players),
         }
-        const existingIndex = this.snapshotBuffer.findIndex((snap) => snap.tick === tick)
-        if (existingIndex >= 0) {
-            this.snapshotBuffer[existingIndex] = entry
+        // Binary search: find the insertion point (first index whose tick >= entry.tick).
+        // O(log n) vs the previous O(n) findIndex + O(n log n) sort.
+        const idx = snapshotBinarySearch(this.snapshotBuffer, tick)
+        if (idx < this.snapshotBuffer.length && this.snapshotBuffer[idx].tick === tick) {
+            this.snapshotBuffer[idx] = entry
             return
         }
-        this.snapshotBuffer.push(entry)
-        this.snapshotBuffer.sort((a, b) => a.tick - b.tick)
-        while (this.snapshotBuffer.length > SNAPSHOT_BUFFER_MAX) {
+        this.snapshotBuffer.splice(idx, 0, entry)
+        if (this.snapshotBuffer.length > SNAPSHOT_BUFFER_MAX) {
             this.snapshotBuffer.shift()
         }
     }
@@ -872,8 +872,7 @@ function applyInterpolatedState(player, a, b, t) {
     player.y = lerp(a.y, b.y, t)
     player.velocityX = lerp(a.vx ?? player.velocityX, b.vx ?? player.velocityX, t)
     player.velocityY = lerp(a.vy ?? player.velocityY, b.vy ?? player.velocityY, t)
-    const targetAim = lerpAngle(a.aim_angle ?? 0, b.aim_angle ?? 0, t)
-    player.aimAngle = lerpAngle(player.aimAngle, targetAim, REMOTE_AIM_MICRO_SMOOTH)
+    player.aimAngle = lerpAngle(a.aim_angle ?? 0, b.aim_angle ?? 0, t)
     applyFacingMicroSmoothing(player, b.facing_left)
     player.crouch = b.crouch ?? player.crouch
     player.dead = b.dead ?? player.dead
@@ -894,7 +893,7 @@ function applyExtrapolatedState(player, state, extrapolationMs) {
     player.velocityX = state.vx ?? player.velocityX
     player.velocityY = state.vy ?? player.velocityY
     if (Number.isFinite(state.aim_angle)) {
-        player.aimAngle = lerpAngle(player.aimAngle, state.aim_angle, REMOTE_AIM_MICRO_SMOOTH)
+        player.aimAngle = state.aim_angle
     }
     applyFacingMicroSmoothing(player, state.facing_left)
     player.crouch = state.crouch ?? player.crouch
@@ -904,6 +903,19 @@ function applyExtrapolatedState(player, state, extrapolationMs) {
     player.currentWeapon = state.current_weapon ?? player.currentWeapon
     if (Array.isArray(state.weapons)) player.weapons = state.weapons
     if (Array.isArray(state.ammo)) player.ammo = state.ammo
+}
+
+// Binary search: returns the first index i where buffer[i].tick >= tick.
+// Used by insertSnapshot to avoid O(n log n) full re-sort on every arrival.
+function snapshotBinarySearch(buffer, tick) {
+    let lo = 0
+    let hi = buffer.length
+    while (lo < hi) {
+        const mid = (lo + hi) >>> 1
+        if (buffer[mid].tick < tick) lo = mid + 1
+        else hi = mid
+    }
+    return lo
 }
 
 function toPlayerMap(players = []) {
