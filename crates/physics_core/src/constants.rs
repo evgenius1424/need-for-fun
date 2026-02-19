@@ -67,12 +67,12 @@ pub const GRENADE_LOFT: f32 = 2.0;
 pub const SHOTGUN_PELLETS: usize = 11;
 pub const SHOTGUN_SPREAD: f32 = 0.15;
 pub const SHOTGUN_RANGE: f32 = 800.0;
-pub const GAUNTLET_RANGE: f32 = 50.0;
+pub const GAUNTLET_RANGE: f32 = TILE_W * 0.42;
 pub const SHAFT_RANGE: f32 = TILE_W * 3.0;
 pub const MACHINE_RANGE: f32 = 1000.0;
 pub const RAIL_RANGE: f32 = 2000.0;
 pub const HITSCAN_PLAYER_RADIUS: f32 = 14.0;
-pub const GAUNTLET_PLAYER_RADIUS: f32 = 22.0;
+pub const GAUNTLET_PLAYER_RADIUS: f32 = 10.0;
 pub const PICKUP_RADIUS: f32 = 16.0;
 
 // Hit radii for projectiles

@@ -671,7 +671,7 @@ export function get_pickup_radius() {
  * @returns {number}
  */
 export function get_plasma_splash_damage() {
-    const ret = wasm.get_plasma_splash_damage();
+    const ret = wasm.get_gauntlet_player_radius();
     return ret;
 }
 
@@ -809,7 +809,7 @@ export function get_shotgun_spread() {
  * @returns {number}
  */
 export function get_spawn_offset_x() {
-    const ret = wasm.get_plasma_splash_damage();
+    const ret = wasm.get_gauntlet_player_radius();
     return ret;
 }
 

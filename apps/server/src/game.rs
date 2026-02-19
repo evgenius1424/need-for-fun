@@ -690,20 +690,39 @@ fn find_melee_target(
     hit_y: f32,
     players: &[PlayerState],
 ) -> Option<u64> {
+    let attacker = players.iter().find(|p| p.id == attacker_id)?;
+    let (start_x, start_y) = get_weapon_origin(attacker);
+    let seg_x = hit_x - start_x;
+    let seg_y = hit_y - start_y;
+    let seg_len_sq = seg_x * seg_x + seg_y * seg_y;
+
     let mut closest_id = None;
-    let mut closest_dist_sq = f32::INFINITY;
+    let mut closest_t = f32::INFINITY;
+
     for target in players {
         if target.dead || target.id == attacker_id {
             continue;
         }
-        let dx = target.x - hit_x;
-        let dy = target.y - hit_y;
+
+        let t = if seg_len_sq > 0.0 {
+            ((target.x - start_x) * seg_x + (target.y - start_y) * seg_y) / seg_len_sq
+        } else {
+            0.0
+        }
+        .clamp(0.0, 1.0);
+        let nearest_x = start_x + seg_x * t;
+        let nearest_y = start_y + seg_y * t;
+        let dx = target.x - nearest_x;
+        let dy = target.y - nearest_y;
         let dist_sq = dx * dx + dy * dy;
+
         if dist_sq > GAUNTLET_PLAYER_RADIUS * GAUNTLET_PLAYER_RADIUS {
             continue;
         }
-        if dist_sq < closest_dist_sq {
-            closest_dist_sq = dist_sq;
+
+        // Keep melee targeting stable by preferring the first contact along the attack segment.
+        if t < closest_t {
+            closest_t = t;
             closest_id = Some(target.id);
         }
     }

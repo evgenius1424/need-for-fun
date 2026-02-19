@@ -250,7 +250,6 @@ export interface InitOutput {
     readonly get_machine_range: () => number;
     readonly get_max_armor: () => number;
     readonly get_pickup_ammo: (a: number) => number;
-    readonly get_plasma_splash_damage: () => number;
     readonly get_plasma_splash_push: () => number;
     readonly get_player_half_h: () => number;
     readonly get_projectile_gravity: () => number;
@@ -314,6 +313,7 @@ export interface InitOutput {
     readonly get_max_health: () => number;
     readonly get_mega_health: () => number;
     readonly get_pickup_radius: () => number;
+    readonly get_plasma_splash_damage: () => number;
     readonly get_plasma_splash_radius: () => number;
     readonly get_self_damage_reduction: () => number;
     readonly get_spawn_offset_x: () => number;

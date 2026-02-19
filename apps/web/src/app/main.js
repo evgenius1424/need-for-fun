@@ -15,7 +15,7 @@ const PICKUP_RADIUS = PhysicsConstants.PICKUP_RADIUS
 const MAX_AIM_DELTA = 12
 const HITSCAN_PLAYER_RADIUS = PhysicsConstants.HITSCAN_PLAYER_RADIUS
 const GAUNTLET_PLAYER_RADIUS = PhysicsConstants.GAUNTLET_PLAYER_RADIUS
-const GAUNTLET_SPARK_OFFSET = PhysicsConstants.TILE_W * 0.42
+const GAUNTLET_SPARK_OFFSET = PhysicsConstants.GAUNTLET_RANGE
 
 const PROJECTILE_WEAPONS = new Set(['rocket', 'grenade', 'plasma', 'bfg'])
 const PROJECTILE_KIND = Object.freeze({ rocket: 0, grenade: 1, plasma: 2, bfg: 3 })
@@ -576,11 +576,16 @@ function setupConsoleCommands() {
 }
 
 function applySnapshotEvents(events) {
+    const pendingGauntletAttackers = []
+
     for (const event of events) {
         if (!event?.type) continue
         switch (event.type) {
             case 'weapon_fired':
                 playWeaponSound(event.weapon_id)
+                if (event.weapon_id === WeaponId.GAUNTLET) {
+                    pendingGauntletAttackers.push(event.player_id)
+                }
                 break
             case 'projectile_spawn':
                 Projectiles.spawnFromServer(event)
@@ -603,7 +608,20 @@ function applySnapshotEvents(events) {
                 Render.addBulletImpact(event.x, event.y, { radius: event.radius ?? 2.5 })
                 break
             case 'gauntlet':
-                Render.addGauntletSpark(event.x, event.y)
+                {
+                    const attackerId = pendingGauntletAttackers.shift()
+                    const attacker = getPlayerById(attackerId)
+                    if (attacker && !attacker.dead) {
+                        const { x, y } = getWeaponTip(attacker, GAUNTLET_SPARK_OFFSET)
+                        Render.addGauntletSpark(x, y, {
+                            followPlayer: attacker,
+                            weaponTipOffset: GAUNTLET_SPARK_OFFSET,
+                        })
+                    } else {
+                        // Fallback if events arrive without matching attacker context.
+                        Render.addGauntletSpark(event.x, event.y)
+                    }
+                }
                 break
             case 'projectile_remove':
                 // Explosion visuals/sounds come from the explicit `explosion` event.
@@ -628,10 +646,7 @@ function handleDamageEvent(event) {
     const targetId = event?.target_id
     if (!targetId) return
 
-    const target =
-        targetId === localPlayer?.id
-            ? localPlayer
-            : network.getRemotePlayers().find((p) => p.id === targetId)
+    const target = getPlayerById(targetId)
 
     if (!target) return
 
@@ -640,6 +655,12 @@ function handleDamageEvent(event) {
     } else {
         Sound.pain(target.model, event.amount)
     }
+}
+
+function getPlayerById(playerId) {
+    if (!playerId) return null
+    if (playerId === localPlayer?.id) return localPlayer
+    return network.getRemotePlayers().find((p) => p.id === playerId) ?? null
 }
 
 function playWeaponSound(weaponId) {
@@ -909,21 +930,33 @@ function applyMeleeDamage(attacker, hit, targets) {
 }
 
 function findMeleeTarget(attacker, hit, targets) {
+    const origin = getWeaponOrigin(attacker)
+    const segX = hit.hitX - origin.x
+    const segY = hit.hitY - origin.y
+    const segLenSq = segX * segX + segY * segY || 1
+
     let closest = null
-    let closestDistSq = Infinity
+    let closestT = Infinity
 
     for (const target of targets) {
         if (!target || target.dead || target === attacker) continue
 
-        const dx = target.x - hit.hitX
-        const dy = target.y - hit.hitY
+        const t = clamp(
+            ((target.x - origin.x) * segX + (target.y - origin.y) * segY) / segLenSq,
+            0,
+            1,
+        )
+        const nearestX = origin.x + segX * t
+        const nearestY = origin.y + segY * t
+        const dx = target.x - nearestX
+        const dy = target.y - nearestY
         const distSq = dx * dx + dy * dy
 
         if (distSq > GAUNTLET_PLAYER_RADIUS * GAUNTLET_PLAYER_RADIUS) continue
 
-        if (distSq < closestDistSq) {
+        if (t < closestT) {
             closest = target
-            closestDistSq = distSq
+            closestT = t
         }
     }
 
@@ -977,9 +1010,17 @@ function resolveHitscanImpact(attacker, shot, targets) {
 }
 
 function getWeaponTip(player, offset) {
-    const x = player.x + Math.cos(player.aimAngle) * offset
-    const y = (player.crouch ? player.y + 4 : player.y) + Math.sin(player.aimAngle) * offset
+    const origin = getWeaponOrigin(player)
+    const x = origin.x + Math.cos(player.aimAngle) * offset
+    const y = origin.y + Math.sin(player.aimAngle) * offset
     return { x, y }
+}
+
+function getWeaponOrigin(player) {
+    return {
+        x: player.x,
+        y: player.crouch ? player.y + PhysicsConstants.WEAPON_ORIGIN_CROUCH_LIFT : player.y,
+    }
 }
 
 function weaponIdFromType(type) {
