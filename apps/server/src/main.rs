@@ -11,13 +11,16 @@ use std::time::Instant;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
+use axum::http::{Method, StatusCode, header};
 use axum::response::IntoResponse;
 use axum::routing::get;
+use axum::Json;
 use axum::Router;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Mutex};
+use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, info, warn};
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
@@ -45,7 +48,7 @@ use crate::constants::{
 use crate::game::WeaponId;
 use crate::map::GameMap;
 use crate::room::{PlayerId, PlayerInput, RoomConfig, RoomHandle};
-use crate::room_manager::RoomManager;
+use crate::room_manager::{RoomCreateError, RoomManager};
 
 struct AppState {
     room_manager: Arc<RoomManager>,
@@ -76,6 +79,60 @@ struct RtcSignalOut {
     message: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateRoomRequest {
+    name: String,
+    #[serde(default)]
+    max_players: Option<u32>,
+    #[serde(default)]
+    map_id: Option<String>,
+    #[serde(default)]
+    mode: Option<String>,
+    #[serde(default)]
+    tick_rate: Option<u64>,
+    #[serde(default)]
+    protocol_version: Option<String>,
+    #[serde(default)]
+    region: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ApiErrorResponse {
+    error: String,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RoomsListResponse {
+    rooms: Vec<RoomSummaryDto>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateRoomResponse {
+    room: RoomSummaryDto,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RoomSummaryDto {
+    room_id: String,
+    name: String,
+    current_players: usize,
+    max_players: u32,
+    map_id: String,
+    mode: String,
+    status: String,
+    created_at_ms: u64,
+    last_activity_at_ms: u64,
+    protocol_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    region: Option<String>,
+}
+
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt::init();
@@ -93,8 +150,15 @@ async fn main() -> std::io::Result<()> {
 
     tokio::spawn(run_console(Arc::clone(&state)));
 
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([header::CONTENT_TYPE, header::ACCEPT]);
+
     let app = Router::new()
         .route("/rtc", get(rtc_ws_handler))
+        .route("/api/rooms", get(list_rooms_handler).post(create_room_handler))
+        .layer(cors)
         .with_state(state);
 
     let port = std::env::var("PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());
@@ -103,6 +167,177 @@ async fn main() -> std::io::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).tcp_nodelay(true).await
+}
+
+async fn list_rooms_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let rooms = state
+        .room_manager
+        .list_rooms()
+        .await
+        .into_iter()
+        .map(room_summary_to_dto)
+        .collect();
+    Json(RoomsListResponse { rooms })
+}
+
+async fn create_room_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<CreateRoomRequest>,
+) -> impl IntoResponse {
+    let name = payload.name.trim().to_string();
+    if name.is_empty() {
+        return api_error(StatusCode::BAD_REQUEST, "invalid_room_name", "name must not be empty");
+    }
+
+    let map_id = payload
+        .map_id
+        .unwrap_or_else(|| DEFAULT_MAP_NAME.to_string())
+        .trim()
+        .to_string();
+    if map_id.is_empty() {
+        return api_error(StatusCode::BAD_REQUEST, "invalid_map_id", "mapId must not be empty");
+    }
+
+    let Some(game_map) = load_map(&state.map_dir, &map_id) else {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "map_not_found",
+            "requested map is not available",
+        );
+    };
+
+    let mode = payload
+        .mode
+        .unwrap_or_else(|| "deathmatch".to_string())
+        .trim()
+        .to_string();
+    if mode.is_empty() {
+        return api_error(StatusCode::BAD_REQUEST, "invalid_mode", "mode must not be empty");
+    }
+
+    let tick_rate = payload.tick_rate.unwrap_or(60);
+    if tick_rate == 0 {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_tick_rate",
+            "tickRate must be greater than zero",
+        );
+    }
+
+    let protocol_version = payload
+        .protocol_version
+        .unwrap_or_else(|| "1".to_string())
+        .trim()
+        .to_string();
+    if protocol_version.is_empty() {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_protocol_version",
+            "protocolVersion must not be empty",
+        );
+    }
+
+    let max_players_u32 = payload
+        .max_players
+        .unwrap_or(room_manager::ROOM_MAX_PLAYERS_HARD_CAP as u32);
+    let max_players = match usize::try_from(max_players_u32) {
+        Ok(value) => value,
+        Err(_) => {
+            return api_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_max_players",
+                "maxPlayers cannot be represented on this platform",
+            )
+        }
+    };
+
+    let fallback_name = name.clone();
+    let fallback_map_id = map_id.clone();
+    let fallback_mode = mode.clone();
+    let fallback_protocol_version = protocol_version.clone();
+    let fallback_region = payload.region.clone();
+
+    let config = RoomConfig {
+        name,
+        max_players,
+        map_id,
+        mode,
+        tick_rate,
+        protocol_version,
+        region: payload.region,
+    };
+
+    match state.room_manager.create_room(config, game_map).await {
+        Ok(room) => {
+            let room_summary = match room.summary().await {
+                Some(summary) => summary,
+                None => {
+                    error!(
+                        room_name = fallback_name,
+                        max_players = max_players_u32,
+                        map_id = fallback_map_id,
+                        mode = fallback_mode,
+                        protocol_version = fallback_protocol_version,
+                        region = ?fallback_region,
+                        "room created but summary unavailable"
+                    );
+                    return api_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "room_summary_unavailable",
+                        "room created but summary is unavailable",
+                    );
+                }
+            };
+            (
+                StatusCode::CREATED,
+                Json(CreateRoomResponse {
+                    room: room_summary_to_dto(room_summary),
+                }),
+            )
+                .into_response()
+        }
+        Err(RoomCreateError::NameAlreadyExists) => api_error(
+            StatusCode::CONFLICT,
+            "room_name_already_exists",
+            "room name already exists",
+        ),
+        Err(RoomCreateError::InvalidMaxPlayers(message)) => {
+            api_error(StatusCode::BAD_REQUEST, "invalid_max_players", &message)
+        }
+        Err(RoomCreateError::MapNotFound) => {
+            api_error(StatusCode::BAD_REQUEST, "map_not_found", "requested map is not available")
+        }
+        Err(RoomCreateError::Other(message)) => {
+            api_error(StatusCode::BAD_REQUEST, "room_create_failed", &message)
+        }
+    }
+}
+
+fn room_summary_to_dto(summary: crate::room::RoomSummary) -> RoomSummaryDto {
+    RoomSummaryDto {
+        room_id: summary.room_id,
+        name: summary.name,
+        current_players: summary.current_players,
+        max_players: summary.max_players as u32,
+        map_id: summary.map_id,
+        mode: summary.mode,
+        status: summary.status.as_str().to_string(),
+        created_at_ms: summary.created_at_ms,
+        last_activity_at_ms: summary.last_activity_at_ms,
+        protocol_version: summary.protocol_version,
+        region: summary.region,
+    }
+}
+
+fn api_error(status: StatusCode, error: &str, message: &str) -> axum::response::Response {
+    (
+        status,
+        Json(ApiErrorResponse {
+            error: error.to_string(),
+            message: message.to_string(),
+        }),
+    )
+        .into_response()
 }
 
 async fn rtc_ws_handler(

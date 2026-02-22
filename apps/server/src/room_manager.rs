@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -36,6 +37,25 @@ pub struct JoinSuccess {
     pub room_state: Bytes,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum RoomCreateError {
+    NameAlreadyExists,
+    InvalidMaxPlayers(String),
+    MapNotFound,
+    Other(String),
+}
+
+impl fmt::Display for RoomCreateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NameAlreadyExists => write!(f, "room_name_already_exists"),
+            Self::InvalidMaxPlayers(msg) => write!(f, "{msg}"),
+            Self::MapNotFound => write!(f, "map_not_found"),
+            Self::Other(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
 impl RoomManager {
     pub fn new(server_started_at: Instant) -> Self {
         Self {
@@ -51,7 +71,7 @@ impl RoomManager {
         &self,
         config: RoomConfig,
         map: GameMap,
-    ) -> Result<Arc<RoomHandle>, String> {
+    ) -> Result<Arc<RoomHandle>, RoomCreateError> {
         self.create_room_locked(config, map).await
     }
 
@@ -59,11 +79,11 @@ impl RoomManager {
         &self,
         config: RoomConfig,
         map: GameMap,
-    ) -> Result<Arc<RoomHandle>, String> {
+    ) -> Result<Arc<RoomHandle>, RoomCreateError> {
         if config.max_players == 0 || config.max_players > ROOM_MAX_PLAYERS_HARD_CAP {
-            return Err(format!(
+            return Err(RoomCreateError::InvalidMaxPlayers(format!(
                 "maxPlayers must be 1..={ROOM_MAX_PLAYERS_HARD_CAP}"
-            ));
+            )));
         }
 
         let mut rooms = self.rooms.write().await;
@@ -90,18 +110,18 @@ impl RoomManager {
         &self,
         config: RoomConfig,
         map: GameMap,
-    ) -> Result<Arc<RoomHandle>, String> {
+    ) -> Result<Arc<RoomHandle>, RoomCreateError> {
         if config.max_players == 0 || config.max_players > ROOM_MAX_PLAYERS_HARD_CAP {
-            return Err(format!(
+            return Err(RoomCreateError::InvalidMaxPlayers(format!(
                 "maxPlayers must be 1..={ROOM_MAX_PLAYERS_HARD_CAP}"
-            ));
+            )));
         }
 
         let mut rooms = self.rooms.write().await;
         let mut names = self.names.write().await;
 
         if names.contains_key(&config.name) {
-            return Err("room_name_already_exists".to_string());
+            return Err(RoomCreateError::NameAlreadyExists);
         }
 
         let room_id = RoomId::from(Uuid::new_v4().simple().to_string());
