@@ -2,6 +2,7 @@ import { Bot } from './bot'
 import { Map } from '../game/map'
 import { Render } from '../render'
 import { PhysicsConstants } from '../game/physics'
+import { ensureModelLoaded } from '../render/assets'
 
 const MIN_SPAWN_DISTANCE = 100
 const SPAWN_PROTECTION_FRAMES = PhysicsConstants.SPAWN_PROTECTION
@@ -17,6 +18,7 @@ class BotManagerClass {
 
     spawnBot(difficulty = 'medium') {
         const bot = new Bot(difficulty)
+        void ensureModelLoaded(bot.player.model, bot.player.skin)
         this.bots.push(bot)
         this.allPlayers.push(bot.player)
 
