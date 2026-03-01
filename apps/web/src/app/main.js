@@ -6,6 +6,7 @@ import { Physics, PhysicsConstants } from '../game/physics'
 import { Render } from '../render'
 import { Projectiles } from '../game/projectiles'
 import { loadAssets, ensureModelLoaded } from '../render/assets'
+import { Bot } from '../bot/bot'
 import { BotManager } from '../bot/manager'
 import { NetworkClient } from '../net/client'
 import { createRoom, listRooms } from '../net/roomApi'
@@ -20,6 +21,7 @@ const GAUNTLET_SPARK_OFFSET = PhysicsConstants.GAUNTLET_RANGE
 
 const PROJECTILE_WEAPONS = new Set(['rocket', 'grenade', 'plasma', 'bfg'])
 const PROJECTILE_KIND = Object.freeze({ rocket: 0, grenade: 1, plasma: 2, bfg: 3 })
+const AUTOBOT_DIFFICULTIES = new Set(['easy', 'medium', 'hard'])
 
 await loadAssets()
 await Map.loadFromQuery()
@@ -47,6 +49,11 @@ let cachedNetDebugText = ''
 let lastAppliedWorldSnapshotTick = -1
 let remoteBotWrappers = []
 let remoteBotWrapperSource = null
+const autoBot = {
+    enabled: false,
+    difficulty: 'medium',
+    controller: new Bot({ difficulty: 'medium', player: localPlayer }),
+}
 
 await ensureModelLoaded(localPlayer.model, localPlayer.skin)
 
@@ -124,8 +131,6 @@ function setupExplosionHandlers() {
 }
 
 function gameLoop(timestamp, player) {
-    const isFiring = Input.isFiring
-
     if (network.isActive()) {
         network.flushSnapshots()
         player.prevAimAngle = player.aimAngle
@@ -135,11 +140,19 @@ function gameLoop(timestamp, player) {
             remote.prevAimAngle = remote.aimAngle
         }
 
-        processMovementInput(player)
-        processAimInput(player)
+        let isFiring = Input.isFiring
+        let weaponSwitch = Input.weaponSwitch
+        let weaponScroll = Input.weaponScroll
 
-        const weaponSwitch = Input.weaponSwitch
-        const weaponScroll = Input.weaponScroll
+        if (autoBot.enabled) {
+            const botInput = updateAutoBotForNetworkPlayer(player, remotePlayers)
+            isFiring = botInput.isFiring
+            weaponSwitch = botInput.weaponSwitch
+            weaponScroll = botInput.weaponScroll
+        } else {
+            processMovementInput(player)
+            processAimInput(player)
+        }
 
         const didSendInput = network.sendInput(
             {
@@ -158,8 +171,10 @@ function gameLoop(timestamp, player) {
         )
 
         if (didSendInput) {
-            Input.weaponSwitch = -1
-            Input.weaponScroll = 0
+            if (!autoBot.enabled) {
+                Input.weaponSwitch = -1
+                Input.weaponScroll = 0
+            }
         }
 
         player.update()
@@ -433,6 +448,43 @@ function setupConsoleCommands() {
             Console.writeText('Usage: rooms list | rooms create <name> [maxPlayers] [mapId] [mode]')
         },
         'list/create rooms via backend API',
+    )
+
+    Console.registerCommand(
+        'autobot',
+        (args) => {
+            const action = args[0]?.toLowerCase()
+            const difficultyArg = args[1]?.toLowerCase()
+
+            if (!action) {
+                Console.writeText(`autobot: ${autoBot.enabled ? 'on' : 'off'} (${autoBot.difficulty})`)
+                return
+            }
+
+            if (action === 'on' || AUTOBOT_DIFFICULTIES.has(action)) {
+                const difficulty = AUTOBOT_DIFFICULTIES.has(action) ? action : difficultyArg ?? autoBot.difficulty
+                if (!AUTOBOT_DIFFICULTIES.has(difficulty)) {
+                    Console.writeText('Usage: autobot on [easy|medium|hard] | autobot off')
+                    return
+                }
+                setAutoBotEnabled(true, difficulty)
+                Console.writeText(
+                    network.isActive()
+                        ? `autobot enabled (${difficulty})`
+                        : `autobot armed (${difficulty}); connect to multiplayer to use it`,
+                )
+                return
+            }
+
+            if (action === 'off') {
+                setAutoBotEnabled(false)
+                Console.writeText('autobot disabled')
+                return
+            }
+
+            Console.writeText('Usage: autobot on [easy|medium|hard] | autobot off')
+        },
+        'drive the local multiplayer player with bot AI',
     )
 
     Console.registerCommand(
@@ -806,6 +858,27 @@ function applyPredictedInput(player, input) {
                 break
             }
         }
+    }
+}
+
+function setAutoBotEnabled(enabled, difficulty = autoBot.difficulty) {
+    autoBot.enabled = enabled
+    autoBot.difficulty = difficulty
+    autoBot.controller = new Bot({ difficulty, player: localPlayer })
+
+    if (!enabled) {
+        autoBot.controller.clearInputs()
+    }
+}
+
+function updateAutoBotForNetworkPlayer(player, remotePlayers) {
+    const previousWeapon = player.currentWeapon
+    autoBot.controller.update([player, ...remotePlayers])
+
+    return {
+        isFiring: autoBot.controller.wantsToFire,
+        weaponSwitch: player.currentWeapon !== previousWeapon ? player.currentWeapon : -1,
+        weaponScroll: 0,
     }
 }
 

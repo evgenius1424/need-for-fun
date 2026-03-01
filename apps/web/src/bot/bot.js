@@ -68,9 +68,19 @@ export class Bot {
     jumpCooldown = 0
 
     constructor(difficulty = 'medium', skin = SkinId.RED) {
-        this.player = new Player({ model: DEFAULT_MODEL, skin })
+        let selectedDifficulty = difficulty
+        let controlledPlayer = null
+        let selectedSkin = skin
+
+        if (difficulty && typeof difficulty === 'object') {
+            selectedDifficulty = difficulty.difficulty ?? 'medium'
+            controlledPlayer = difficulty.player ?? null
+            selectedSkin = difficulty.skin ?? SkinId.RED
+        }
+
+        this.player = controlledPlayer ?? new Player({ model: DEFAULT_MODEL, skin: selectedSkin })
         this.name = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]
-        this.config = DIFFICULTY[difficulty] ?? DIFFICULTY.medium
+        this.config = DIFFICULTY[selectedDifficulty] ?? DIFFICULTY.medium
     }
 
     update(allPlayers) {
@@ -279,6 +289,9 @@ export class Bot {
         this.player.keyDown = false
         this.player.keyLeft = false
         this.player.keyRight = false
+        this.wantsToJump = false
+        this.wantsToFire = false
+        this.moveDirection = 0
     }
 }
 
