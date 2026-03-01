@@ -36,22 +36,25 @@ export const Projectiles = {
         return proj
     },
 
-    update() {
+    update(steps = 1) {
         if (!Physics.hasMap()) return
 
-        for (let i = state.projectiles.length - 1; i >= 0; i--) {
-            const proj = state.projectiles[i]
+        let remaining = Math.max(0, steps | 0)
+        while (remaining-- > 0) {
+            for (let i = state.projectiles.length - 1; i >= 0; i--) {
+                const proj = state.projectiles[i]
 
-            if (!proj.active) {
-                proj.wasm?.free()
-                state.projectiles.splice(i, 1)
-                continue
-            }
+                if (!proj.active) {
+                    proj.wasm?.free()
+                    state.projectiles.splice(i, 1)
+                    continue
+                }
 
-            const exploded = Physics.stepWasmProjectile(proj.wasm)
-            syncProjectileFromWasm(proj)
-            if (exploded) {
-                this.explode(proj, { syncedWithWasm: true })
+                const exploded = Physics.stepWasmProjectile(proj.wasm)
+                syncProjectileFromWasm(proj)
+                if (exploded) {
+                    this.explode(proj, { syncedWithWasm: true })
+                }
             }
         }
     },

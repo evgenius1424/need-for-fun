@@ -177,10 +177,13 @@ function gameLoop(timestamp, player) {
             }
         }
 
-        player.update()
-        // Local prediction for movement only; server snapshots will correct.
-        Physics.updateAllPlayers([player], timestamp)
-        Projectiles.update()
+        const steps = Physics.updateAllPlayers([player], timestamp)
+        if (steps > 0) {
+            for (let i = 0; i < steps; i++) {
+                player.update()
+                Projectiles.update(1)
+            }
+        }
         player.decayVisualCorrection(0.85)
 
         network.updateInterpolation()
@@ -204,39 +207,37 @@ function gameLoop(timestamp, player) {
     processWeaponScroll(player)
     processWeaponSwitch(player)
     processAimInput(player)
-    processFiring(player)
+    const steps = Physics.consumeTicks(timestamp)
+    if (steps > 0) {
+        for (let i = 0; i < steps; i++) {
+            processFiring(player)
 
-    // Update bots AI
-    BotManager.update()
+            BotManager.update()
 
-    // Process bot firing
-    for (const bot of BotManager.getBots()) {
-        const result = bot.applyFiring()
-        if (result) {
-            processBotFireResult(bot.player, result)
+            for (const bot of BotManager.getBots()) {
+                const result = bot.applyFiring()
+                if (result) {
+                    processBotFireResult(bot.player, result)
+                }
+            }
+
+            player.update()
+            player.checkRespawn()
+            for (const bot of BotManager.getBots()) {
+                bot.player.update()
+            }
+
+            Physics.stepPlayers(BotManager.getAllPlayers(), 1)
+            Projectiles.update(1)
+
+            for (const p of BotManager.getAllPlayers()) {
+                processProjectileHits(p)
+            }
+
+            for (const p of BotManager.getAllPlayers()) {
+                processItemPickups(p)
+            }
         }
-    }
-
-    // Update all players
-    player.update()
-    player.checkRespawn() // Handle local player respawn
-    for (const bot of BotManager.getBots()) {
-        bot.player.update()
-    }
-
-    // Update physics for all players (synchronized)
-    Physics.updateAllPlayers(BotManager.getAllPlayers(), timestamp)
-
-    Projectiles.update()
-
-    // Process hits for all players
-    for (const p of BotManager.getAllPlayers()) {
-        processProjectileHits(p)
-    }
-
-    // Process item pickups for all players
-    for (const p of BotManager.getAllPlayers()) {
-        processItemPickups(p)
     }
 
     Render.renderGame(player, BotManager.getBots())

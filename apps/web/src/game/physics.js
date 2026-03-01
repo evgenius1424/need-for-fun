@@ -132,14 +132,21 @@ export const Physics = {
     },
 
     updateAllPlayers(players, timestamp) {
-        if (!runtime.map) return false
+        const frames = this.consumeTicks(timestamp)
+        if (frames <= 0) return 0
+        this.stepPlayers(players, frames)
+        return frames
+    },
+
+    consumeTicks(timestamp) {
+        if (!runtime.map) return 0
         if (runtime.time === 0) runtime.time = timestamp - FRAME_MS
 
         const delta = timestamp - runtime.time
         let frames = Math.trunc(delta / FRAME_MS)
         if (frames === 0) {
             runtime.alpha = delta / FRAME_MS
-            return false
+            return 0
         }
 
         if (frames > MAX_TICKS_PER_FRAME) {
@@ -148,15 +155,8 @@ export const Physics = {
         }
 
         runtime.time += frames * FRAME_MS
-
-        while (frames-- > 0) {
-            for (const player of players) {
-                stepPlayer(player)
-            }
-        }
-
         runtime.alpha = (timestamp - runtime.time) / FRAME_MS
-        return true
+        return frames
     },
 
     stepPlayers(players, frames = 1) {
