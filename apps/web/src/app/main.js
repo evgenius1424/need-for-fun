@@ -489,6 +489,31 @@ function setupConsoleCommands() {
     )
 
     Console.registerCommand(
+        'net_auto',
+        (args) => {
+            const mode = args[0]?.toLowerCase()
+            if (!mode) {
+                Console.writeText(
+                    `net_auto: ${network.isAutoTuneEnabled() ? `on (${network.getAutoTuneProfile()})` : 'off'}`,
+                )
+                return
+            }
+            if (mode === 'on' || mode === '1') {
+                network.setAutoTuneEnabled(true)
+                Console.writeText(`net_auto enabled (${network.getAutoTuneProfile()})`)
+                return
+            }
+            if (mode === 'off' || mode === '0') {
+                network.setAutoTuneEnabled(false)
+                Console.writeText('net_auto disabled')
+                return
+            }
+            Console.writeText('Usage: net_auto on|off')
+        },
+        'toggle adaptive network tuning',
+    )
+
+    Console.registerCommand(
         'net_debug',
         (args) => {
             const mode = args[0]?.toLowerCase()
@@ -899,7 +924,8 @@ function updateNetDebugOverlay(now) {
             `Ext ${round(stats.extrapolationMs, 1)}ms  U+${round(stats.underrunBoostMs, 1)}  ` +
             `Corr ${round(stats.correctionErrorUnits, 2)}u b${round(stats.correctionBlend, 2)}  ` +
             `Inp ${stats.pendingInputCount}/${stats.unackedInputs} ` +
-            `@${round(stats.inputSendHz, 0)}Hz  Stale ${stats.staleSnapshots}`
+            `@${round(stats.inputSendHz, 0)}Hz  Stale ${stats.staleSnapshots}\n` +
+            `Auto ${stats.autoTuneEnabled ? stats.autoTuneProfile : 'off'}`
         lastNetDebugUpdateAt = now
     }
     Render.setNetDebugOverlay(cachedNetDebugText, true)

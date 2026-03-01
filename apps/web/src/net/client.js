@@ -87,6 +87,7 @@ const TUNING_PROFILES = Object.freeze({
     },
 })
 const DEFAULT_TUNING_PROFILE = 'balanced'
+const AUTO_TUNE_INTERVAL_MS = 1000
 
 export class NetworkClient {
     constructor() {
@@ -132,6 +133,9 @@ export class NetworkClient {
         this.lastInputSentAt = -Infinity
         this.predictor = null
         this.connectOptions = null
+        this.autoTuneEnabled = true
+        this.autoTuneProfile = 'balanced'
+        this.lastAutoTuneAt = -Infinity
     }
 
     setHandlers(handlers) {
@@ -175,6 +179,8 @@ export class NetworkClient {
             inputSendHz: this.currentInputSendHz,
             unackedInputs: Math.max(0, this.inputSeq - this.lastAckedInputSeq),
             pendingInputCount: this.pendingInputs.length,
+            autoTuneEnabled: this.autoTuneEnabled,
+            autoTuneProfile: this.autoTuneProfile,
         }
     }
 
@@ -188,6 +194,20 @@ export class NetworkClient {
 
     getCurrentTuningProfile() {
         return this.tuningProfile
+    }
+
+    isAutoTuneEnabled() {
+        return this.autoTuneEnabled
+    }
+
+    getAutoTuneProfile() {
+        return this.autoTuneProfile
+    }
+
+    setAutoTuneEnabled(enabled) {
+        this.autoTuneEnabled = !!enabled
+        this.autoTuneProfile = this.autoTuneEnabled ? 'balanced' : 'off'
+        this.lastAutoTuneAt = -Infinity
     }
 
     setTuningValue(name, value) {
@@ -454,6 +474,8 @@ export class NetworkClient {
         this.remotePlayers.clear()
         this._remotePlayerCache = []
         this._remotePlayersDirty = true
+        this.lastAutoTuneAt = -Infinity
+        this.autoTuneProfile = this.autoTuneEnabled ? 'balanced' : 'off'
     }
 
     handleTransportClosed() {
@@ -649,6 +671,7 @@ export class NetworkClient {
 
     updateInterpolation(now = performance.now()) {
         this.maybeSendPing(now)
+        this.maybeAutoTune(now)
         if (!this.snapshotBuffer.length) return
 
         const targetServerTime = this.estimateServerNowMs(now) - this.computeInterpDelayMs()
@@ -832,6 +855,94 @@ export class NetworkClient {
         if (this.lastAckProgressAtMs === 0) {
             this.lastAckProgressAtMs = now
         }
+    }
+
+    maybeAutoTune(now = performance.now()) {
+        if (!this.autoTuneEnabled) return
+        if (now - this.lastAutoTuneAt < AUTO_TUNE_INTERVAL_MS) return
+        this.lastAutoTuneAt = now
+
+        const unackedInputs = Math.max(0, this.inputSeq - this.lastAckedInputSeq)
+        const severe =
+            this.lastExtrapolationMs > 12 ||
+            this.rttJitterMs > 18 ||
+            this.interpUnderrunBoostMs > 18 ||
+            this.staleSnapshotCount > 2 ||
+            unackedInputs > 6
+        const mild =
+            this.lastExtrapolationMs > 2 ||
+            this.rttJitterMs > 8 ||
+            this.interpUnderrunBoostMs > 6 ||
+            this.lastCorrectionErrorUnits > 8 ||
+            unackedInputs > 3
+
+        let profile = 'aggressive'
+        if (severe) {
+            profile = 'stable'
+        } else if (mild) {
+            profile = 'balanced'
+        }
+
+        this.autoTuneProfile = profile
+
+        const target = {
+            ...(profile === 'stable'
+                ? TUNING_PROFILES.stable
+                : profile === 'balanced'
+                  ? TUNING_PROFILES.balanced
+                  : TUNING_PROFILES.aggressive),
+        }
+
+        target.reconcileDeadzoneUnits = clamp(
+            0.35 + this.rttJitterMs * 0.02 + this.lastCorrectionErrorUnits * 0.015,
+            0.3,
+            profile === 'stable' ? 1.2 : 0.8,
+        )
+        target.reconcileSmoothMaxUnits = clamp(
+            18 + this.rttJitterMs * 0.6 + this.lastCorrectionErrorUnits * 0.8,
+            12,
+            profile === 'stable' ? 40 : 28,
+        )
+        target.reconcileMinBlend = clamp(
+            profile === 'stable' ? 0.1 : profile === 'balanced' ? 0.12 : 0.16,
+            0.08,
+            0.2,
+        )
+        target.reconcileMaxBlend = clamp(
+            profile === 'stable' ? 0.3 : profile === 'balanced' ? 0.4 : 0.5,
+            target.reconcileMinBlend,
+            0.6,
+        )
+        target.interpBaseSnapshots = clamp(
+            target.interpBaseSnapshots + this.rttJitterMs / 25 + this.lastExtrapolationMs / 40,
+            1.5,
+            3.5,
+        )
+        target.interpMinMs = clamp(
+            target.interpMinMs + this.rttJitterMs * 0.6 + this.lastExtrapolationMs * 0.5,
+            25,
+            120,
+        )
+        target.inputBaseHz = clamp(
+            target.inputBaseHz - this.rttJitterMs * 0.35 - unackedInputs * 1.5,
+            INPUT_MIN_SEND_HZ,
+            INPUT_MAX_SEND_HZ,
+        )
+        target.inputIdleHz = clamp(
+            Math.min(target.inputIdleHz, target.inputBaseHz - 8),
+            10,
+            target.inputBaseHz,
+        )
+
+        for (const [key, value] of Object.entries(target)) {
+            const current = this.tuning[key]
+            const next =
+                typeof current === 'number'
+                    ? current + (value - current) * 0.35
+                    : value
+            this.setTuningValue(key, next)
+        }
+        this.tuningProfile = 'adaptive'
     }
 
     isAckProgressStalled(now) {
