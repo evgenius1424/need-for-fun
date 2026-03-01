@@ -8,6 +8,7 @@ import { Projectiles } from '../game/projectiles'
 import { loadAssets, ensureModelLoaded } from '../render/assets'
 import { BotManager } from '../bot/manager'
 import { NetworkClient } from '../net/client'
+import { createRoom, listRooms } from '../net/roomApi'
 import { getBackendWsUrl } from '../net/wsEndpoint'
 
 const AIM_INPUT_SCALE = 0.5
@@ -365,6 +366,73 @@ function setupConsoleCommands() {
             Console.writeText('Usage: mp connect <username> [room] | mp disconnect')
         },
         'connect/disconnect multiplayer',
+    )
+
+    Console.registerCommand(
+        'rooms',
+        async (args) => {
+            const action = args[0]?.toLowerCase()
+
+            if (!action) {
+                Console.writeText('Usage: rooms list | rooms create <name> [maxPlayers] [mapId] [mode]')
+                return
+            }
+
+            if (action === 'list') {
+                try {
+                    const rooms = await listRooms()
+                    if (!rooms.length) {
+                        Console.writeText('No rooms found')
+                        return
+                    }
+                    for (const room of rooms) {
+                        Console.writeText(
+                            `${room.name} (${room.roomId}) ${room.currentPlayers}/${room.maxPlayers} ${room.status} map=${room.mapId}`,
+                        )
+                    }
+                } catch (err) {
+                    Console.writeText(`rooms list failed: ${err.message}`)
+                }
+                return
+            }
+
+            if (action === 'create') {
+                const name = args[1]?.trim()
+                if (!name) {
+                    Console.writeText('Usage: rooms create <name> [maxPlayers] [mapId] [mode]')
+                    return
+                }
+
+                const maxPlayersRaw = args[2]
+                const parsedMaxPlayers =
+                    maxPlayersRaw == null ? undefined : Number.parseInt(maxPlayersRaw, 10)
+                if (maxPlayersRaw != null && !Number.isFinite(parsedMaxPlayers)) {
+                    Console.writeText('Usage: rooms create <name> [maxPlayers] [mapId] [mode]')
+                    return
+                }
+
+                const mapId = args[3]?.trim() || undefined
+                const mode = args[4]?.trim() || undefined
+
+                try {
+                    const room = await createRoom({
+                        name,
+                        maxPlayers: parsedMaxPlayers,
+                        mapId,
+                        mode,
+                    })
+                    Console.writeText(
+                        `Created room ${room.name} (${room.roomId}) ${room.currentPlayers}/${room.maxPlayers}`,
+                    )
+                } catch (err) {
+                    Console.writeText(`rooms create failed: ${err.message}`)
+                }
+                return
+            }
+
+            Console.writeText('Usage: rooms list | rooms create <name> [maxPlayers] [mapId] [mode]')
+        },
+        'list/create rooms via backend API',
     )
 
     Console.registerCommand(
