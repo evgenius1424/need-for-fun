@@ -5,7 +5,6 @@ use crate::constants::{
 use crate::projectile::{Explosion, ProjectileKind};
 use crate::types::PlayerState;
 
-const PUSH_LATERAL_FACTOR: f32 = 5.0 / 6.0;
 
 /// Apply knockback from an explosion to a player.
 /// Returns the damage falloff (0.0-1.0) if player was in radius, None otherwise.
@@ -40,15 +39,16 @@ pub fn apply_knockback_with_scale(
     let falloff = explosion_damage_falloff(radius, distance);
     let scaled_push = push * push_scale;
 
-    // Asymmetry: stronger when source is left/below; only upward kick from explosions below.
-    if dx < -0.01 {
+    // Push player away from explosion center.
+    if dx > 0.01 {
         player.velocity_x += scaled_push;
-    } else if dx > 0.01 {
-        player.velocity_x -= scaled_push * PUSH_LATERAL_FACTOR;
+    } else if dx < -0.01 {
+        player.velocity_x -= scaled_push;
     }
 
+    // Only kick upward (explosions below launch the player up).
     if dy > 0.01 {
-        player.velocity_y -= scaled_push * PUSH_LATERAL_FACTOR;
+        player.velocity_y -= scaled_push;
     }
 
     Some(falloff)
