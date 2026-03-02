@@ -154,6 +154,8 @@ function gameLoop(timestamp, player) {
             processAimInput(player)
         }
 
+        applyWeaponInputPrediction(player, weaponSwitch, weaponScroll)
+
         const didSendInput = network.sendInput(
             {
                 tick: timestamp | 0,
@@ -272,22 +274,36 @@ function processMovementInput(player) {
 
 function processWeaponSwitch(player) {
     if (Input.weaponSwitch < 0) return
-    player.switchWeapon(Input.weaponSwitch)
+    applyWeaponInputPrediction(player, Input.weaponSwitch, 0)
     Input.weaponSwitch = -1
 }
 
 function processWeaponScroll(player) {
     if (Input.weaponScroll === 0) return
-
     const direction = Input.weaponScroll < 0 ? -1 : 1
     Input.weaponScroll = 0
 
+    applyWeaponInputPrediction(player, -1, direction)
+}
+
+function applyWeaponInputPrediction(player, weaponSwitch, weaponScroll) {
+    if (!player) return
+
+    if (Number.isInteger(weaponSwitch) && weaponSwitch >= 0) {
+        if (player.weapons[weaponSwitch]) {
+            player.switchWeapon(weaponSwitch)
+        }
+        return
+    }
+
+    if (!weaponScroll) return
+    const direction = weaponScroll < 0 ? -1 : 1
     const total = player.weapons.length
     for (let step = 1; step <= total; step++) {
         const next = (player.currentWeapon + direction * step + total) % total
         if (player.weapons[next]) {
             player.switchWeapon(next)
-            break
+            return
         }
     }
 }
@@ -390,7 +406,9 @@ function setupConsoleCommands() {
             const action = args[0]?.toLowerCase()
 
             if (!action) {
-                Console.writeText('Usage: rooms list | rooms create <name> [maxPlayers] [mapId] [mode]')
+                Console.writeText(
+                    'Usage: rooms list | rooms create <name> [maxPlayers] [mapId] [mode]',
+                )
                 return
             }
 
@@ -458,12 +476,16 @@ function setupConsoleCommands() {
             const difficultyArg = args[1]?.toLowerCase()
 
             if (!action) {
-                Console.writeText(`autobot: ${autoBot.enabled ? 'on' : 'off'} (${autoBot.difficulty})`)
+                Console.writeText(
+                    `autobot: ${autoBot.enabled ? 'on' : 'off'} (${autoBot.difficulty})`,
+                )
                 return
             }
 
             if (action === 'on' || AUTOBOT_DIFFICULTIES.has(action)) {
-                const difficulty = AUTOBOT_DIFFICULTIES.has(action) ? action : difficultyArg ?? autoBot.difficulty
+                const difficulty = AUTOBOT_DIFFICULTIES.has(action)
+                    ? action
+                    : (difficultyArg ?? autoBot.difficulty)
                 if (!AUTOBOT_DIFFICULTIES.has(difficulty)) {
                     Console.writeText('Usage: autobot on [easy|medium|hard] | autobot off')
                     return
@@ -870,21 +892,7 @@ function applyPredictedInput(player, input) {
         player.facingLeft = input.facing_left
     }
 
-    if (Number.isInteger(input.weapon_switch) && input.weapon_switch >= 0) {
-        if (player.weapons[input.weapon_switch]) {
-            player.switchWeapon(input.weapon_switch)
-        }
-    } else if (input.weapon_scroll) {
-        const direction = input.weapon_scroll < 0 ? -1 : 1
-        const total = player.weapons.length
-        for (let step = 1; step <= total; step++) {
-            const next = (player.currentWeapon + direction * step + total) % total
-            if (player.weapons[next]) {
-                player.switchWeapon(next)
-                break
-            }
-        }
-    }
+    applyWeaponInputPrediction(player, input.weapon_switch, input.weapon_scroll)
 }
 
 function setAutoBotEnabled(enabled, difficulty = autoBot.difficulty) {
