@@ -158,6 +158,7 @@ pub fn encode_player_left(id: u64) -> Vec<u8> {
 pub fn encode_room_state(
     room_id: &str,
     map_name: &str,
+    tick_rate: u16,
     players: &[(String, PlayerSnapshot)],
 ) -> Vec<u8> {
     let room_id_bytes = room_id.as_bytes();
@@ -165,11 +166,12 @@ pub fn encode_room_state(
     let room_len = room_id_bytes.len().min(255);
     let map_len = map_bytes.len().min(255);
     let player_count = players.len().min(255) as u8;
-    let mut out = Vec::with_capacity(4 + room_len + map_len + player_count as usize * 96);
+    let mut out = Vec::with_capacity(6 + room_len + map_len + player_count as usize * 96);
     out.push(MSG_ROOM_STATE);
     out.push(room_len as u8);
     out.push(map_len as u8);
     out.push(player_count);
+    push_u16(&mut out, tick_rate);
     out.extend_from_slice(&room_id_bytes[..room_len]);
     out.extend_from_slice(&map_bytes[..map_len]);
     for (username, snapshot) in players {

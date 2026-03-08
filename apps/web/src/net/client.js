@@ -15,7 +15,7 @@ const DEFAULT_SERVER_URL = getBackendWsUrl()
 const DEFAULT_MAP = 'dm2'
 const INPUT_SEND_RATE_HZ = 60
 const INPUT_SEND_INTERVAL_MS = 1000 / INPUT_SEND_RATE_HZ
-const DEFAULT_SERVER_TICK_MILLIS = 20
+const DEFAULT_SERVER_TICK_MILLIS = 16
 const SNAPSHOT_SEND_RATE_HZ = 30
 const SNAPSHOT_INTERVAL_MS = 1000 / SNAPSHOT_SEND_RATE_HZ
 const SNAPSHOT_BUFFER_MAX = 90
@@ -522,6 +522,7 @@ export class NetworkClient {
                 break
             case 'room_state':
                 this.roomId = msg.room_id
+                this.setServerTickRateHz(msg.tick_rate)
                 this.hydrateRoom(msg)
                 this.handlers.onRoomState?.(msg)
                 break

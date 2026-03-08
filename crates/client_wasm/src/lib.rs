@@ -610,6 +610,11 @@ pub fn get_hit_radius_plasma() -> f32 {
 }
 
 #[wasm_bindgen]
+pub fn get_projectile_aabb_radius_scale() -> f32 {
+    constants::PROJECTILE_AABB_RADIUS_SCALE
+}
+
+#[wasm_bindgen]
 pub fn get_damage(weapon_id: u8) -> f32 {
     constants::DAMAGE
         .get(weapon_id as usize)

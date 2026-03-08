@@ -1,4 +1,4 @@
-pub const TICK_MILLIS: u64 = 20;
+pub const TICK_MILLIS: u64 = 16;
 pub const WEAPON_COUNT: usize = 9;
 
 pub const TILE_W: f32 = 32.0;
@@ -92,6 +92,8 @@ pub const HIT_RADIUS_ROCKET: f32 = 28.0;
 pub const HIT_RADIUS_BFG: f32 = 28.0;
 pub const HIT_RADIUS_GRENADE: f32 = 16.0;
 pub const HIT_RADIUS_PLASMA: f32 = 20.0;
+// Scale circle hit radii when expanding AABB for point-vs-expanded-box checks.
+pub const PROJECTILE_AABB_RADIUS_SCALE: f32 = 0.70710677;
 
 // Weapon damage values (Gauntlet, Machine, Shotgun, Grenade, Rocket, Rail, Plasma, Shaft, Bfg)
 pub const DAMAGE: [f32; WEAPON_COUNT] = [50.0, 7.0, 7.0, 100.0, 100.0, 100.0, 20.0, 8.0, 100.0];

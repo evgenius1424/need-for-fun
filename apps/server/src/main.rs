@@ -231,7 +231,7 @@ async fn create_room_handler(
         );
     }
 
-    let tick_rate = payload.tick_rate.unwrap_or(50);
+    let tick_rate = payload.tick_rate.unwrap_or(60);
     if tick_rate == 0 {
         return api_error(
             StatusCode::BAD_REQUEST,
@@ -623,7 +623,7 @@ async fn handle_client_msg(
                 max_players: room_manager::ROOM_MAX_PLAYERS_HARD_CAP,
                 map_id: map_name,
                 mode: "deathmatch".to_string(),
-                tick_rate: 50,
+                tick_rate: 60,
                 protocol_version: "1".to_string(),
                 region: None,
             };
@@ -739,7 +739,7 @@ async fn run_console(state: Arc<AppState>) {
                         max_players,
                         map_id: map_id.to_string(),
                         mode: mode.to_string(),
-                        tick_rate: 50,
+                        tick_rate: 60,
                         protocol_version: "1".to_string(),
                         region: None,
                     };

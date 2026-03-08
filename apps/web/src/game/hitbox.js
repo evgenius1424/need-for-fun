@@ -33,7 +33,11 @@ export function segmentAabbT(x0, y0, x1, y1, box) {
         const inv = 1 / dx
         let t1 = (box.minX - x0) * inv
         let t2 = (box.maxX - x0) * inv
-        if (t1 > t2) [t1, t2] = [t2, t1]
+        if (t1 > t2) {
+            const tmp = t1
+            t1 = t2
+            t2 = tmp
+        }
         tMin = Math.max(tMin, t1)
         tMax = Math.min(tMax, t2)
         if (tMin > tMax) return null
@@ -45,7 +49,11 @@ export function segmentAabbT(x0, y0, x1, y1, box) {
         const inv = 1 / dy
         let t1 = (box.minY - y0) * inv
         let t2 = (box.maxY - y0) * inv
-        if (t1 > t2) [t1, t2] = [t2, t1]
+        if (t1 > t2) {
+            const tmp = t1
+            t1 = t2
+            t2 = tmp
+        }
         tMin = Math.max(tMin, t1)
         tMax = Math.min(tMax, t2)
         if (tMin > tMax) return null

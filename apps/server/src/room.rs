@@ -702,6 +702,7 @@ impl RoomTask {
         let room_state = Bytes::from(encode_room_state(
             self.room_id.as_str(),
             self.map.name.as_str(),
+            self.config.tick_rate,
             self.player_store.conns(),
             self.player_store.states(),
         ));
@@ -961,7 +962,7 @@ mod tests {
             max_players,
             map_id: "test".to_string(),
             mode: "dm".to_string(),
-            tick_rate: 50,
+            tick_rate: 60,
             protocol_version: "1".to_string(),
             region: None,
         }

@@ -124,6 +124,7 @@ pub fn player_snapshot_from_state(
 pub fn encode_room_state(
     room_id: &str,
     map_name: &str,
+    tick_rate: u64,
     players: &[crate::room::PlayerConn],
     player_states: &[crate::physics::PlayerState],
 ) -> Vec<u8> {
@@ -142,7 +143,12 @@ pub fn encode_room_state(
             )
         })
         .collect();
-    binary_protocol::encode_room_state(room_id, map_name, &players_data)
+    binary_protocol::encode_room_state(
+        room_id,
+        map_name,
+        tick_rate.min(u16::MAX as u64) as u16,
+        &players_data,
+    )
 }
 
 #[cfg(test)]

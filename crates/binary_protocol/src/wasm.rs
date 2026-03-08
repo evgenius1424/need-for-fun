@@ -76,13 +76,14 @@ fn decode_welcome_js(bytes: &[u8]) -> JsValue {
 }
 
 fn decode_room_state_js(bytes: &[u8]) -> JsValue {
-    if bytes.len() < 4 {
+    if bytes.len() < 6 {
         return JsValue::NULL;
     }
     let room_len = bytes[1] as usize;
     let map_len = bytes[2] as usize;
     let player_count = bytes[3] as usize;
-    let mut offset = 4;
+    let tick_rate = read_u16(bytes, 4) as f64;
+    let mut offset = 6;
     if bytes.len() < offset + room_len + map_len {
         return JsValue::NULL;
     }
@@ -115,6 +116,7 @@ fn decode_room_state_js(bytes: &[u8]) -> JsValue {
     set_str(&obj, "type", "room_state");
     set_jsval(&obj, "room_id", &JsValue::from_str(&room_id));
     set_jsval(&obj, "map", &JsValue::from_str(&map));
+    set_f64(&obj, "tick_rate", tick_rate);
     set_jsval(&obj, "players", &players);
     obj.into()
 }

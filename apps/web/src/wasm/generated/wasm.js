@@ -613,6 +613,14 @@ export function get_hit_radius_rocket() {
 /**
  * @returns {number}
  */
+export function get_hitscan_aabb_padding() {
+    const ret = wasm.get_grenade_loft();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
 export function get_hitscan_player_radius() {
     const ret = wasm.get_hitscan_player_radius();
     return ret;
@@ -702,6 +710,46 @@ export function get_player_half_h() {
 /**
  * @returns {number}
  */
+export function get_player_hitbox_bottom() {
+    const ret = wasm.get_player_hitbox_bottom();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
+export function get_player_hitbox_half_w() {
+    const ret = wasm.get_player_hitbox_half_w();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
+export function get_player_hitbox_top_crouch() {
+    const ret = wasm.get_player_hitbox_top_crouch();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
+export function get_player_hitbox_top_stand() {
+    const ret = wasm.get_player_half_h();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
+export function get_projectile_aabb_radius_scale() {
+    const ret = wasm.get_projectile_aabb_radius_scale();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
 export function get_projectile_gravity() {
     const ret = wasm.get_projectile_gravity();
     return ret;
@@ -784,6 +832,22 @@ export function get_shaft_range() {
 /**
  * @returns {number}
  */
+export function get_shotgun_bonus_base() {
+    const ret = wasm.get_shotgun_bonus_base();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
+export function get_shotgun_bonus_max() {
+    const ret = wasm.get_shotgun_bonus_max();
+    return ret;
+}
+
+/**
+ * @returns {number}
+ */
 export function get_shotgun_pellets() {
     const ret = wasm.get_shotgun_pellets();
     return ret >>> 0;
@@ -828,6 +892,14 @@ export function get_spawn_protection() {
 export function get_splash_radius(weapon_id) {
     const ret = wasm.get_splash_radius(weapon_id);
     return ret;
+}
+
+/**
+ * @returns {number}
+ */
+export function get_tick_millis() {
+    const ret = wasm.get_tick_millis();
+    return ret >>> 0;
 }
 
 /**

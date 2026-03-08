@@ -13,7 +13,7 @@ const runtime = {
     scratchInput: null,
     scratchOutput: null,
     playerStates: new Map(),
-    frameMs: 20,
+    frameMs: 16,
 }
 
 // Constants loaded from WASM - single source of truth from Rust
@@ -80,6 +80,7 @@ async function initKernel() {
             grenade: module.get_hit_radius_grenade(),
             plasma: module.get_hit_radius_plasma(),
         },
+        PROJECTILE_AABB_RADIUS_SCALE: module.get_projectile_aabb_radius_scale?.() ?? 0.70710677,
 
         // Weapon stats (indexed by WeaponId)
         getDamage: module.get_damage,

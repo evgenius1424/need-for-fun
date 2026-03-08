@@ -133,6 +133,8 @@ export function get_hit_radius_plasma(): number;
 
 export function get_hit_radius_rocket(): number;
 
+export function get_hitscan_aabb_padding(): number;
+
 export function get_hitscan_player_radius(): number;
 
 export function get_machine_range(): number;
@@ -155,6 +157,16 @@ export function get_plasma_splash_radius(): number;
 
 export function get_player_half_h(): number;
 
+export function get_player_hitbox_bottom(): number;
+
+export function get_player_hitbox_half_w(): number;
+
+export function get_player_hitbox_top_crouch(): number;
+
+export function get_player_hitbox_top_stand(): number;
+
+export function get_projectile_aabb_radius_scale(): number;
+
 export function get_projectile_gravity(): number;
 
 export function get_projectile_offset(weapon_id: number): number;
@@ -175,6 +187,10 @@ export function get_self_hit_grace(): number;
 
 export function get_shaft_range(): number;
 
+export function get_shotgun_bonus_base(): number;
+
+export function get_shotgun_bonus_max(): number;
+
 export function get_shotgun_pellets(): number;
 
 export function get_shotgun_range(): number;
@@ -186,6 +202,8 @@ export function get_spawn_offset_x(): number;
 export function get_spawn_protection(): number;
 
 export function get_splash_radius(weapon_id: number): number;
+
+export function get_tick_millis(): number;
 
 export function get_tile_h(): number;
 
@@ -252,6 +270,10 @@ export interface InitOutput {
     readonly get_pickup_ammo: (a: number) => number;
     readonly get_plasma_splash_push: () => number;
     readonly get_player_half_h: () => number;
+    readonly get_player_hitbox_bottom: () => number;
+    readonly get_player_hitbox_half_w: () => number;
+    readonly get_player_hitbox_top_crouch: () => number;
+    readonly get_projectile_aabb_radius_scale: () => number;
     readonly get_projectile_gravity: () => number;
     readonly get_projectile_offset: (a: number) => number;
     readonly get_projectile_speed: (a: number) => number;
@@ -261,11 +283,14 @@ export interface InitOutput {
     readonly get_respawn_time: () => number;
     readonly get_self_hit_grace: () => number;
     readonly get_shaft_range: () => number;
+    readonly get_shotgun_bonus_base: () => number;
+    readonly get_shotgun_bonus_max: () => number;
     readonly get_shotgun_pellets: () => number;
     readonly get_shotgun_range: () => number;
     readonly get_shotgun_spread: () => number;
     readonly get_spawn_protection: () => number;
     readonly get_splash_radius: (a: number) => number;
+    readonly get_tick_millis: () => number;
     readonly get_tile_w: () => number;
     readonly get_weapon_count: () => number;
     readonly get_weapon_origin_crouch_lift: () => number;
@@ -310,11 +335,13 @@ export interface InitOutput {
     readonly wasmweaponkernel_spawn_kind: (a: number) => number;
     readonly wasmweaponkernel_spawn_velocity_y: (a: number) => number;
     readonly get_hit_radius_rocket: () => number;
+    readonly get_hitscan_aabb_padding: () => number;
     readonly get_max_health: () => number;
     readonly get_mega_health: () => number;
     readonly get_pickup_radius: () => number;
     readonly get_plasma_splash_damage: () => number;
     readonly get_plasma_splash_radius: () => number;
+    readonly get_player_hitbox_top_stand: () => number;
     readonly get_self_damage_reduction: () => number;
     readonly get_spawn_offset_x: () => number;
     readonly get_tile_h: () => number;

@@ -89,7 +89,7 @@ export const Projectiles = {
         if (proj.ownerId === player.id && proj.age < c.SELF_HIT_GRACE) return false
         if (proj.type === 'grenade' && proj.age < c.GRENADE_HIT_GRACE) return false
 
-        const radius = c.HIT_RADIUS[proj.type] ?? 0
+        const radius = (c.HIT_RADIUS[proj.type] ?? 0) * c.PROJECTILE_AABB_RADIUS_SCALE
         const box = getPlayerHitbox(player, radius)
         return proj.x >= box.minX && proj.x <= box.maxX && proj.y >= box.minY && proj.y <= box.maxY
     },

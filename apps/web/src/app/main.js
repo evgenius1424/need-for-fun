@@ -49,7 +49,6 @@ let cachedNetDebugText = ''
 let lastAppliedWorldSnapshotTick = -1
 let remoteBotWrappers = []
 let remoteBotWrapperSource = null
-let roomTickRateCache = new globalThis.Map()
 const autoBot = {
     enabled: false,
     difficulty: 'medium',
@@ -360,30 +359,10 @@ function initNetwork() {
 }
 
 async function syncTickRateFromRoom(room) {
-    const roomId = room?.room_id ?? room?.roomId
-    if (!roomId) return
-    if (roomTickRateCache.has(roomId)) {
-        const hz = roomTickRateCache.get(roomId)
-        Physics.setTickRateHz(hz)
-        network.setServerTickRateHz(hz)
-        return
-    }
-    try {
-        const rooms = await listRooms()
-        for (const r of rooms) {
-            const id = r.roomId ?? r.room_id
-            const hz = Number(r.tickRate ?? r.tick_rate)
-            if (!id || !Number.isFinite(hz) || hz <= 0) continue
-            roomTickRateCache.set(id, hz)
-        }
-        const hz = roomTickRateCache.get(roomId)
-        if (hz) {
-            Physics.setTickRateHz(hz)
-            network.setServerTickRateHz(hz)
-        }
-    } catch {
-        // Keep current timing if room API is temporarily unavailable.
-    }
+    const hz = Number(room?.tick_rate ?? room?.tickRate)
+    if (!Number.isFinite(hz) || hz <= 0) return
+    Physics.setTickRateHz(hz)
+    network.setServerTickRateHz(hz)
 }
 
 function setupConsoleCommands() {
