@@ -105,11 +105,11 @@ pub const SPLASH_RADIUS: [f32; WEAPON_COUNT] = [0.0, 0.0, 0.0, 60.0, 60.0, 0.0, 
 pub const WEAPON_PUSH: [f32; WEAPON_COUNT] = [0.0, 0.3, 0.05, 3.0, 3.0, 1.04, 0.45, 0.54, 3.0];
 
 // Projectile speeds (only for projectile weapons, others are 0)
-pub const PROJECTILE_SPEED: [f32; WEAPON_COUNT] = [0.0, 0.0, 0.0, 4.5, 7.0, 0.0, 8.0, 0.0, 8.0];
+pub const PROJECTILE_SPEED: [f32; WEAPON_COUNT] = [0.0, 0.0, 0.0, 5.25, 7.0, 0.0, 8.0, 0.0, 8.0];
 
 // Projectile spawn offsets from weapon origin (indexed by WeaponId)
 pub const PROJECTILE_OFFSET: [f32; WEAPON_COUNT] =
-    [0.0, 0.0, 0.0, 14.0, 18.0, 0.0, 12.0, 0.0, 12.0];
+    [0.0, 0.0, 0.0, 17.0, 18.0, 0.0, 12.0, 0.0, 12.0];
 
 // Fire rate in ticks
 pub const FIRE_RATE: [i32; WEAPON_COUNT] = [20, 5, 50, 40, 40, 75, 5, 3, 10];
