@@ -5,7 +5,6 @@ use crate::constants::{
 use crate::projectile::{Explosion, ProjectileKind};
 use crate::types::PlayerState;
 
-
 /// Apply knockback from an explosion to a player.
 /// Returns the damage falloff (0.0-1.0) if player was in radius, None otherwise.
 pub fn apply_knockback(player: &mut PlayerState, explosion: &Explosion) -> Option<f32> {

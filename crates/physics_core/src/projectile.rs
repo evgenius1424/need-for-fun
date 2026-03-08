@@ -1,7 +1,8 @@
 use crate::constants::{
-    BOUNDS_MARGIN, GRENADE_AIR_FRICTION, GRENADE_BOUNCE_FRICTION, GRENADE_FUSE,
+    BFG_LIFETIME_TICKS, BOUNDS_MARGIN, GRENADE_AIR_FRICTION, GRENADE_BOUNCE_FRICTION, GRENADE_FUSE,
     GRENADE_MAX_FALL_SPEED, GRENADE_MIN_VELOCITY, GRENADE_RISE_DAMPING, HIT_RADIUS_BFG,
-    HIT_RADIUS_GRENADE, HIT_RADIUS_PLASMA, HIT_RADIUS_ROCKET, PROJECTILE_GRAVITY, TILE_H, TILE_W,
+    HIT_RADIUS_GRENADE, HIT_RADIUS_PLASMA, HIT_RADIUS_ROCKET, PROJECTILE_GRAVITY,
+    ROCKET_LIFETIME_TICKS, TILE_H, TILE_W,
 };
 use crate::tilemap::TileMap;
 
@@ -123,6 +124,12 @@ pub fn step_projectile(
 
     // Grenade fuse timer
     if proj.kind == ProjectileKind::Grenade && proj.age > GRENADE_FUSE {
+        return Some(explode(proj));
+    }
+    if proj.kind == ProjectileKind::Rocket && proj.age > ROCKET_LIFETIME_TICKS {
+        return Some(explode(proj));
+    }
+    if proj.kind == ProjectileKind::Bfg && proj.age > BFG_LIFETIME_TICKS {
         return Some(explode(proj));
     }
 

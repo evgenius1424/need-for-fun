@@ -1,6 +1,5 @@
 import { getWasmModuleSync, initWasm } from '../wasm/client'
 
-const FRAME_MS = 16
 const MAX_TICKS_PER_FRAME = 5
 
 const runtime = {
@@ -14,6 +13,7 @@ const runtime = {
     scratchInput: null,
     scratchOutput: null,
     playerStates: new Map(),
+    frameMs: 20,
 }
 
 // Constants loaded from WASM - single source of truth from Rust
@@ -42,6 +42,7 @@ async function initKernel() {
 
     // Load all constants from WASM - Rust physics_core/src/constants.rs is the source of truth
     const weaponCount = module.get_weapon_count()
+    runtime.frameMs = module.get_tick_millis()
     PhysicsConstants = {
         WEAPON_COUNT: weaponCount,
         // Projectile physics
@@ -65,6 +66,8 @@ async function initKernel() {
         SHOTGUN_RANGE: module.get_shotgun_range(),
         SHOTGUN_PELLETS: module.get_shotgun_pellets(),
         SHOTGUN_SPREAD: module.get_shotgun_spread(),
+        SHOTGUN_BONUS_BASE: module.get_shotgun_bonus_base(),
+        SHOTGUN_BONUS_MAX: module.get_shotgun_bonus_max(),
         GAUNTLET_RANGE: module.get_gauntlet_range(),
         GRENADE_LOFT: module.get_grenade_loft(),
         MACHINE_RANGE: module.get_machine_range(),
@@ -110,6 +113,11 @@ async function initKernel() {
         HITSCAN_PLAYER_RADIUS: module.get_hitscan_player_radius(),
         GAUNTLET_PLAYER_RADIUS: module.get_gauntlet_player_radius(),
         WEAPON_ORIGIN_CROUCH_LIFT: module.get_weapon_origin_crouch_lift(),
+        PLAYER_HITBOX_HALF_W: module.get_player_hitbox_half_w(),
+        PLAYER_HITBOX_TOP_STAND: module.get_player_hitbox_top_stand(),
+        PLAYER_HITBOX_TOP_CROUCH: module.get_player_hitbox_top_crouch(),
+        PLAYER_HITBOX_BOTTOM: module.get_player_hitbox_bottom(),
+        HITSCAN_AABB_PADDING: module.get_hitscan_aabb_padding(),
 
         // Tile sizes (for validation)
         TILE_W: module.get_tile_w(),
@@ -140,23 +148,33 @@ export const Physics = {
 
     consumeTicks(timestamp) {
         if (!runtime.map) return 0
-        if (runtime.time === 0) runtime.time = timestamp - FRAME_MS
+        if (runtime.time === 0) runtime.time = timestamp - runtime.frameMs
 
         const delta = timestamp - runtime.time
-        let frames = Math.trunc(delta / FRAME_MS)
+        let frames = Math.trunc(delta / runtime.frameMs)
         if (frames === 0) {
-            runtime.alpha = delta / FRAME_MS
+            runtime.alpha = delta / runtime.frameMs
             return 0
         }
 
         if (frames > MAX_TICKS_PER_FRAME) {
             frames = MAX_TICKS_PER_FRAME
-            runtime.time = timestamp - frames * FRAME_MS
+            runtime.time = timestamp - frames * runtime.frameMs
         }
 
-        runtime.time += frames * FRAME_MS
-        runtime.alpha = (timestamp - runtime.time) / FRAME_MS
+        runtime.time += frames * runtime.frameMs
+        runtime.alpha = (timestamp - runtime.time) / runtime.frameMs
         return frames
+    },
+
+    setTickRateHz(tickRateHz) {
+        const hz = Number(tickRateHz)
+        if (!Number.isFinite(hz) || hz <= 0) return
+        runtime.frameMs = 1000 / hz
+    },
+
+    getFrameMs() {
+        return runtime.frameMs
     },
 
     stepPlayers(players, frames = 1) {

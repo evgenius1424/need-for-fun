@@ -3,6 +3,7 @@ import { Input, Settings, Sound, WeaponId, Console } from '../core/helpers'
 import { Map } from '../game/map'
 import { Player } from '../game/player'
 import { Physics, PhysicsConstants } from '../game/physics'
+import { getPlayerHitbox, segmentAabbT } from '../game/hitbox'
 import { Render } from '../render'
 import { Projectiles } from '../game/projectiles'
 import { loadAssets, ensureModelLoaded } from '../render/assets'
@@ -15,7 +16,6 @@ import { getBackendWsUrl } from '../net/wsEndpoint'
 const AIM_INPUT_SCALE = 0.5
 const PICKUP_RADIUS = PhysicsConstants.PICKUP_RADIUS
 const MAX_AIM_DELTA = 12
-const HITSCAN_PLAYER_RADIUS = PhysicsConstants.HITSCAN_PLAYER_RADIUS
 const GAUNTLET_PLAYER_RADIUS = PhysicsConstants.GAUNTLET_PLAYER_RADIUS
 const GAUNTLET_SPARK_OFFSET = PhysicsConstants.GAUNTLET_RANGE
 
@@ -49,6 +49,7 @@ let cachedNetDebugText = ''
 let lastAppliedWorldSnapshotTick = -1
 let remoteBotWrappers = []
 let remoteBotWrapperSource = null
+let roomTickRateCache = new globalThis.Map()
 const autoBot = {
     enabled: false,
     difficulty: 'medium',
@@ -329,6 +330,7 @@ function initNetwork() {
         },
         onClose: () => {},
         onRoomState: async (room) => {
+            await syncTickRateFromRoom(room)
             if (room?.map) {
                 const loaded = await Map.loadFromName(room.map)
                 if (loaded) {
@@ -355,6 +357,33 @@ function initNetwork() {
         player.update()
         Physics.stepPlayers([player], 1)
     })
+}
+
+async function syncTickRateFromRoom(room) {
+    const roomId = room?.room_id ?? room?.roomId
+    if (!roomId) return
+    if (roomTickRateCache.has(roomId)) {
+        const hz = roomTickRateCache.get(roomId)
+        Physics.setTickRateHz(hz)
+        network.setServerTickRateHz(hz)
+        return
+    }
+    try {
+        const rooms = await listRooms()
+        for (const r of rooms) {
+            const id = r.roomId ?? r.room_id
+            const hz = Number(r.tickRate ?? r.tick_rate)
+            if (!id || !Number.isFinite(hz) || hz <= 0) continue
+            roomTickRateCache.set(id, hz)
+        }
+        const hz = roomTickRateCache.get(roomId)
+        if (hz) {
+            Physics.setTickRateHz(hz)
+            network.setServerTickRateHz(hz)
+        }
+    } catch {
+        // Keep current timing if room API is temporarily unavailable.
+    }
 }
 
 function setupConsoleCommands() {
@@ -928,7 +957,7 @@ function updateNetDebugOverlay(now) {
             `Off ${round(stats.clockOffsetMs, 1)}\n` +
             `Interp ${round(stats.interpDelayMs, 1)}ms  Buf ${stats.snapshotBufferDepth}  ` +
             `Tick ${stats.latestSnapshotTick}\n` +
-            `Render ${round(stats.renderServerTimeMs / 16, 1)}t  ` +
+            `Render ${round(stats.renderServerTimeMs / Physics.getFrameMs(), 1)}t  ` +
             `Ext ${round(stats.extrapolationMs, 1)}ms  U+${round(stats.underrunBoostMs, 1)}  ` +
             `Corr ${round(stats.correctionErrorUnits, 2)}u b${round(stats.correctionBlend, 2)}  ` +
             `Inp ${stats.pendingInputCount}/${stats.unackedInputs} ` +
@@ -982,7 +1011,12 @@ function processFireResult(player, result, otherPlayers) {
         applyHitscanShot(player, result, otherPlayers, 'bullet', 2.5)
     } else if (result?.type === 'shotgun') {
         for (const pellet of result.pellets) {
-            const shot = { startX: result.startX, startY: result.startY, trace: pellet.trace }
+            const shot = {
+                startX: result.startX,
+                startY: result.startY,
+                trace: pellet.trace,
+                weaponId: WeaponId.SHOTGUN,
+            }
             applyHitscanShot(player, { ...shot, damage: pellet.damage }, otherPlayers, 'bullet', 2)
         }
     } else if (result?.type === 'gauntlet') {
@@ -1092,7 +1126,20 @@ function applyHitscanShot(attacker, shot, targets, effect, radius = 2.5) {
 function applyHitscanDamage(attacker, damage, impact) {
     if (!impact?.target) return
     const multiplier = attacker.quadDamage ? PhysicsConstants.QUAD_MULTIPLIER : 1
-    impact.target.takeDamage(damage * multiplier, attacker.id)
+    const finalDamage = computeShotDamage(damage, impact)
+    impact.target.takeDamage(finalDamage * multiplier, attacker.id)
+}
+
+function computeShotDamage(baseDamage, impact) {
+    const shot = impact?.shot
+    if (!shot) return baseDamage
+    if (shot.weaponId !== WeaponId.SHOTGUN) return baseDamage
+    const dist = Math.hypot(impact.x - shot.startX, impact.y - shot.startY)
+    const bonus = Math.min(
+        Math.trunc(PhysicsConstants.SHOTGUN_BONUS_BASE / Math.max(1, dist)),
+        PhysicsConstants.SHOTGUN_BONUS_MAX,
+    )
+    return baseDamage + bonus
 }
 
 function applyMeleeDamage(attacker, hit, targets) {
@@ -1148,7 +1195,6 @@ function resolveHitscanImpact(attacker, shot, targets) {
     const endY = shot.trace.y
     const dx = endX - startX
     const dy = endY - startY
-    const lenSq = dx * dx + dy * dy || 1
 
     if (!Array.isArray(targets) || targets.length === 0) {
         return { x: endX, y: endY, target: null }
@@ -1160,16 +1206,10 @@ function resolveHitscanImpact(attacker, shot, targets) {
     for (const target of targets) {
         if (!target || target.dead || target === attacker) continue
 
-        const t = ((target.x - startX) * dx + (target.y - startY) * dy) / lenSq
-        if (t < 0 || t > 1) continue
-
-        const hitX = startX + dx * t
-        const hitY = startY + dy * t
-        const distX = target.x - hitX
-        const distY = target.y - hitY
-        const distSq = distX * distX + distY * distY
-
-        if (distSq > HITSCAN_PLAYER_RADIUS * HITSCAN_PLAYER_RADIUS) continue
+        // Preserve gameplay forgiveness after moving to geometric segment-vs-AABB checks.
+        const box = getPlayerHitbox(target, PhysicsConstants.HITSCAN_AABB_PADDING)
+        const t = segmentAabbT(startX, startY, endX, endY, box)
+        if (t == null) continue
 
         if (t < closestT) {
             closest = target
@@ -1182,6 +1222,7 @@ function resolveHitscanImpact(attacker, shot, targets) {
         x: startX + dx * closestT,
         y: startY + dy * closestT,
         target: closest,
+        shot,
     }
 }
 

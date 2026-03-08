@@ -15,7 +15,7 @@ const DEFAULT_SERVER_URL = getBackendWsUrl()
 const DEFAULT_MAP = 'dm2'
 const INPUT_SEND_RATE_HZ = 60
 const INPUT_SEND_INTERVAL_MS = 1000 / INPUT_SEND_RATE_HZ
-const SERVER_TICK_MILLIS = 16
+const DEFAULT_SERVER_TICK_MILLIS = 20
 const SNAPSHOT_SEND_RATE_HZ = 30
 const SNAPSHOT_INTERVAL_MS = 1000 / SNAPSHOT_SEND_RATE_HZ
 const SNAPSHOT_BUFFER_MAX = 90
@@ -125,6 +125,7 @@ export class NetworkClient {
         this.lastAckProgressAtMs = 0
         this.lastSentInputSignature = ''
         this.currentInputSendHz = INPUT_SEND_RATE_HZ
+        this.serverTickMillis = DEFAULT_SERVER_TICK_MILLIS
         this.interpDelayMs = MIN_INTERP_DELAY_MS
         this.tuning = { ...DEFAULT_TUNING }
         this.tuningProfile = DEFAULT_TUNING_PROFILE
@@ -152,6 +153,12 @@ export class NetworkClient {
 
     isActive() {
         return this.connected
+    }
+
+    setServerTickRateHz(tickRateHz) {
+        const hz = Number(tickRateHz)
+        if (!Number.isFinite(hz) || hz <= 0) return
+        this.serverTickMillis = 1000 / hz
     }
 
     getRemotePlayers() {
@@ -713,7 +720,7 @@ export class NetworkClient {
             const b = newerMap.get(id) ?? a
             if (!a || !b) continue
             if (extrapolationMs > 0 && a === b) {
-                applyExtrapolatedState(player, a, this.lastExtrapolationMs)
+                applyExtrapolatedState(player, a, this.lastExtrapolationMs, this.serverTickMillis)
                 continue
             }
             applyInterpolatedState(player, a, b, t)
@@ -726,7 +733,7 @@ export class NetworkClient {
         const serverTimeMsFromSnapshot = Number(snapshot.server_time_ms)
         const serverTimeMs = Number.isFinite(serverTimeMsFromSnapshot)
             ? serverTimeMsFromSnapshot
-            : tick * SERVER_TICK_MILLIS
+            : tick * this.serverTickMillis
         if (tick <= this.lastSnapshotTick) {
             this.staleSnapshotCount++
         }
@@ -1005,8 +1012,8 @@ function applyInterpolatedState(player, a, b, t) {
     if (Array.isArray(b.ammo)) player.ammo = b.ammo
 }
 
-function applyExtrapolatedState(player, state, extrapolationMs) {
-    const dt = extrapolationMs / SERVER_TICK_MILLIS
+function applyExtrapolatedState(player, state, extrapolationMs, serverTickMillis) {
+    const dt = extrapolationMs / serverTickMillis
     player.prevX = player.x
     player.prevY = player.y
     player.prevAimAngle = player.aimAngle

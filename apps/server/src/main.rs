@@ -11,7 +11,7 @@ use std::time::Instant;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
-use axum::http::{Method, StatusCode, header};
+use axum::http::{header, Method, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Json;
@@ -125,6 +125,7 @@ struct RoomSummaryDto {
     max_players: u32,
     map_id: String,
     mode: String,
+    tick_rate: u64,
     status: String,
     created_at_ms: u64,
     last_activity_at_ms: u64,
@@ -157,7 +158,10 @@ async fn main() -> std::io::Result<()> {
 
     let app = Router::new()
         .route("/rtc", get(rtc_ws_handler))
-        .route("/api/rooms", get(list_rooms_handler).post(create_room_handler))
+        .route(
+            "/api/rooms",
+            get(list_rooms_handler).post(create_room_handler),
+        )
         .layer(cors)
         .with_state(state);
 
@@ -186,7 +190,11 @@ async fn create_room_handler(
 ) -> impl IntoResponse {
     let name = payload.name.trim().to_string();
     if name.is_empty() {
-        return api_error(StatusCode::BAD_REQUEST, "invalid_room_name", "name must not be empty");
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_room_name",
+            "name must not be empty",
+        );
     }
 
     let map_id = payload
@@ -195,7 +203,11 @@ async fn create_room_handler(
         .trim()
         .to_string();
     if map_id.is_empty() {
-        return api_error(StatusCode::BAD_REQUEST, "invalid_map_id", "mapId must not be empty");
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_map_id",
+            "mapId must not be empty",
+        );
     }
 
     let Some(game_map) = load_map(&state.map_dir, &map_id) else {
@@ -212,10 +224,14 @@ async fn create_room_handler(
         .trim()
         .to_string();
     if mode.is_empty() {
-        return api_error(StatusCode::BAD_REQUEST, "invalid_mode", "mode must not be empty");
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_mode",
+            "mode must not be empty",
+        );
     }
 
-    let tick_rate = payload.tick_rate.unwrap_or(60);
+    let tick_rate = payload.tick_rate.unwrap_or(50);
     if tick_rate == 0 {
         return api_error(
             StatusCode::BAD_REQUEST,
@@ -304,9 +320,11 @@ async fn create_room_handler(
         Err(RoomCreateError::InvalidMaxPlayers(message)) => {
             api_error(StatusCode::BAD_REQUEST, "invalid_max_players", &message)
         }
-        Err(RoomCreateError::MapNotFound) => {
-            api_error(StatusCode::BAD_REQUEST, "map_not_found", "requested map is not available")
-        }
+        Err(RoomCreateError::MapNotFound) => api_error(
+            StatusCode::BAD_REQUEST,
+            "map_not_found",
+            "requested map is not available",
+        ),
         Err(RoomCreateError::Other(message)) => {
             api_error(StatusCode::BAD_REQUEST, "room_create_failed", &message)
         }
@@ -321,6 +339,7 @@ fn room_summary_to_dto(summary: crate::room::RoomSummary) -> RoomSummaryDto {
         max_players: summary.max_players as u32,
         map_id: summary.map_id,
         mode: summary.mode,
+        tick_rate: summary.tick_rate,
         status: summary.status.as_str().to_string(),
         created_at_ms: summary.created_at_ms,
         last_activity_at_ms: summary.last_activity_at_ms,
@@ -604,7 +623,7 @@ async fn handle_client_msg(
                 max_players: room_manager::ROOM_MAX_PLAYERS_HARD_CAP,
                 map_id: map_name,
                 mode: "deathmatch".to_string(),
-                tick_rate: 60,
+                tick_rate: 50,
                 protocol_version: "1".to_string(),
                 region: None,
             };
@@ -720,7 +739,7 @@ async fn run_console(state: Arc<AppState>) {
                         max_players,
                         map_id: map_id.to_string(),
                         mode: mode.to_string(),
-                        tick_rate: 60,
+                        tick_rate: 50,
                         protocol_version: "1".to_string(),
                         region: None,
                     };

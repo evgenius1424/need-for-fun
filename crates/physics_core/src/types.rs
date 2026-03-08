@@ -9,6 +9,14 @@ pub struct PlayerInput {
     pub key_right: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Aabb {
+    pub min_x: f32,
+    pub max_x: f32,
+    pub min_y: f32,
+    pub max_y: f32,
+}
+
 #[derive(Clone)]
 pub struct PlayerState {
     pub id: u64,

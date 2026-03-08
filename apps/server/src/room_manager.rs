@@ -369,7 +369,7 @@ mod tests {
             max_players: max,
             map_id: "dm2".to_string(),
             mode: "deathmatch".to_string(),
-            tick_rate: 60,
+            tick_rate: 50,
             protocol_version: "1".to_string(),
             region: None,
         }

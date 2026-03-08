@@ -1,5 +1,6 @@
 import { Sound } from '../core/helpers'
 import { Physics, PhysicsConstants } from './physics'
+import { getPlayerHitbox } from './hitbox'
 
 const EXPLODE_SOUND = {
     rocket: Sound.rocketExplode,
@@ -88,11 +89,9 @@ export const Projectiles = {
         if (proj.ownerId === player.id && proj.age < c.SELF_HIT_GRACE) return false
         if (proj.type === 'grenade' && proj.age < c.GRENADE_HIT_GRACE) return false
 
-        const dx = player.x - proj.x
-        const dy = player.y - proj.y
-        const radius = c.HIT_RADIUS[proj.type] ?? 20
-
-        return dx * dx + dy * dy < radius * radius
+        const radius = c.HIT_RADIUS[proj.type] ?? 0
+        const box = getPlayerHitbox(player, radius)
+        return proj.x >= box.minX && proj.x <= box.maxX && proj.y >= box.minY && proj.y <= box.maxY
     },
 
     getAll: () => state.projectiles,

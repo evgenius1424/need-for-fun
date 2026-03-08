@@ -16,8 +16,7 @@ use crate::binary::{
 };
 use crate::binary::{EffectEvent, PlayerSnapshot};
 use crate::constants::{
-    PLAYER_HALF_H, ROOM_COMMAND_CAPACITY, SNAPSHOT_INTERVAL_TICKS, SPAWN_OFFSET_X, TICK_MILLIS,
-    TILE_H, TILE_W,
+    PLAYER_HALF_H, ROOM_COMMAND_CAPACITY, SNAPSHOT_INTERVAL_TICKS, SPAWN_OFFSET_X, TILE_H, TILE_W,
 };
 use crate::game::{
     apply_explosions, apply_hit_actions, apply_projectile_hits, process_item_pickups,
@@ -98,6 +97,7 @@ pub struct RoomSummary {
     pub max_players: usize,
     pub map_id: String,
     pub mode: String,
+    pub tick_rate: u64,
     pub status: RoomStatus,
     pub created_at_ms: u64,
     pub last_activity_at_ms: u64,
@@ -489,7 +489,9 @@ impl RoomTask {
     }
 
     async fn run(&mut self) {
-        let mut tick_interval = interval(Duration::from_millis(TICK_MILLIS));
+        let tick_hz = self.config.tick_rate.max(1);
+        let tick_period = Duration::from_secs_f64(1.0 / tick_hz as f64);
+        let mut tick_interval = interval(tick_period);
         loop {
             tokio::select! {
                 maybe_cmd = self.rx.recv() => {
@@ -644,6 +646,7 @@ impl RoomTask {
             max_players: self.config.max_players,
             map_id: self.config.map_id.clone(),
             mode: self.config.mode.clone(),
+            tick_rate: self.config.tick_rate,
             status: self.status,
             created_at_ms: self
                 .created_at
@@ -958,7 +961,7 @@ mod tests {
             max_players,
             map_id: "test".to_string(),
             mode: "dm".to_string(),
-            tick_rate: 60,
+            tick_rate: 50,
             protocol_version: "1".to_string(),
             region: None,
         }

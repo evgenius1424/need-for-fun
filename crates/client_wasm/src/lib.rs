@@ -468,6 +468,11 @@ pub fn get_projectile_gravity() -> f32 {
 }
 
 #[wasm_bindgen]
+pub fn get_tick_millis() -> u32 {
+    constants::TICK_MILLIS as u32
+}
+
+#[wasm_bindgen]
 pub fn get_grenade_fuse() -> i32 {
     constants::GRENADE_FUSE
 }
@@ -551,6 +556,16 @@ pub fn get_shotgun_spread() -> f32 {
 #[wasm_bindgen]
 pub fn get_shotgun_range() -> f32 {
     constants::SHOTGUN_RANGE
+}
+
+#[wasm_bindgen]
+pub fn get_shotgun_bonus_base() -> f32 {
+    constants::SHOTGUN_BONUS_BASE
+}
+
+#[wasm_bindgen]
+pub fn get_shotgun_bonus_max() -> f32 {
+    constants::SHOTGUN_BONUS_MAX
 }
 
 #[wasm_bindgen]
@@ -688,6 +703,31 @@ pub fn get_player_half_h() -> f32 {
 #[wasm_bindgen]
 pub fn get_weapon_origin_crouch_lift() -> f32 {
     constants::WEAPON_ORIGIN_CROUCH_LIFT
+}
+
+#[wasm_bindgen]
+pub fn get_player_hitbox_half_w() -> f32 {
+    constants::PLAYER_HITBOX_HALF_W
+}
+
+#[wasm_bindgen]
+pub fn get_player_hitbox_top_stand() -> f32 {
+    constants::PLAYER_HITBOX_TOP_STAND
+}
+
+#[wasm_bindgen]
+pub fn get_player_hitbox_top_crouch() -> f32 {
+    constants::PLAYER_HITBOX_TOP_CROUCH
+}
+
+#[wasm_bindgen]
+pub fn get_player_hitbox_bottom() -> f32 {
+    constants::PLAYER_HITBOX_BOTTOM
+}
+
+#[wasm_bindgen]
+pub fn get_hitscan_aabb_padding() -> f32 {
+    constants::HITSCAN_AABB_PADDING
 }
 
 #[wasm_bindgen]
