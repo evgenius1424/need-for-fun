@@ -60,6 +60,13 @@ class BotManagerClass {
         return this.allPlayers.filter((p) => p !== excludePlayer)
     }
 
+    notifyDamage(victim, attacker = null) {
+        if (!victim) return
+        const bot = this.bots.find((entry) => entry.player === victim)
+        if (!bot?.onDamaged) return
+        bot.onDamaged(attacker && attacker !== victim ? attacker : null)
+    }
+
     respawnBot(bot) {
         const spawn = this.findSafeSpawn()
         this.initializePlayerAtSpawn(bot.player, spawn)

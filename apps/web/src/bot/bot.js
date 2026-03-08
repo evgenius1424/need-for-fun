@@ -2,7 +2,7 @@ import { Player } from '../game/player'
 import { Map } from '../game/map'
 import { WeaponId } from '../core/helpers'
 import { DEFAULT_MODEL, MULTIPLAYER_SKINS, SkinId } from '../core/models'
-import { PhysicsConstants } from '../game/physics'
+import { Physics, PhysicsConstants } from '../game/physics'
 import { Projectiles } from '../game/projectiles'
 
 const HALF_PI = Math.PI / 2
@@ -74,7 +74,12 @@ const ITEM_PRIORITY = {
 }
 
 const HIGH_VALUE_ITEMS = new Set(['health100', 'quad', 'armor100'])
-const PROJECTILE_WEAPONS = new Set([WeaponId.GRENADE, WeaponId.ROCKET, WeaponId.PLASMA, WeaponId.BFG])
+const PROJECTILE_WEAPONS = new Set([
+    WeaponId.GRENADE,
+    WeaponId.ROCKET,
+    WeaponId.PLASMA,
+    WeaponId.BFG,
+])
 const CLOSE_RANGE_WEAPONS = new Set([WeaponId.GAUNTLET, WeaponId.SHOTGUN, WeaponId.PLASMA])
 
 const FIRE_RANGE = 520
@@ -102,6 +107,7 @@ const CLOSE_EXPLOSIVE_TRACE_LIMIT = 96
 const ROUTE_SCAN_RANGE = 12
 const DROP_SCAN_DEPTH = 12
 const CLIMB_ROW_SCAN_LIMIT = 8
+const LAST_KNOWN_DECAY = 180
 
 export class Bot {
     player
@@ -130,6 +136,8 @@ export class Bot {
     aimTarget = null
     targetPosition = null
     routeTarget = null
+    lastKnownEnemyPosition = null
+    lastKnownEnemyTimer = 0
 
     constructor(difficulty = 'medium', skin = SkinId.RED) {
         let selectedDifficulty = difficulty
@@ -174,6 +182,14 @@ export class Bot {
         this.considerWeaponSwitch()
     }
 
+    onDamaged(fromPlayer) {
+        this.thinkTimer = 0
+        if (fromPlayer && !this.target) {
+            this.lastKnownEnemyPosition = { x: fromPlayer.x, y: fromPlayer.y }
+            this.lastKnownEnemyTimer = LAST_KNOWN_DECAY
+        }
+    }
+
     applyFiring() {
         if (this.botFireCooldown > 0) this.botFireCooldown--
         if (!this.wantsToFire) return null
@@ -200,6 +216,13 @@ export class Bot {
         this.updateStrafeState()
         this.detectProjectileThreat()
 
+        if (this.target && this.hasLineOfSight(this.target)) {
+            this.lastKnownEnemyPosition = { x: this.target.x, y: this.target.y }
+            this.lastKnownEnemyTimer = LAST_KNOWN_DECAY
+        } else if (this.lastKnownEnemyTimer > 0) {
+            this.lastKnownEnemyTimer--
+        }
+
         const shouldSeekItems = this.shouldSeekItems(enemies)
         this.itemTarget = shouldSeekItems ? this.chooseItemTarget() : null
 
@@ -212,6 +235,12 @@ export class Bot {
             this.decideMovement(this.target, this.targetPosition)
             this.decideJump(this.targetPosition)
             this.wantsToFire = this.shouldFireAtTarget(this.target, distance)
+        } else if (this.lastKnownEnemyTimer > 0 && this.lastKnownEnemyPosition) {
+            this.combatStyle = 'aggressive'
+            this.targetPosition = this.lastKnownEnemyPosition
+            this.aimTarget = this.lastKnownEnemyPosition
+            this.decideMovement(null, this.targetPosition)
+            this.decideJump(this.targetPosition)
         } else if (this.itemTarget) {
             this.combatStyle = 'retreat'
             this.targetPosition = itemWorldPosition(this.itemTarget)
@@ -246,7 +275,8 @@ export class Bot {
             const threat = enemy.quadDamage ? 0.6 : 0
             const visibility = this.hasLineOfSight(enemy) ? 0.35 : 0
             const finishingBonus = enemy.health <= 35 ? 0.6 : 0
-            const closeEngageBonus = distance < CLOSE_RANGE * 1.5 ? 1.4 : distance < MEDIUM_RANGE ? 0.5 : 0
+            const closeEngageBonus =
+                distance < CLOSE_RANGE * 1.5 ? 1.4 : distance < MEDIUM_RANGE ? 0.5 : 0
             const score =
                 1 / Math.max(distance, 1) +
                 weakness * 0.8 +
@@ -270,7 +300,8 @@ export class Bot {
         let bestScore = -Infinity
 
         for (const item of items) {
-            const score = this.scoreItem(item) + (item === this.itemTarget ? ITEM_STICKINESS_BONUS : 0)
+            const score =
+                this.scoreItem(item) + (item === this.itemTarget ? ITEM_STICKINESS_BONUS : 0)
             if (score > bestScore) {
                 bestScore = score
                 best = item
@@ -439,7 +470,10 @@ export class Bot {
         if (this.combatStyle === 'retreat' && distance < CLOSE_RANGE && this.player.health < 20) {
             return false
         }
-        if (PROJECTILE_WEAPONS.has(this.player.currentWeapon) && this.shouldAvoidExplosiveShot(target, distance)) {
+        if (
+            PROJECTILE_WEAPONS.has(this.player.currentWeapon) &&
+            this.shouldAvoidExplosiveShot(target, distance)
+        ) {
             return false
         }
         return true
@@ -453,7 +487,13 @@ export class Bot {
         const dy = aimTarget.y - this.player.y
         const traceDistance = Math.min(Math.hypot(dx, dy), CLOSE_EXPLOSIVE_TRACE_LIMIT)
         const angle = Math.atan2(dy, dx)
-        const trace = traceDistance > 0 ? rayTraceFromBot(this.player, angle, traceDistance) : null
+        const originY = this.player.crouch
+            ? this.player.y + PhysicsConstants.WEAPON_ORIGIN_CROUCH_LIFT
+            : this.player.y
+        const trace =
+            traceDistance > 0
+                ? Physics.rayTrace(this.player.x, originY, angle, traceDistance)
+                : null
         return !!trace?.hitWall
     }
 
@@ -474,6 +514,7 @@ export class Bot {
 
             const threat = willProjectilePassNearPlayer(projectile, this.player)
             if (!threat) continue
+            if (!this.hasProjectileLineThreat(projectile)) continue
             if (Math.random() > this.config.dodgeChance) continue
 
             const perpX = -projectile.velocityY
@@ -495,17 +536,20 @@ export class Bot {
         const dist = Math.hypot(dx, dy)
         if (dist < 10) return true
 
-        const steps = Math.ceil(dist / LOS_STEP_SIZE)
-        const stepX = dx / steps
-        const stepY = dy / steps
+        const angle = Math.atan2(dy, dx)
+        const trace = Physics.rayTrace(this.player.x, this.player.y, angle, dist)
+        return !trace.hitWall || trace.distance >= dist - LOS_STEP_SIZE
+    }
 
-        for (let i = 1; i < steps; i++) {
-            const col = Math.floor((this.player.x + stepX * i) / PhysicsConstants.TILE_W)
-            const row = Math.floor((this.player.y + stepY * i) / PhysicsConstants.TILE_H)
-            if (Map.isBrick(col, row)) return false
-        }
+    hasProjectileLineThreat(projectile) {
+        const dx = this.player.x - projectile.x
+        const dy = this.player.y - projectile.y
+        const distance = Math.hypot(dx, dy)
+        if (distance < 1) return true
 
-        return true
+        const angle = Math.atan2(dy, dx)
+        const trace = Physics.rayTrace(projectile.x, projectile.y, angle, distance)
+        return !trace.hitWall || trace.distance >= distance - LOS_STEP_SIZE
     }
 
     checkStuck() {
@@ -557,7 +601,14 @@ export class Bot {
         this.player.facingLeft = facingLeft
         const goalAngle = this.clampAimAngle(Math.atan2(dy, dx), facingLeft)
         const diff = normalizeAngle(goalAngle - this.player.aimAngle)
-        this.player.aimAngle = normalizeAngle(this.player.aimAngle + diff * this.config.aimSpeed)
+
+        const angularDistance = Math.abs(diff)
+        const speed = this.config.aimSpeed * (1 + angularDistance * 0.4)
+        const jitter = (Math.random() - 0.5) * this.config.aimSpread * 0.15
+
+        this.player.aimAngle = normalizeAngle(
+            this.player.aimAngle + diff * Math.min(speed, 0.4) + jitter,
+        )
     }
 
     considerWeaponSwitch() {
@@ -586,7 +637,9 @@ export class Bot {
     }
 
     chooseWeaponForContext(distance) {
-        const prefs = WEAPON_PREFERENCES.find((entry) => distance < entry.maxDist) ?? WEAPON_PREFERENCES.at(-1)
+        const prefs =
+            WEAPON_PREFERENCES.find((entry) => distance < entry.maxDist) ??
+            WEAPON_PREFERENCES.at(-1)
         if (!prefs) return null
 
         if (
@@ -603,10 +656,18 @@ export class Bot {
             }
         }
 
-        if (distance < MEDIUM_RANGE && this.player.weapons[WeaponId.SHAFT] && this.hasAmmo(WeaponId.SHAFT)) {
+        if (
+            distance < MEDIUM_RANGE &&
+            this.player.weapons[WeaponId.SHAFT] &&
+            this.hasAmmo(WeaponId.SHAFT)
+        ) {
             return WeaponId.SHAFT
         }
-        if (distance >= MEDIUM_RANGE && this.player.weapons[WeaponId.RAIL] && this.hasAmmo(WeaponId.RAIL)) {
+        if (
+            distance >= MEDIUM_RANGE &&
+            this.player.weapons[WeaponId.RAIL] &&
+            this.hasAmmo(WeaponId.RAIL)
+        ) {
             return WeaponId.RAIL
         }
 
@@ -625,6 +686,23 @@ export class Bot {
     }
 
     wander() {
+        const items = Map.getItems()?.filter((i) => i.active !== false) ?? []
+        const highValue = items
+            .filter((i) => HIGH_VALUE_ITEMS.has(i.type))
+            .sort(
+                (a, b) =>
+                    distanceToPoint(this.player, itemWorldPosition(a)) -
+                    distanceToPoint(this.player, itemWorldPosition(b)),
+            )
+
+        if (highValue.length) {
+            const patrol = highValue[0]
+            this.targetPosition = itemWorldPosition(patrol)
+            this.decideMovement(null, this.targetPosition)
+            this.decideJump(this.targetPosition)
+            return
+        }
+
         this.moveDirection = Math.random() < 0.5 ? -1 : 1
         this.wantsToJump = Math.random() < this.config.jumpChance * 2
         this.wantsToFire = false
@@ -718,7 +796,9 @@ export class Bot {
 
         const dir = this.moveDirection
         const baseCol = Math.floor(this.player.x / PhysicsConstants.TILE_W)
-        const feetRow = Math.floor((this.player.y + PhysicsConstants.PLAYER_HALF_H) / PhysicsConstants.TILE_H)
+        const feetRow = Math.floor(
+            (this.player.y + PhysicsConstants.PLAYER_HALF_H) / PhysicsConstants.TILE_H,
+        )
 
         for (let step = 1; step <= PREJUMP_LOOKAHEAD_TILES; step++) {
             const col = baseCol + dir * step
@@ -731,7 +811,10 @@ export class Bot {
     }
 
     shouldDropDown() {
-        return this.routeTarget?.kind === 'drop' && Math.abs(this.routeTarget.x - this.player.x) <= PhysicsConstants.TILE_W
+        return (
+            this.routeTarget?.kind === 'drop' &&
+            Math.abs(this.routeTarget.x - this.player.x) <= PhysicsConstants.TILE_W
+        )
     }
 
     chooseRouteTarget(targetPosition) {
@@ -756,7 +839,10 @@ export class Bot {
         for (let offset = 1; offset <= ROUTE_SCAN_RANGE; offset++) {
             for (const dir of preferredDirections(sign(targetPosition.x - this.player.x))) {
                 const col = baseCol + dir * offset
-                const minRow = Math.max(1, Math.max(targetRow - 2, playerRow - CLIMB_ROW_SCAN_LIMIT))
+                const minRow = Math.max(
+                    1,
+                    Math.max(targetRow - 2, playerRow - CLIMB_ROW_SCAN_LIMIT),
+                )
                 for (let row = playerRow; row >= minRow; row--) {
                     if (!this.isStandableCell(col, row - 1)) continue
                     const x = col * PhysicsConstants.TILE_W + PhysicsConstants.TILE_W / 2
@@ -809,8 +895,7 @@ export class Bot {
         if (this.combatStyle === 'retreat') return true
         return (
             this.player.health + this.player.armor * 0.66 <
-                effectiveHp(target) - RETREAT_DISTANCE / 6 &&
-            this.player.health < 40
+                effectiveHp(target) - RETREAT_DISTANCE / 6 && this.player.health < 40
         )
     }
 
@@ -825,11 +910,7 @@ export class Bot {
     }
 
     isStandableCell(col, row) {
-        return (
-            !Map.isBrick(col, row) &&
-            !Map.isBrick(col, row + 1) &&
-            Map.isBrick(col, row + 2)
-        )
+        return !Map.isBrick(col, row) && !Map.isBrick(col, row + 1) && Map.isBrick(col, row + 2)
     }
 
     isWalkableHeadColumn(col, row) {
@@ -837,7 +918,11 @@ export class Bot {
     }
 
     findLandingRow(col, startRow) {
-        for (let row = startRow; row < Math.min(Map.getRows() - 2, startRow + DROP_SCAN_DEPTH); row++) {
+        for (
+            let row = startRow;
+            row < Math.min(Map.getRows() - 2, startRow + DROP_SCAN_DEPTH);
+            row++
+        ) {
             if (this.isStandableCell(col, row - 1)) {
                 return row + 1
             }
@@ -986,27 +1071,6 @@ function willProjectilePassNearPlayer(projectile, player) {
 
 function randomBotSkin() {
     return MULTIPLAYER_SKINS[randInt(MULTIPLAYER_SKINS.length)] ?? SkinId.RED
-}
-
-function rayTraceFromBot(player, angle, maxDistance) {
-    const originY = player.crouch
-        ? player.y + PhysicsConstants.WEAPON_ORIGIN_CROUCH_LIFT
-        : player.y
-    let x = player.x
-    let y = originY
-    const step = Math.max(4, LOS_STEP_SIZE)
-
-    for (let dist = step; dist <= maxDistance; dist += step) {
-        x = player.x + Math.cos(angle) * dist
-        y = originY + Math.sin(angle) * dist
-        const col = Math.floor(x / PhysicsConstants.TILE_W)
-        const row = Math.floor(y / PhysicsConstants.TILE_H)
-        if (Map.isBrick(col, row)) {
-            return { hitWall: true, x, y }
-        }
-    }
-
-    return { hitWall: false, x, y }
 }
 
 function preferredDirections(primary) {

@@ -103,7 +103,7 @@ function setupExplosionHandlers() {
         const projectileKind = PROJECTILE_KIND[type]
         if (projectileKind == null) return
 
-        const ownerId = proj?.ownerId ?? 0
+        const ownerId = proj?.ownerId ?? -1
         const attacker = BotManager.getAllPlayers().find((player) => player.id === ownerId)
         const pushScale = attacker?.quadDamage ? PhysicsConstants.QUAD_MULTIPLIER : 1
         const baseDamage = Physics.getExplosionBaseDamage(projectileKind)
@@ -124,7 +124,7 @@ function setupExplosionHandlers() {
             const damage = baseDamage * falloff
 
             if (damage > 0) {
-                player.takeDamage(damage, ownerId || player.id)
+                applyDamage(player, damage, attacker)
             }
         }
     })
@@ -1029,7 +1029,8 @@ function processProjectileHits(player) {
                 proj.ownerId === localPlayer.id && localPlayer.quadDamage
                     ? PhysicsConstants.QUAD_MULTIPLIER
                     : 1
-            player.takeDamage(baseDamage * multiplier, proj.ownerId)
+            const attacker = BotManager.getAllPlayers().find((entry) => entry.id === proj.ownerId) ?? null
+            applyDamage(player, baseDamage * multiplier, attacker)
         }
 
         Projectiles.explode(proj)
@@ -1120,7 +1121,7 @@ function applyHitscanDamage(attacker, damage, impact) {
     if (!impact?.target) return
     const multiplier = attacker.quadDamage ? PhysicsConstants.QUAD_MULTIPLIER : 1
     const finalDamage = computeShotDamage(damage, impact)
-    impact.target.takeDamage(finalDamage * multiplier, attacker.id)
+    applyDamage(impact.target, finalDamage * multiplier, attacker)
 }
 
 function computeShotDamage(baseDamage, impact) {
@@ -1142,9 +1143,15 @@ function applyMeleeDamage(attacker, hit, targets) {
     if (!target) return
 
     const multiplier = attacker.quadDamage ? PhysicsConstants.QUAD_MULTIPLIER : 1
-    target.takeDamage(hit.damage * multiplier, attacker.id)
+    applyDamage(target, hit.damage * multiplier, attacker)
     // Alternate between r1 and r2 hit sounds
     Sound.gauntlet(Math.random() < 0.5 ? 'hit1' : 'hit2')
+}
+
+function applyDamage(victim, damage, attacker = null) {
+    if (!victim || !Number.isFinite(damage) || damage <= 0) return
+    victim.takeDamage(damage, attacker?.id ?? victim.id)
+    BotManager.notifyDamage(victim, attacker)
 }
 
 function findMeleeTarget(attacker, hit, targets) {
