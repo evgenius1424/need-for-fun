@@ -7,10 +7,15 @@ import { ensureModelLoaded } from '../render/assets'
 const MIN_SPAWN_DISTANCE = 100
 const SPAWN_PROTECTION_FRAMES = PhysicsConstants.SPAWN_PROTECTION
 const TOP_SPAWN_CANDIDATES = 5
+const NAV_REBUILD_INTERVAL = 90
+const NAV_SAMPLE_COL_STEP = 4
+const NAV_SAMPLE_ROW_STEP = 3
 
 class BotManagerClass {
     bots = []
     allPlayers = []
+    matchTick = 0
+    navigationContext = { anchors: [], builtAtTick: 0 }
 
     init(localPlayer) {
         this.allPlayers = [localPlayer]
@@ -40,11 +45,18 @@ class BotManagerClass {
     }
 
     update() {
+        this.matchTick++
+        if (
+            this.navigationContext.anchors.length === 0 ||
+            this.matchTick - this.navigationContext.builtAtTick >= NAV_REBUILD_INTERVAL
+        ) {
+            this.navigationContext = this.buildNavigationContext()
+        }
         for (const bot of this.bots) {
             if (bot.player.dead && bot.player.respawnTimer <= 0) {
                 this.respawnBot(bot)
             }
-            bot.update(this.allPlayers)
+            bot.update(this.allPlayers, this.navigationContext)
         }
     }
 
@@ -80,6 +92,7 @@ class BotManagerClass {
         })
         bot.stuckTimer = 0
         bot.jumpCooldown = 0
+        if (bot.onRespawn) bot.onRespawn(this.matchTick)
     }
 
     initializePlayerAtSpawn(player, spawn) {
@@ -191,6 +204,72 @@ class BotManagerClass {
         return this.allPlayers
             .filter((p) => !p.dead)
             .reduce((min, p) => Math.min(min, Math.hypot(p.x - pos.x, p.y - pos.y)), Infinity)
+    }
+
+    buildNavigationContext() {
+        const anchors = this.collectNavigationAnchors()
+        return {
+            anchors,
+            builtAtTick: this.matchTick,
+        }
+    }
+
+    collectNavigationAnchors() {
+        const anchors = []
+        const cols = Map.getCols()
+        const rows = Map.getRows()
+        const items = Map.getItems() ?? []
+
+        for (const item of items) {
+            anchors.push({
+                kind: 'item',
+                x: item.col * PhysicsConstants.TILE_W + PhysicsConstants.TILE_W / 2,
+                y: item.row * PhysicsConstants.TILE_H + PhysicsConstants.TILE_H / 2,
+                value: this.getAnchorItemValue(item.type),
+            })
+        }
+
+        for (let col = 1; col < cols - 1; col += NAV_SAMPLE_COL_STEP) {
+            for (let row = 1; row < rows - 3; row += NAV_SAMPLE_ROW_STEP) {
+                if (!this.isStandableCell(col, row)) continue
+                const x = col * PhysicsConstants.TILE_W + PhysicsConstants.TILE_W / 2
+                const y = (row + 1) * PhysicsConstants.TILE_H - PhysicsConstants.PLAYER_HALF_H
+                anchors.push({
+                    kind: 'platform',
+                    x,
+                    y,
+                    value: 0.6,
+                })
+            }
+        }
+
+        return anchors
+    }
+
+    isStandableCell(col, row) {
+        return (
+            this.isInBounds(col, row) &&
+            this.isInBounds(col, row + 1) &&
+            this.isInBounds(col, row + 2) &&
+            !Map.isBrick(col, row) &&
+            !Map.isBrick(col, row + 1) &&
+            Map.isBrick(col, row + 2)
+        )
+    }
+
+    getAnchorItemValue(type) {
+        switch (type) {
+            case 'quad':
+            case 'health100':
+            case 'armor100':
+                return 1.6
+            case 'health50':
+            case 'armor50':
+            case 'weapon_rocket':
+                return 1.2
+            default:
+                return 0.85
+        }
     }
 }
 

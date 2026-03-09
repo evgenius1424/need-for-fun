@@ -108,6 +108,108 @@ const ROUTE_SCAN_RANGE = 12
 const DROP_SCAN_DEPTH = 12
 const CLIMB_ROW_SCAN_LIMIT = 8
 const LAST_KNOWN_DECAY = 180
+const MEMORY_CONFIDENCE_DECAY = {
+    easy: 0.1,
+    medium: 0.075,
+    hard: 0.055,
+}
+const MEMORY_CONFIDENCE_DECAY_VISIBLE = {
+    easy: 0.015,
+    medium: 0.01,
+    hard: 0.008,
+}
+const MEMORY_MIN_CONFIDENCE = 0.1
+const MEMORY_INFER_FRAMES = {
+    easy: 6,
+    medium: 9,
+    hard: 12,
+}
+const TARGET_COMMIT_FRAMES = {
+    easy: [8, 16],
+    medium: [12, 24],
+    hard: [18, 32],
+}
+const PLAN_COMMIT_FRAMES = {
+    easy: [7, 14],
+    medium: [10, 20],
+    hard: [14, 26],
+}
+const MOVEMENT_COMMIT_FRAMES = {
+    easy: [5, 10],
+    medium: [8, 16],
+    hard: [10, 20],
+}
+const REACTION_MISTAKE_CHANCE = {
+    easy: 0.18,
+    medium: 0.09,
+    hard: 0.04,
+}
+const REACTION_MISTAKE_DURATION = {
+    easy: [3, 8],
+    medium: [2, 6],
+    hard: [1, 4],
+}
+const FIRE_HESITATION_CHANCE = {
+    easy: 0.2,
+    medium: 0.12,
+    hard: 0.06,
+}
+const FIRE_HESITATION_DURATION = {
+    easy: [2, 6],
+    medium: [1, 4],
+    hard: [1, 3],
+}
+const REMEMBERED_TARGET_BIAS = {
+    easy: 0.16,
+    medium: 0.1,
+    hard: 0.06,
+}
+const STRESS_RESILIENCE = {
+    easy: 0.01,
+    medium: 0.014,
+    hard: 0.018,
+}
+const CONFIDENCE_RECOVERY = {
+    easy: 0.004,
+    medium: 0.006,
+    hard: 0.008,
+}
+const DAMAGE_STRESS_GAIN = 0.22
+const DAMAGE_CONFIDENCE_LOSS = 0.16
+const PURSUIT_STICKY_TICKS = 36
+const ROUTE_COMMIT_FRAMES = {
+    easy: [20, 36],
+    medium: [24, 42],
+    hard: [28, 50],
+}
+const ROUTE_REACHED_DISTANCE = PhysicsConstants.TILE_W * 0.8
+const TACTICAL_ANCHOR_SEARCH_RADIUS = PhysicsConstants.TILE_W * 10
+const INTENTION_COMMIT_FRAMES = {
+    easy: [10, 20],
+    medium: [14, 28],
+    hard: [18, 34],
+}
+const AIM_SETTLE_THRESHOLD = {
+    easy: 0.16,
+    medium: 0.12,
+    hard: 0.08,
+}
+const SOUND_AWARENESS_RANGE = {
+    easy: 280,
+    medium: 360,
+    hard: 460,
+}
+const SOUND_AWARENESS_VERTICAL = PhysicsConstants.TILE_H * 3.5
+const SOUND_MEMORY_CONFIDENCE_FLOOR = {
+    easy: 0.14,
+    medium: 0.2,
+    hard: 0.27,
+}
+const SOUND_MEMORY_NOISE = {
+    easy: 110,
+    medium: 85,
+    hard: 65,
+}
 
 export class Bot {
     player
@@ -138,6 +240,25 @@ export class Bot {
     routeTarget = null
     lastKnownEnemyPosition = null
     lastKnownEnemyTimer = 0
+    enemyMemory = new globalThis.Map()
+    personality = null
+    mentalState = null
+    targetCommitTimer = 0
+    planCommitTimer = 0
+    movementCommitTimer = 0
+    reactionDelayTimer = 0
+    fireHesitationTimer = 0
+    committedTargetId = null
+    committedPlanTargetId = null
+    committedMoveDirection = 0
+    perceivedTargetConfidence = 0
+    targetPerception = null
+    pursuitCommitTimer = 0
+    routeCommitTimer = 0
+    navigationContext = null
+    currentIntention = 'fight'
+    combatPrimitive = 'pressure'
+    intentionCommitTimer = 0
 
     constructor(difficulty = 'medium', skin = SkinId.RED) {
         let selectedDifficulty = difficulty
@@ -158,22 +279,40 @@ export class Bot {
         this.name = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]
         this.config = DIFFICULTY[selectedDifficulty] ?? DIFFICULTY.medium
         this.strafeDirection = Math.random() < 0.5 ? -1 : 1
+        this.personality = createPersonalityProfile(this.config)
+        this.mentalState = {
+            confidence: clamp(0.58 + this.personality.aimDiscipline * 0.35, 0.3, 0.95),
+            stress: 0.1,
+            lastDamageTimer: 0,
+            recentSuccess: 0,
+            recentFailure: 0,
+        }
     }
 
-    update(allPlayers) {
+    update(allPlayers, navigationContext = null) {
         if (this.player.dead) {
             this.clearInputs()
             return
         }
+        this.navigationContext = navigationContext
 
         if (this.weaponSwitchCooldown > 0) this.weaponSwitchCooldown--
         if (this.dodgeTimer > 0) this.dodgeTimer--
         else this.dodgeDirection = 0
         if (this.strafeTimer > 0) this.strafeTimer--
+        if (this.targetCommitTimer > 0) this.targetCommitTimer--
+        if (this.planCommitTimer > 0) this.planCommitTimer--
+        if (this.movementCommitTimer > 0) this.movementCommitTimer--
+        if (this.reactionDelayTimer > 0) this.reactionDelayTimer--
+        if (this.fireHesitationTimer > 0) this.fireHesitationTimer--
+        if (this.pursuitCommitTimer > 0) this.pursuitCommitTimer--
+        if (this.routeCommitTimer > 0) this.routeCommitTimer--
+        if (this.intentionCommitTimer > 0) this.intentionCommitTimer--
+        this.updateMentalState()
 
         if (--this.thinkTimer <= 0) {
             this.thinkTimer = this.config.reactionTime + randInt(5)
-            this.think(allPlayers)
+            this.think(allPlayers, navigationContext)
         }
 
         this.checkStuck()
@@ -184,9 +323,27 @@ export class Bot {
 
     onDamaged(fromPlayer) {
         this.thinkTimer = 0
+        this.mentalState.lastDamageTimer = 90
+        this.mentalState.stress = clamp(this.mentalState.stress + DAMAGE_STRESS_GAIN, 0, 1)
+        this.mentalState.confidence = clamp(this.mentalState.confidence - DAMAGE_CONFIDENCE_LOSS, 0, 1)
+        this.mentalState.recentFailure = clamp(this.mentalState.recentFailure + 0.2, 0, 2)
+        this.mentalState.recentSuccess = clamp(this.mentalState.recentSuccess - 0.12, 0, 2)
+
+        if (fromPlayer) {
+            this.updateEnemyMemory(fromPlayer, this.hasLineOfSight(fromPlayer))
+            const memory = this.enemyMemory.get(fromPlayer.id)
+            if (memory) memory.wasDamagedByRecently = 90
+        }
+
         if (fromPlayer && !this.target) {
-            this.lastKnownEnemyPosition = { x: fromPlayer.x, y: fromPlayer.y }
-            this.lastKnownEnemyTimer = LAST_KNOWN_DECAY
+            const memory = this.enemyMemory.get(fromPlayer.id)
+            if (memory) {
+                this.lastKnownEnemyPosition = { x: memory.lastSeenX, y: memory.lastSeenY }
+                this.lastKnownEnemyTimer = LAST_KNOWN_DECAY
+            } else {
+                this.lastKnownEnemyPosition = { x: fromPlayer.x, y: fromPlayer.y }
+                this.lastKnownEnemyTimer = LAST_KNOWN_DECAY
+            }
         }
     }
 
@@ -205,9 +362,12 @@ export class Bot {
         return result
     }
 
-    think(allPlayers) {
+    think(allPlayers, navigationContext = null) {
+        this.navigationContext = navigationContext ?? this.navigationContext
         const enemies = this.collectEnemies(allPlayers)
-        this.target = this.chooseEnemyTarget(enemies)
+        const perception = this.buildPerception(enemies)
+        this.targetPerception = perception
+        this.target = this.chooseEnemyTarget(enemies, perception)
         this.targetPosition = null
         this.aimTarget = null
         this.routeTarget = null
@@ -215,12 +375,18 @@ export class Bot {
 
         this.updateStrafeState()
         this.detectProjectileThreat()
+        this.maybeInjectReactionDelay(perception)
 
-        if (this.target && this.hasLineOfSight(this.target)) {
-            this.lastKnownEnemyPosition = { x: this.target.x, y: this.target.y }
-            this.lastKnownEnemyTimer = LAST_KNOWN_DECAY
-        } else if (this.lastKnownEnemyTimer > 0) {
-            this.lastKnownEnemyTimer--
+        this.syncLegacyLastKnown(perception)
+
+        if (this.reactionDelayTimer > 0) {
+            this.wantsToFire = false
+            this.aimTarget = this.lastKnownEnemyPosition ?? null
+            if (!this.targetPosition && this.lastKnownEnemyPosition) {
+                this.targetPosition = this.lastKnownEnemyPosition
+            }
+            if (!this.targetPosition) this.wander()
+            return
         }
 
         const shouldSeekItems = this.shouldSeekItems(enemies)
@@ -229,12 +395,10 @@ export class Bot {
         if (this.target) {
             const distance = distanceBetween(this.player, this.target)
             const engagement = this.getEngagementScore(this.target, enemies)
-            this.combatStyle = this.pickCombatStyle(this.target, distance, engagement)
-            this.targetPosition = this.resolveTargetPosition(this.target, this.itemTarget)
-            this.aimTarget = this.computeAimTarget(this.target)
+            this.maybeUpdatePlan(this.target, distance, engagement, perception)
             this.decideMovement(this.target, this.targetPosition)
             this.decideJump(this.targetPosition)
-            this.wantsToFire = this.shouldFireAtTarget(this.target, distance)
+            this.wantsToFire = this.shouldFireAtTarget(this.target, distance, perception)
         } else if (this.lastKnownEnemyTimer > 0 && this.lastKnownEnemyPosition) {
             this.combatStyle = 'aggressive'
             this.targetPosition = this.lastKnownEnemyPosition
@@ -259,31 +423,58 @@ export class Bot {
         return allPlayers.filter((other) => this.isValidTarget(other))
     }
 
-    chooseEnemyTarget(enemies) {
+    chooseEnemyTarget(enemies, perception = null) {
+        const commitCandidate = this.getCommittedTarget(enemies, perception)
+        if (commitCandidate) return commitCandidate
+
+        const visibleEnemies =
+            perception?.visibleEnemies ?? enemies.filter((enemy) => this.canObserveEnemy(enemy))
+        const rememberedEnemies = perception?.rememberedEnemies ?? []
+        const preferRemembered =
+            rememberedEnemies.length > 0 &&
+            visibleEnemies.length > 0 &&
+            Math.random() < REMEMBERED_TARGET_BIAS[this.getDifficultyKey()] * (1 + this.mentalState.stress * 0.6)
+
+        if (preferRemembered) {
+            const biased = this.pickRememberedTargetCandidate(rememberedEnemies, enemies)
+            if (biased) {
+                this.commitTarget(biased.id)
+                return biased
+            }
+        }
+
         const visibleCloseEnemies = enemies.filter(
             (enemy) =>
                 distanceBetween(this.player, enemy) < MEDIUM_RANGE * 0.85 &&
-                this.hasLineOfSight(enemy),
+                this.canObserveEnemy(enemy),
         )
         const pool = visibleCloseEnemies.length ? visibleCloseEnemies : enemies
         let best = null
         let bestScore = -Infinity
 
         for (const enemy of pool) {
-            const distance = distanceBetween(this.player, enemy)
+            const visible = this.canObserveEnemy(enemy)
+            const memory = this.enemyMemory.get(enemy.id)
+            const inferred = this.inferEnemyPosition(memory)
+            const perceivedPos = visible ? enemy : inferred
+            if (!visible && !perceivedPos) continue
+
+            const distance = distanceToPoint(this.player, perceivedPos ?? enemy)
             const weakness = 1 - effectiveHp(enemy) / 200
             const threat = enemy.quadDamage ? 0.6 : 0
-            const visibility = this.hasLineOfSight(enemy) ? 0.35 : 0
+            const visibility = visible ? 0.35 : 0
+            const confidence = memory?.confidence ?? (visible ? 1 : 0.2)
             const finishingBonus = enemy.health <= 35 ? 0.6 : 0
             const closeEngageBonus =
                 distance < CLOSE_RANGE * 1.5 ? 1.4 : distance < MEDIUM_RANGE ? 0.5 : 0
             const score =
                 1 / Math.max(distance, 1) +
                 weakness * 0.8 +
-                visibility +
+                visibility * 1.3 +
                 closeEngageBonus +
                 finishingBonus -
                 threat +
+                confidence * 0.6 +
                 (enemy === this.target ? TARGET_STICKINESS_BONUS : 0)
             if (score > bestScore) {
                 bestScore = score
@@ -291,6 +482,7 @@ export class Bot {
             }
         }
 
+        if (best) this.commitTarget(best.id)
         return best
     }
 
@@ -355,6 +547,11 @@ export class Bot {
     }
 
     shouldSeekItems(enemies) {
+        const observedEnemy = enemies.find((enemy) => this.canObserveEnemy(enemy))
+        if (observedEnemy) {
+            const dist = distanceBetween(this.player, observedEnemy)
+            if (dist < MEDIUM_RANGE * 1.8) return false
+        }
         if (this.player.quadDamage) return false
         if (this.seekItemsTimer > 0) {
             this.seekItemsTimer--
@@ -376,7 +573,10 @@ export class Bot {
             (best, enemy) => Math.min(best, distanceBetween(this.player, enemy)),
             Infinity,
         )
-        if (nearestEnemy > MEDIUM_RANGE * 1.1 && Math.random() < this.config.itemAwareness) {
+        if (
+            nearestEnemy > MEDIUM_RANGE * (1.05 + this.personality.greedBias * 0.2) &&
+            Math.random() < this.config.itemAwareness * (0.8 + this.personality.greedBias * 0.4)
+        ) {
             this.seekItemsTimer = randRange(3, 5)
             return true
         }
@@ -400,7 +600,8 @@ export class Bot {
         if (!target) return 'aggressive'
         if (this.player.quadDamage) return 'aggressive'
 
-        const retreatThreshold = this.config.retreatThreshold
+        const retreatThreshold =
+            this.config.retreatThreshold + this.personality.panicThreshold * 12 + this.mentalState.stress * 14
         if (this.player.health < 15) return 'retreat'
         if (
             this.player.health < retreatThreshold ||
@@ -413,7 +614,7 @@ export class Bot {
             return 'aggressive'
         }
 
-        const roll = Math.random()
+        const roll = Math.random() + this.personality.aggressionBias * 0.12 - this.mentalState.stress * 0.08
         if (this.config.strafeSkill < 0.3) {
             if (roll < 0.7) return 'aggressive'
             if (roll < 0.9) return 'strafe'
@@ -438,38 +639,71 @@ export class Bot {
             return itemWorldPosition(itemTarget)
         }
         if (!target) return itemTarget ? itemWorldPosition(itemTarget) : null
+        if (this.canObserveEnemy(target)) return { x: target.x, y: target.y }
+
+        const memory = this.enemyMemory.get(target.id)
+        const inferred = this.inferEnemyPosition(memory)
+        if (inferred && (!this.hasLineOfSight(target) || (memory?.confidence ?? 0) < 0.7)) {
+            return inferred
+        }
         return { x: target.x, y: target.y }
     }
 
     computeAimTarget(target) {
         if (!target) return null
+        const memory = this.enemyMemory.get(target.id)
+        const inferred = this.inferEnemyPosition(memory)
+        const canSee = this.canObserveEnemy(target)
+        const anchor = canSee ? target : inferred ?? target
         const weaponId = this.player.currentWeapon
         if (!PROJECTILE_WEAPONS.has(weaponId)) {
-            return { x: target.x, y: target.y }
+            return { x: anchor.x, y: anchor.y }
         }
 
         const speed = Math.max(1, PhysicsConstants.getProjectileSpeed(weaponId) || 1)
-        const dx = target.x - this.player.x
-        const dy = target.y - this.player.y
+        const dx = anchor.x - this.player.x
+        const dy = anchor.y - this.player.y
         const distance = Math.hypot(dx, dy)
         const timeToTarget = distance / speed
-        const leadScale = this.config.leadFactor
-        const leadX = target.x + target.velocityX * timeToTarget * leadScale
-        const leadY = target.y + target.velocityY * timeToTarget * leadScale
+        const leadScale =
+            this.config.leadFactor * (0.85 + this.personality.aimDiscipline * 0.35) * (0.8 + this.mentalState.confidence * 0.25)
+        const velocityX = canSee ? target.velocityX : memory?.lastSeenVelocityX ?? 0
+        const velocityY = canSee ? target.velocityY : memory?.lastSeenVelocityY ?? 0
+        const leadX = anchor.x + velocityX * timeToTarget * leadScale
+        const leadY = anchor.y + velocityY * timeToTarget * leadScale
         const maxOffset = Math.max(24, distance * 0.5)
-        const offsetX = clamp(leadX - target.x, -maxOffset, maxOffset)
-        const offsetY = clamp(leadY - target.y, -maxOffset, maxOffset)
+        const offsetX = clamp(leadX - anchor.x, -maxOffset, maxOffset)
+        const offsetY = clamp(leadY - anchor.y, -maxOffset, maxOffset)
 
-        return { x: target.x + offsetX, y: target.y + offsetY }
+        return { x: anchor.x + offsetX, y: anchor.y + offsetY }
     }
 
-    shouldFireAtTarget(target, distance) {
+    shouldFireAtTarget(target, distance, perception = null) {
         if (!target) return false
         if (distance >= FIRE_RANGE) return false
         if (!this.hasLineOfSight(target)) return false
+        const confidence = this.getTargetConfidence(target, perception)
         if (this.combatStyle === 'retreat' && distance < CLOSE_RANGE && this.player.health < 20) {
             return false
         }
+        if (this.fireHesitationTimer > 0) return false
+        if (confidence < 0.45 && this.shouldHesitateBeforeFire()) {
+            this.fireHesitationTimer = randRange(...FIRE_HESITATION_DURATION[this.getDifficultyKey()])
+            return false
+        }
+        if (this.combatPrimitive === 'closeGap' && distance > this.getPreferredWeaponDistance() * 1.15) {
+            return false
+        }
+        if (
+            this.player.currentWeapon === WeaponId.RAIL &&
+            (this.combatPrimitive === 'peek' || this.combatPrimitive === 'hold') &&
+            !this.isAimAligned(target, AIM_SETTLE_THRESHOLD[this.getDifficultyKey()])
+        ) {
+            return false
+        }
+        const shotWindowScore = this.getShotWindowScore(target, distance, confidence)
+        const shotThreshold = this.getDifficultyKey() === 'easy' ? 0.5 : this.getDifficultyKey() === 'hard' ? 0.34 : 0.42
+        if (shotWindowScore < shotThreshold) return false
         if (
             PROJECTILE_WEAPONS.has(this.player.currentWeapon) &&
             this.shouldAvoidExplosiveShot(target, distance)
@@ -559,7 +793,14 @@ export class Bot {
         if (!moved && !this.player.dead) {
             this.stuckTimer++
             if (this.stuckTimer > STUCK_JUMP_THRESHOLD) {
-                this.wantsToJump = true
+                const escapeDirection = this.findJumpEscapeDirection(this.targetPosition ?? this.target)
+                if (escapeDirection !== 0 && this.player.isOnGround()) {
+                    // In low ceilings/pits, side-step to a jumpable column instead of bunny-jumping in place.
+                    this.moveDirection = escapeDirection
+                    this.wantsToJump = false
+                } else {
+                    this.wantsToJump = true
+                }
             }
             if (this.stuckTimer > STUCK_REVERSE_THRESHOLD) {
                 this.moveDirection = -this.moveDirection || 1
@@ -603,8 +844,11 @@ export class Bot {
         const diff = normalizeAngle(goalAngle - this.player.aimAngle)
 
         const angularDistance = Math.abs(diff)
-        const speed = this.config.aimSpeed * (1 + angularDistance * 0.4)
-        const jitter = (Math.random() - 0.5) * this.config.aimSpread * 0.15
+        const steadiness = this.personality.aimDiscipline * (0.7 + this.mentalState.confidence * 0.4)
+        const stressPenalty = 1 - this.mentalState.stress * 0.35
+        const speed = this.config.aimSpeed * (0.7 + steadiness * 0.45) * (1 + angularDistance * 0.4) * stressPenalty
+        const jitterScale = clamp(1.35 - steadiness + this.mentalState.stress * 0.8, 0.45, 1.8)
+        const jitter = (Math.random() - 0.5) * this.config.aimSpread * 0.15 * jitterScale
 
         this.player.aimAngle = normalizeAngle(
             this.player.aimAngle + diff * Math.min(speed, 0.4) + jitter,
@@ -718,50 +962,80 @@ export class Bot {
         const dx = targetPosition.x - this.player.x
         const distance = Math.abs(dx)
         const directionToTarget = sign(dx)
-        const route = this.chooseRouteTarget(targetPosition)
+        const route = this.chooseRouteTarget(targetPosition, target)
         const routeDirection = route ? sign(route.x - this.player.x) : 0
         this.routeTarget = route
+        const shouldPursue =
+            !!target &&
+            (this.pursuitCommitTimer > 0 || !this.hasLineOfSight(target)) &&
+            this.combatStyle !== 'retreat'
 
         if (this.dodgeTimer > 0) {
             this.moveDirection = this.dodgeDirection
             return
         }
 
-        switch (this.combatStyle) {
-            case 'retreat':
-                if (this.itemTarget) {
-                    this.moveDirection = routeDirection || directionToTarget
-                } else {
-                    this.moveDirection = -directionToTarget || this.strafeDirection
-                }
-                break
-            case 'strafe':
-                this.moveDirection = this.strafeDirection
-                if (distance > MEDIUM_RANGE * 1.25) {
-                    this.moveDirection = routeDirection || directionToTarget
-                }
-                break
-            case 'circle':
-                if (distance < CLOSE_RANGE * 0.85) {
-                    this.moveDirection = -directionToTarget || this.strafeDirection
-                } else if (distance > MEDIUM_RANGE) {
-                    this.moveDirection = routeDirection || directionToTarget
-                } else {
+        if (shouldPursue) {
+            this.moveDirection = routeDirection || directionToTarget || this.strafeDirection
+            if (this.moveDirection !== 0) this.committedMoveDirection = this.moveDirection
+            return
+        }
+
+        const primitiveDirection = this.resolvePrimitiveMoveDirection(
+            target,
+            directionToTarget,
+            routeDirection,
+            distance,
+        )
+        if (primitiveDirection != null) {
+            this.moveDirection = primitiveDirection
+        } else {
+
+            switch (this.combatStyle) {
+                case 'retreat':
+                    if (this.itemTarget) {
+                        this.moveDirection = routeDirection || directionToTarget
+                    } else {
+                        this.moveDirection = -directionToTarget || this.strafeDirection
+                    }
+                    break
+                case 'strafe':
                     this.moveDirection = this.strafeDirection
-                }
-                break
-            case 'aggressive':
-            default:
-                if (distance > 24) {
-                    this.moveDirection = routeDirection || directionToTarget
-                } else {
-                    this.moveDirection = this.strafeDirection
-                }
-                break
+                    if (distance > MEDIUM_RANGE * 1.25) {
+                        this.moveDirection = routeDirection || directionToTarget
+                    }
+                    break
+                case 'circle':
+                    if (distance < CLOSE_RANGE * 0.85) {
+                        this.moveDirection = -directionToTarget || this.strafeDirection
+                    } else if (distance > MEDIUM_RANGE) {
+                        this.moveDirection = routeDirection || directionToTarget
+                    } else {
+                        this.moveDirection = this.strafeDirection
+                    }
+                    break
+                case 'aggressive':
+                default:
+                    if (distance > 24) {
+                        this.moveDirection = routeDirection || directionToTarget
+                    } else {
+                        this.moveDirection = this.strafeDirection
+                    }
+                    break
+            }
         }
 
         if (this.shouldRetreatFrom(target)) {
             this.moveDirection = -sign(target.x - this.player.x) || this.moveDirection
+        }
+
+        if (this.dodgeTimer <= 0) {
+            if (this.movementCommitTimer > 0) {
+                this.moveDirection = this.committedMoveDirection || this.moveDirection
+            } else {
+                this.committedMoveDirection = this.moveDirection
+                this.movementCommitTimer = randRange(...MOVEMENT_COMMIT_FRAMES[this.getDifficultyKey()])
+            }
         }
     }
 
@@ -771,8 +1045,17 @@ export class Bot {
 
         const dy = targetPosition.y - this.player.y
         const verticalThreshold = PhysicsConstants.TILE_H * 1.5
-        const route = this.routeTarget ?? this.chooseRouteTarget(targetPosition)
+        const route = this.routeTarget ?? this.chooseRouteTarget(targetPosition, this.target)
         const platformDirection = route ? sign(route.x - this.player.x) : 0
+        const lowCeiling = this.hasLowCeilingForJump()
+        if (lowCeiling && this.player.isOnGround()) {
+            const escapeDirection = this.findJumpEscapeDirection(targetPosition)
+            if (escapeDirection !== 0) {
+                this.moveDirection = escapeDirection
+                this.wantsToJump = false
+                return
+            }
+        }
 
         if (platformDirection !== 0) {
             this.moveDirection = platformDirection
@@ -785,6 +1068,10 @@ export class Bot {
             this.isBlockedAhead() ||
             this.stuckTimer > 10 ||
             Math.random() < this.config.jumpChance
+
+        if (lowCeiling && this.wantsToJump && this.player.isOnGround()) {
+            this.wantsToJump = false
+        }
 
         if (dy > verticalThreshold && this.player.isOnGround()) {
             this.wantsToJump = false
@@ -817,17 +1104,35 @@ export class Bot {
         )
     }
 
-    chooseRouteTarget(targetPosition) {
+    chooseRouteTarget(targetPosition, target = null) {
         if (!targetPosition) return null
 
-        const verticalDelta = targetPosition.y - this.player.y
-        if (Math.abs(verticalDelta) <= PhysicsConstants.TILE_H * 1.25) {
-            return null
+        if (
+            this.routeTarget &&
+            this.routeCommitTimer > 0 &&
+            !this.hasReachedRouteTarget(this.routeTarget) &&
+            !this.shouldInvalidateRouteTarget(this.routeTarget, targetPosition)
+        ) {
+            return this.routeTarget
         }
 
-        return verticalDelta < 0
-            ? this.findClimbRoute(targetPosition)
-            : this.findDropRoute(targetPosition)
+        const verticalDelta = targetPosition.y - this.player.y
+        let route =
+            Math.abs(verticalDelta) > PhysicsConstants.TILE_H * 1.25
+                ? verticalDelta < 0
+                    ? this.findClimbRoute(targetPosition)
+                    : this.findDropRoute(targetPosition)
+                : null
+
+        const tacticalRoute = this.chooseTacticalAnchorRoute(targetPosition, target)
+        if (tacticalRoute && (!route || tacticalRoute.score < route.score)) {
+            route = tacticalRoute
+        }
+
+        if (route) {
+            this.routeCommitTimer = randRange(...ROUTE_COMMIT_FRAMES[this.getDifficultyKey()])
+        }
+        return route
     }
 
     findClimbRoute(targetPosition) {
@@ -888,6 +1193,108 @@ export class Bot {
         }
 
         return best
+    }
+
+    chooseTacticalAnchorRoute(targetPosition, target) {
+        const anchors = this.navigationContext?.anchors
+        if (!anchors?.length) return null
+
+        let best = null
+        let bestScore = Infinity
+        const maxRange = TACTICAL_ANCHOR_SEARCH_RADIUS
+
+        for (const anchor of anchors) {
+            const distToSelf = distanceToPoint(this.player, anchor)
+            if (distToSelf > maxRange) continue
+
+            const distToGoal = distanceToPoint(anchor, targetPosition)
+            if (distToGoal > maxRange * 1.25) continue
+
+            const score = this.scoreAnchorRoute(anchor, targetPosition, target)
+            if (score < bestScore) {
+                bestScore = score
+                best = {
+                    kind: `anchor:${anchor.kind}`,
+                    x: anchor.x,
+                    y: anchor.y,
+                    score,
+                }
+            }
+        }
+
+        return best
+    }
+
+    scoreAnchorRoute(anchor, targetPosition, target) {
+        const tileW = PhysicsConstants.TILE_W
+        const travelTiles =
+            (distanceToPoint(this.player, anchor) + distanceToPoint(anchor, targetPosition)) /
+            tileW
+        const verticalTiles = Math.abs(anchor.y - this.player.y) / PhysicsConstants.TILE_H
+        const goalDeltaTiles = Math.abs(anchor.y - targetPosition.y) / PhysicsConstants.TILE_H
+        const exposureRisk = this.estimateExposureRisk(anchor, target)
+        const coverScore = this.estimateCoverScore(anchor)
+        const healthState = effectiveHp(this.player)
+        const weak = healthState < 70
+        const fastBias = this.personality.aggressionBias * 0.4 + this.personality.chaseBias * 0.4
+        const speedWeight = clamp(1.15 - fastBias, 0.72, 1.2)
+        const safetyWeight = weak ? 3.6 : 2.1
+        const valueBias = (anchor.value ?? 0.6) * (this.itemTarget ? 1.1 : 0.6)
+
+        return (
+            travelTiles * speedWeight +
+            verticalTiles * 1.4 +
+            goalDeltaTiles * 0.9 +
+            exposureRisk * safetyWeight -
+            coverScore * (weak ? 2.4 : 1.1) -
+            valueBias
+        )
+    }
+
+    estimateExposureRisk(point, target) {
+        const openness = 1 - this.estimateCoverScore(point)
+        if (!target) return openness * 0.8
+
+        const dx = target.x - point.x
+        const dy = target.y - point.y
+        const dist = Math.hypot(dx, dy)
+        if (dist < 1) return openness
+
+        const angle = Math.atan2(dy, dx)
+        const trace = Physics.rayTrace(point.x, point.y, angle, dist)
+        const blocked = trace?.hitWall && trace.distance < dist - LOS_STEP_SIZE
+        const lineRisk = blocked ? 0.2 : 1
+        return clamp(openness * 0.55 + lineRisk * 0.75, 0, 1)
+    }
+
+    estimateCoverScore(point) {
+        const col = Math.floor(point.x / PhysicsConstants.TILE_W)
+        const row = Math.floor(point.y / PhysicsConstants.TILE_H)
+        let solid = 0
+        let samples = 0
+
+        for (let dc = -2; dc <= 2; dc++) {
+            for (let dr = -2; dr <= 1; dr++) {
+                samples++
+                if (Map.isBrick(col + dc, row + dr)) solid++
+            }
+        }
+
+        if (samples <= 0) return 0
+        return clamp(solid / samples, 0, 1)
+    }
+
+    hasReachedRouteTarget(routeTarget) {
+        return distanceToPoint(this.player, routeTarget) <= ROUTE_REACHED_DISTANCE
+    }
+
+    shouldInvalidateRouteTarget(routeTarget, goalPosition) {
+        if (!routeTarget || !goalPosition) return true
+        const routeToGoal = distanceToPoint(routeTarget, goalPosition)
+        const selfToGoal = distanceToPoint(this.player, goalPosition)
+        if (routeToGoal > selfToGoal * 1.5) return true
+        if (this.stuckTimer > STUCK_JUMP_THRESHOLD) return true
+        return false
     }
 
     shouldRetreatFrom(target) {
@@ -963,6 +1370,538 @@ export class Bot {
         this.routeTarget = null
         this.dodgeDirection = 0
         this.dodgeTimer = 0
+    }
+
+    updateMentalState() {
+        if (this.mentalState.lastDamageTimer > 0) this.mentalState.lastDamageTimer--
+        this.mentalState.stress = clamp(
+            this.mentalState.stress - STRESS_RESILIENCE[this.getDifficultyKey()] * (this.mentalState.lastDamageTimer > 0 ? 0.35 : 1),
+            0,
+            1,
+        )
+        this.mentalState.confidence = clamp(
+            this.mentalState.confidence + CONFIDENCE_RECOVERY[this.getDifficultyKey()] * (1 - this.mentalState.stress * 0.5),
+            0,
+            1,
+        )
+    }
+
+    buildPerception(enemies) {
+        const visibleEnemies = []
+        const rememberedEnemies = []
+        const liveIds = new Set()
+
+        for (const enemy of enemies) {
+            liveIds.add(enemy.id)
+            const visible = this.canObserveEnemy(enemy)
+            if (visible) visibleEnemies.push(enemy)
+            const sensed = !visible && this.canSenseEnemy(enemy)
+            this.updateEnemyMemory(enemy, visible, sensed)
+
+            const memory = this.enemyMemory.get(enemy.id)
+            if (memory && memory.confidence > MEMORY_MIN_CONFIDENCE) {
+                rememberedEnemies.push({
+                    enemyId: enemy.id,
+                    confidence: memory.confidence,
+                    inferredPosition: this.inferEnemyPosition(memory),
+                    visible,
+                })
+            }
+        }
+
+        for (const [enemyId, memory] of this.enemyMemory.entries()) {
+            if (liveIds.has(enemyId)) {
+                if (memory.wasDamagedByRecently > 0) memory.wasDamagedByRecently--
+                continue
+            }
+            memory.confidence = clamp(memory.confidence - MEMORY_CONFIDENCE_DECAY[this.getDifficultyKey()] * 2, 0, 1)
+            if (memory.wasDamagedByRecently > 0) memory.wasDamagedByRecently--
+            if (memory.confidence <= 0.01) this.enemyMemory.delete(enemyId)
+        }
+
+        return { visibleEnemies, rememberedEnemies }
+    }
+
+    updateEnemyMemory(enemy, visible, sensed = false) {
+        if (!enemy) return
+        const existing = this.enemyMemory.get(enemy.id) ?? {
+            id: enemy.id,
+            // If first contact is via "sound/sense", keep this deliberately imprecise.
+            lastSeenX: enemy.x + (Math.random() - 0.5) * 2 * SOUND_MEMORY_NOISE[this.getDifficultyKey()],
+            lastSeenY: enemy.y + (Math.random() - 0.5) * 2 * SOUND_MEMORY_NOISE[this.getDifficultyKey()] * 0.6,
+            lastSeenVelocityX: enemy.velocityX ?? 0,
+            lastSeenVelocityY: enemy.velocityY ?? 0,
+            lastSeenTick: 0,
+            confidence: 0,
+            lastSeenWeapon: enemy.currentWeapon,
+            wasDamagedByRecently: 0,
+        }
+
+        if (visible) {
+            existing.lastSeenX = enemy.x
+            existing.lastSeenY = enemy.y
+            existing.lastSeenVelocityX = enemy.velocityX ?? 0
+            existing.lastSeenVelocityY = enemy.velocityY ?? 0
+            existing.lastSeenTick = LAST_KNOWN_DECAY
+            existing.lastSeenWeapon = enemy.currentWeapon
+            existing.confidence = clamp(existing.confidence + 0.32 + this.config.itemAwareness * 0.2, 0, 1)
+        } else {
+            existing.lastSeenTick = Math.max(0, existing.lastSeenTick - 1)
+            existing.confidence = clamp(
+                existing.confidence - MEMORY_CONFIDENCE_DECAY[this.getDifficultyKey()],
+                0,
+                1,
+            )
+            if (sensed) {
+                // Keep a rough pursuit hint from nearby noise/motion without granting perfect tracking.
+                const noise = SOUND_MEMORY_NOISE[this.getDifficultyKey()]
+                existing.lastSeenX = enemy.x + (Math.random() - 0.5) * 2 * noise
+                existing.lastSeenY = enemy.y + (Math.random() - 0.5) * 2 * noise * 0.6
+                existing.lastSeenVelocityX = (enemy.velocityX ?? 0) * 0.5
+                existing.lastSeenVelocityY = (enemy.velocityY ?? 0) * 0.5
+                existing.confidence = Math.max(
+                    existing.confidence,
+                    SOUND_MEMORY_CONFIDENCE_FLOOR[this.getDifficultyKey()],
+                )
+                existing.lastSeenTick = Math.max(existing.lastSeenTick, Math.floor(LAST_KNOWN_DECAY * 0.4))
+            }
+        }
+
+        if (visible) {
+            existing.confidence = clamp(
+                existing.confidence - MEMORY_CONFIDENCE_DECAY_VISIBLE[this.getDifficultyKey()],
+                0,
+                1,
+            )
+        }
+
+        this.enemyMemory.set(enemy.id, existing)
+    }
+
+    inferEnemyPosition(memory) {
+        if (!memory || memory.confidence <= MEMORY_MIN_CONFIDENCE) return null
+        const inferFrames = MEMORY_INFER_FRAMES[this.getDifficultyKey()]
+        const uncertainty = clamp(1 - memory.confidence, 0, 1)
+        const vx = memory.lastSeenVelocityX * inferFrames * (0.6 + this.config.leadFactor * 0.5)
+        const vy = memory.lastSeenVelocityY * inferFrames * (0.6 + this.config.leadFactor * 0.5)
+        return {
+            x: memory.lastSeenX + vx * (1 - uncertainty * 0.55),
+            y: memory.lastSeenY + vy * (1 - uncertainty * 0.55),
+        }
+    }
+
+    getCommittedTarget(enemies, perception) {
+        if (this.targetCommitTimer <= 0 || this.committedTargetId == null) return null
+        const candidate = enemies.find((enemy) => enemy.id === this.committedTargetId) ?? null
+        if (!candidate) return null
+        const confidence = this.getTargetConfidence(candidate, perception)
+        if (confidence < MEMORY_MIN_CONFIDENCE) return null
+        return candidate
+    }
+
+    commitTarget(targetId) {
+        if (targetId == null) return
+        const [minFrames, maxFrames] = TARGET_COMMIT_FRAMES[this.getDifficultyKey()]
+        this.committedTargetId = targetId
+        this.targetCommitTimer = randRange(minFrames, maxFrames)
+    }
+
+    pickRememberedTargetCandidate(rememberedEnemies, enemies) {
+        let best = null
+        let bestScore = -Infinity
+        for (const memoryEntry of rememberedEnemies) {
+            const enemy = enemies.find((entry) => entry.id === memoryEntry.enemyId)
+            if (!enemy || memoryEntry.visible) continue
+            const memory = this.enemyMemory.get(enemy.id)
+            if (!memory) continue
+            const distance = distanceToPoint(this.player, memoryEntry.inferredPosition ?? { x: memory.lastSeenX, y: memory.lastSeenY })
+            const damageBias = memory.wasDamagedByRecently > 0 ? 0.22 : 0
+            const score = memoryEntry.confidence * 1.2 + 1 / Math.max(distance, 32) + damageBias
+            if (score > bestScore) {
+                bestScore = score
+                best = enemy
+            }
+        }
+        return best
+    }
+
+    maybeUpdatePlan(target, distance, engagement, perception) {
+        const targetId = target?.id ?? null
+        const targetVisible = target ? this.canObserveEnemy(target) : false
+        const targetHasFightLine = target ? this.hasLineOfSight(target) : false
+        const confidence = this.getTargetConfidence(target, perception)
+        const intention = this.chooseIntention(target, distance, engagement, confidence)
+        this.currentIntention = intention
+        if (
+            this.planCommitTimer > 0 &&
+            this.committedPlanTargetId != null &&
+            this.committedPlanTargetId === targetId &&
+            this.targetPosition &&
+            (targetVisible || confidence > 0.22)
+        ) {
+            this.aimTarget = this.computeAimTarget(target)
+            return
+        }
+
+        if (intention === 'disengage') {
+            this.combatStyle = 'retreat'
+        } else if (intention === 'holdAngle') {
+            this.combatStyle = 'strafe'
+        } else if (intention === 'reposition') {
+            this.combatStyle = 'circle'
+        } else {
+            this.combatStyle = this.pickCombatStyle(target, distance, engagement)
+        }
+
+        if (!targetHasFightLine && confidence > 0.2 && this.combatStyle !== 'retreat') {
+            // We know where the enemy is, but cannot shoot yet: commit to pursuit over local dancing.
+            this.combatStyle = 'aggressive'
+            this.pursuitCommitTimer = PURSUIT_STICKY_TICKS
+        }
+        if (intention === 'seekItem' && this.itemTarget) {
+            this.targetPosition = itemWorldPosition(this.itemTarget)
+        } else if (intention === 'holdAngle' && target) {
+            this.targetPosition = this.chooseHoldPosition(target)
+        } else {
+            this.targetPosition = this.resolveTargetPosition(target, this.itemTarget)
+        }
+        this.combatPrimitive = this.pickCombatPrimitive(target, distance, confidence, intention)
+        this.aimTarget = this.computeAimTarget(target)
+        this.perceivedTargetConfidence = confidence
+        this.committedPlanTargetId = targetId
+        this.planCommitTimer = randRange(...PLAN_COMMIT_FRAMES[this.getDifficultyKey()])
+    }
+
+    chooseIntention(target, distance, engagement, confidence) {
+        if (!target) return 'reposition'
+        if (this.intentionCommitTimer > 0) return this.currentIntention
+
+        const hasFightLine = this.hasLineOfSight(target)
+        const hp = effectiveHp(this.player)
+        const lowHp = hp < 65
+        const railLike =
+            this.player.currentWeapon === WeaponId.RAIL || this.player.currentWeapon === WeaponId.MACHINE
+        const itemNeed = this.itemTarget ? this.scoreItem(this.itemTarget) * 42 : -Infinity
+
+        const scores = {
+            fight:
+                confidence * 1.3 +
+                (hasFightLine ? 0.5 : -0.1) +
+                clamp(engagement * 0.35, -0.7, 0.8) +
+                (distance < MEDIUM_RANGE ? 0.22 : -0.12),
+            chase:
+                confidence * 1.1 +
+                (hasFightLine ? -0.3 : 0.8) +
+                this.personality.chaseBias * 0.5 +
+                clamp((distance - CLOSE_RANGE) / MEDIUM_RANGE, -0.3, 0.5),
+            seekItem:
+                itemNeed > 0 ? clamp(itemNeed, -1, 1.1) + (lowHp ? 0.7 : 0.12) : -Infinity,
+            disengage:
+                (lowHp ? 0.7 : 0) +
+                this.mentalState.stress * 0.65 -
+                this.personality.aggressionBias * 0.35 -
+                clamp(engagement * 0.25, -0.3, 0.45),
+            holdAngle:
+                (railLike ? 0.35 : 0) +
+                (hasFightLine ? 0.25 : -0.25) +
+                (distance > MEDIUM_RANGE * 0.8 ? 0.2 : -0.15),
+            reposition:
+                0.3 +
+                (hasFightLine ? 0.08 : 0.45) +
+                (distance < CLOSE_RANGE * 0.8 ? 0.22 : 0) +
+                this.mentalState.stress * 0.18,
+        }
+
+        if (this.currentIntention in scores) scores[this.currentIntention] += 0.12
+
+        let bestIntention = 'fight'
+        let bestScore = -Infinity
+        for (const [intention, score] of Object.entries(scores)) {
+            if (score > bestScore) {
+                bestScore = score
+                bestIntention = intention
+            }
+        }
+
+        this.intentionCommitTimer = randRange(...INTENTION_COMMIT_FRAMES[this.getDifficultyKey()])
+        return bestIntention
+    }
+
+    pickCombatPrimitive(target, distance, confidence, intention) {
+        if (!target) return 'repositionHigh'
+        if (intention === 'disengage') return 'backOff'
+        if (intention === 'holdAngle') return this.player.currentWeapon === WeaponId.RAIL ? 'peek' : 'hold'
+        if (intention === 'reposition') return 'repositionHigh'
+        if (intention === 'seekItem') return 'breakLine'
+
+        const targetAirborne =
+            (typeof target.isOnGround === 'function' && !target.isOnGround()) ||
+            Math.abs(target.velocityY ?? 0) > 1.4
+        const preferred = this.getPreferredWeaponDistance()
+        const tooClose = distance < preferred * 0.6
+        const tooFar = distance > preferred * 1.35
+
+        if (targetAirborne && (this.player.currentWeapon === WeaponId.RAIL || this.player.currentWeapon === WeaponId.SHAFT)) {
+            return 'punishLanding'
+        }
+
+        switch (this.player.currentWeapon) {
+            case WeaponId.SHOTGUN:
+                if (tooFar) return 'closeGap'
+                if (tooClose) return 'backOff'
+                return confidence > 0.5 ? 'pressure' : 'peek'
+            case WeaponId.ROCKET:
+                if (distance < 80) return 'backOff'
+                if (distance > 220) return 'closeGap'
+                return targetAirborne ? 'punishLanding' : 'pressure'
+            case WeaponId.RAIL:
+                if (distance < 160) return 'breakLine'
+                return confidence > 0.55 ? 'peek' : 'hold'
+            case WeaponId.SHAFT:
+            case WeaponId.PLASMA:
+                if (tooFar) return 'closeGap'
+                if (tooClose) return 'backOff'
+                return 'pressure'
+            case WeaponId.GAUNTLET:
+                if (distance < 55 && effectiveHp(this.player) > effectiveHp(target) + 15) return 'closeGap'
+                return 'backOff'
+            default:
+                if (tooFar) return 'closeGap'
+                if (tooClose) return 'breakLine'
+                return 'pressure'
+        }
+    }
+
+    chooseHoldPosition(target) {
+        const preferred = this.getPreferredWeaponDistance()
+        const direction = sign(this.player.x - target.x) || this.strafeDirection
+        return {
+            x: target.x + direction * preferred,
+            y: target.y,
+        }
+    }
+
+    resolvePrimitiveMoveDirection(target, directionToTarget, routeDirection, distance) {
+        if (!target) return null
+        const preferred = this.getPreferredWeaponDistance()
+        const primitive = this.combatPrimitive
+
+        switch (primitive) {
+            case 'hold':
+                if (Math.abs(distance - preferred) <= PhysicsConstants.TILE_W * 0.7) return 0
+                return distance > preferred ? routeDirection || directionToTarget : -directionToTarget
+            case 'peek':
+                if (!this.hasLineOfSight(target)) return routeDirection || directionToTarget
+                return this.strafeDirection
+            case 'pressure':
+            case 'closeGap':
+            case 'punishLanding':
+                return routeDirection || directionToTarget || this.strafeDirection
+            case 'backOff':
+                return -directionToTarget || -this.strafeDirection
+            case 'breakLine':
+                return -directionToTarget || this.strafeDirection
+            case 'repositionHigh':
+                return routeDirection || this.strafeDirection || directionToTarget
+            case 'setupAmbush':
+                return this.hasLineOfSight(target) ? 0 : routeDirection || directionToTarget
+            default:
+                return null
+        }
+    }
+
+    getPreferredWeaponDistance() {
+        switch (this.player.currentWeapon) {
+            case WeaponId.GAUNTLET:
+                return 28
+            case WeaponId.SHOTGUN:
+                return 90
+            case WeaponId.ROCKET:
+                return 170
+            case WeaponId.RAIL:
+                return 300
+            case WeaponId.PLASMA:
+                return 145
+            case WeaponId.SHAFT:
+                return 170
+            case WeaponId.GRENADE:
+                return 180
+            default:
+                return 180
+        }
+    }
+
+    getShotWindowScore(target, distance, confidence) {
+        const preferred = this.getPreferredWeaponDistance()
+        const rangeQuality = 1 - clamp(Math.abs(distance - preferred) / Math.max(preferred, 1), 0, 1)
+        const targetAirborne =
+            (typeof target.isOnGround === 'function' && !target.isOnGround()) ||
+            Math.abs(target.velocityY ?? 0) > 1.2
+        const primitivePressure =
+            this.combatPrimitive === 'pressure' || this.combatPrimitive === 'punishLanding'
+                ? 0.22
+                : 0
+        const primitiveHoldPenalty =
+            this.combatPrimitive === 'backOff' || this.combatPrimitive === 'breakLine' ? 0.2 : 0
+        return clamp(
+            confidence * 0.45 +
+                rangeQuality * 0.35 +
+                (targetAirborne ? 0.18 : 0) +
+                primitivePressure -
+                primitiveHoldPenalty -
+                this.mentalState.stress * 0.18,
+            0,
+            1,
+        )
+    }
+
+    isAimAligned(target, threshold = 0.12) {
+        if (!target) return false
+        const desired = this.clampAimAngle(
+            Math.atan2(target.y - this.player.y, target.x - this.player.x),
+            target.x < this.player.x,
+        )
+        const diff = Math.abs(normalizeAngle(desired - this.player.aimAngle))
+        return diff <= threshold
+    }
+
+    syncLegacyLastKnown(perception) {
+        const bestVisible = perception?.visibleEnemies?.[0] ?? null
+        if (bestVisible) {
+            this.lastKnownEnemyPosition = { x: bestVisible.x, y: bestVisible.y }
+            this.lastKnownEnemyTimer = LAST_KNOWN_DECAY
+            return
+        }
+
+        let bestMemory = null
+        for (const memory of this.enemyMemory.values()) {
+            if ((bestMemory?.confidence ?? -1) < memory.confidence) bestMemory = memory
+        }
+        if (bestMemory && bestMemory.confidence > MEMORY_MIN_CONFIDENCE) {
+            const inferred = this.inferEnemyPosition(bestMemory)
+            if (inferred) {
+                this.lastKnownEnemyPosition = inferred
+                this.lastKnownEnemyTimer = Math.max(1, Math.floor(bestMemory.lastSeenTick))
+                return
+            }
+        }
+
+        if (this.lastKnownEnemyTimer > 0) this.lastKnownEnemyTimer--
+    }
+
+    getTargetConfidence(target, perception) {
+        if (!target) return 0
+        const memory = this.enemyMemory.get(target.id)
+        const isVisible = this.canObserveEnemy(target)
+        if (isVisible) return clamp((memory?.confidence ?? 0.8) * 0.6 + 0.4, 0, 1)
+        if (perception?.rememberedEnemies) {
+            const remembered = perception.rememberedEnemies.find((entry) => entry.enemyId === target.id)
+            if (remembered) return remembered.confidence
+        }
+        return memory?.confidence ?? 0
+    }
+
+    maybeInjectReactionDelay(perception) {
+        if (this.reactionDelayTimer > 0) return
+        const danger = perception?.visibleEnemies?.length ?? 0
+        if (danger <= 0) return
+        const chance =
+            REACTION_MISTAKE_CHANCE[this.getDifficultyKey()] * (1.1 - this.mentalState.confidence * 0.35) * (1 + this.mentalState.stress * 0.4)
+        if (Math.random() > chance) return
+        this.reactionDelayTimer = randRange(...REACTION_MISTAKE_DURATION[this.getDifficultyKey()])
+    }
+
+    shouldHesitateBeforeFire() {
+        const chance =
+            FIRE_HESITATION_CHANCE[this.getDifficultyKey()] *
+            (1 + this.mentalState.stress * 0.8) *
+            (1.15 - this.personality.aimDiscipline * 0.4) *
+            (1.1 - this.mentalState.confidence * 0.25)
+        return Math.random() < chance
+    }
+
+    getDifficultyKey() {
+        if (this.config === DIFFICULTY.easy) return 'easy'
+        if (this.config === DIFFICULTY.hard) return 'hard'
+        return 'medium'
+    }
+
+    canSenseEnemy(enemy) {
+        if (!enemy) return false
+        const distance = distanceBetween(this.player, enemy)
+        if (distance > SOUND_AWARENESS_RANGE[this.getDifficultyKey()]) return false
+        const verticalGap = Math.abs(enemy.y - this.player.y)
+        if (verticalGap > SOUND_AWARENESS_VERTICAL) return false
+        const speed = Math.hypot(enemy.velocityX ?? 0, enemy.velocityY ?? 0)
+        const motionBonus = speed > 1.2 ? 0.14 : 0
+        const chance =
+            0.24 +
+            this.config.itemAwareness * 0.34 +
+            this.personality.chaseBias * 0.18 +
+            motionBonus
+        return Math.random() < chance
+    }
+
+    canObserveEnemy(enemy) {
+        // Full-map camera visibility means enemy position is globally observable.
+        return !!enemy && !enemy.dead
+    }
+
+    hasLowCeilingForJump() {
+        const col = Math.floor(this.player.x / PhysicsConstants.TILE_W)
+        const feetRow = Math.floor(
+            (this.player.y + PhysicsConstants.PLAYER_HALF_H) / PhysicsConstants.TILE_H,
+        )
+        return Map.isBrick(col, feetRow - 2) || Map.isBrick(col, feetRow - 3)
+    }
+
+    hasJumpHeadroomAt(col, feetRow) {
+        return !Map.isBrick(col, feetRow - 2) && !Map.isBrick(col, feetRow - 3)
+    }
+
+    findJumpEscapeDirection(targetPosition) {
+        const baseCol = Math.floor(this.player.x / PhysicsConstants.TILE_W)
+        const feetRow = Math.floor(
+            (this.player.y + PhysicsConstants.PLAYER_HALF_H) / PhysicsConstants.TILE_H,
+        )
+        const preferred = preferredDirections(sign((targetPosition?.x ?? this.player.x) - this.player.x))
+
+        for (let offset = 1; offset <= 5; offset++) {
+            for (const dir of preferred) {
+                const col = baseCol + dir * offset
+                if (Map.isBrick(col, feetRow - 1)) continue
+                if (!Map.isBrick(col, feetRow)) continue
+                if (!this.hasJumpHeadroomAt(col, feetRow)) continue
+                return dir
+            }
+        }
+
+        return 0
+    }
+
+    onRespawn() {
+        this.target = null
+        this.itemTarget = null
+        this.targetPosition = null
+        this.aimTarget = null
+        this.routeTarget = null
+        this.committedTargetId = null
+        this.committedPlanTargetId = null
+        this.committedMoveDirection = 0
+        this.targetCommitTimer = 0
+        this.planCommitTimer = 0
+        this.movementCommitTimer = 0
+        this.reactionDelayTimer = 0
+        this.fireHesitationTimer = 0
+        this.pursuitCommitTimer = 0
+        this.routeCommitTimer = 0
+        this.intentionCommitTimer = 0
+        this.currentIntention = 'fight'
+        this.combatPrimitive = 'pressure'
+        this.enemyMemory.clear()
+        this.lastKnownEnemyPosition = null
+        this.lastKnownEnemyTimer = 0
+        this.mentalState.stress = clamp(this.mentalState.stress * 0.5, 0, 1)
     }
 }
 
@@ -1075,4 +2014,54 @@ function randomBotSkin() {
 
 function preferredDirections(primary) {
     return primary >= 0 ? [1, -1] : [-1, 1]
+}
+
+function createPersonalityProfile(config) {
+    const archetypes = ['aggressive', 'cautious', 'opportunist', 'collector', 'rocketeer', 'duelist']
+    const archetype = archetypes[randInt(archetypes.length)] ?? 'opportunist'
+    const baseSkill = clamp(config.strafeSkill * 0.7 + config.itemAwareness * 0.3, 0, 1)
+
+    const profile = {
+        archetype,
+        aggressionBias: 0.5,
+        greedBias: 0.5,
+        aimDiscipline: clamp(0.45 + baseSkill * 0.45 + (Math.random() - 0.5) * 0.12, 0.2, 0.95),
+        chaseBias: clamp(0.4 + config.leadFactor * 0.4 + (Math.random() - 0.5) * 0.2, 0.15, 0.95),
+        panicThreshold: clamp(0.42 + (1 - baseSkill) * 0.35 + (Math.random() - 0.5) * 0.18, 0.2, 0.9),
+    }
+
+    switch (archetype) {
+        case 'aggressive':
+            profile.aggressionBias = 0.84
+            profile.greedBias = 0.38
+            profile.chaseBias = clamp(profile.chaseBias + 0.2, 0, 1)
+            profile.panicThreshold = clamp(profile.panicThreshold - 0.12, 0, 1)
+            break
+        case 'cautious':
+            profile.aggressionBias = 0.3
+            profile.greedBias = 0.46
+            profile.panicThreshold = clamp(profile.panicThreshold + 0.2, 0, 1)
+            break
+        case 'collector':
+            profile.aggressionBias = 0.42
+            profile.greedBias = 0.86
+            break
+        case 'rocketeer':
+            profile.aggressionBias = 0.65
+            profile.greedBias = 0.45
+            profile.aimDiscipline = clamp(profile.aimDiscipline + 0.07, 0, 1)
+            break
+        case 'duelist':
+            profile.aggressionBias = 0.58
+            profile.greedBias = 0.34
+            profile.aimDiscipline = clamp(profile.aimDiscipline + 0.1, 0, 1)
+            break
+        case 'opportunist':
+        default:
+            profile.aggressionBias = 0.54
+            profile.greedBias = 0.52
+            break
+    }
+
+    return profile
 }
