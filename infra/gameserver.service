@@ -1,0 +1,32 @@
+[Unit]
+Description=Need For Fun - 2D Game Server
+After=network.target
+
+[Service]
+User=gameserver
+WorkingDirectory=/opt/gameserver
+ExecStart=/opt/gameserver/server
+Restart=always
+RestartSec=5
+
+# Logging
+Environment=RUST_LOG=info
+
+# Rate limiting (override via /etc/gameserver.env if desired)
+Environment=MAX_CONNECTIONS_PER_IP=10
+Environment=MAX_ROOMS=50
+Environment=MAX_PLAYERS_PER_ROOM=8
+Environment=MAX_MESSAGE_BYTES=65536
+
+# Server network
+Environment=SERVER_PORT=3001
+Environment=MAP_DIR=/opt/gameserver/maps
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/gameserver
+
+[Install]
+WantedBy=multi-user.target

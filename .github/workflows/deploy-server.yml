@@ -1,0 +1,115 @@
+name: Deploy Game Server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # Rust server source
+      - "apps/server/**"
+      # Shared crates the server depends on
+      - "crates/binary_protocol/**"
+      - "crates/physics_core/**"
+      # Workspace manifest / lockfile
+      - "Cargo.toml"
+      - "Cargo.lock"
+      # This workflow itself
+      - ".github/workflows/deploy-server.yml"
+
+# Cancel any in-flight deploy for the same branch to avoid races
+concurrency:
+  group: deploy-server
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    name: Build (musl) & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Rust toolchain ───────────────────────────────────────────────────────
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Install musl toolchain
+        run: sudo apt-get update -qq && sudo apt-get install -y musl-tools
+
+      # ── Build cache ──────────────────────────────────────────────────────────
+      - name: Cache Cargo registry & build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-musl-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-musl-
+
+      # ── Compile ──────────────────────────────────────────────────────────────
+      - name: Build static musl binary
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: |
+          cargo build --release --target x86_64-unknown-linux-musl --package nff-server
+
+      - name: Verify binary is fully static
+        run: |
+          BINARY=target/x86_64-unknown-linux-musl/release/nff-server
+          echo "=== file output ==="
+          file "$BINARY"
+          file "$BINARY" | grep -q "statically linked" || \
+            { echo "ERROR: binary is not statically linked"; exit 1; }
+          echo "=== binary size ==="
+          du -sh "$BINARY"
+
+      # ── SSH setup ────────────────────────────────────────────────────────────
+      - name: Configure SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Add EC2 host to known_hosts
+        run: |
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      # ── Deploy ───────────────────────────────────────────────────────────────
+      - name: Stop gameserver service
+        run: |
+          ssh gameserver@${{ secrets.EC2_HOST }} \
+            "sudo systemctl stop gameserver || true"
+
+      - name: Upload binary
+        run: |
+          scp target/x86_64-unknown-linux-musl/release/nff-server \
+            gameserver@${{ secrets.EC2_HOST }}:/opt/gameserver/server
+
+      - name: Set binary permissions
+        run: |
+          ssh gameserver@${{ secrets.EC2_HOST }} \
+            "chmod +x /opt/gameserver/server"
+
+      - name: Start gameserver service
+        run: |
+          ssh gameserver@${{ secrets.EC2_HOST }} \
+            "sudo systemctl start gameserver"
+
+      # ── Health check ─────────────────────────────────────────────────────────
+      - name: Health check (wait for service to be active)
+        run: |
+          sleep 5
+          STATUS=$(ssh gameserver@${{ secrets.EC2_HOST }} \
+            "systemctl is-active gameserver")
+          echo "Service status: $STATUS"
+          if [ "$STATUS" != "active" ]; then
+            echo "ERROR: gameserver service failed to start. Fetching journal..."
+            ssh gameserver@${{ secrets.EC2_HOST }} \
+              "sudo journalctl -u gameserver --no-pager -n 50"
+            exit 1
+          fi
+          echo "Deploy successful — gameserver is active."
