@@ -10,12 +10,15 @@ const TOP_SPAWN_CANDIDATES = 5
 const NAV_REBUILD_INTERVAL = 90
 const NAV_SAMPLE_COL_STEP = 4
 const NAV_SAMPLE_ROW_STEP = 3
+const HOTSPOT_DECAY = 0.985
+const HOTSPOT_MIN_INTENSITY = 0.08
 
 class BotManagerClass {
     bots = []
     allPlayers = []
     matchTick = 0
     navigationContext = { anchors: [], builtAtTick: 0 }
+    combatHotspots = []
 
     init(localPlayer) {
         this.allPlayers = [localPlayer]
@@ -46,6 +49,7 @@ class BotManagerClass {
 
     update() {
         this.matchTick++
+        this.decayCombatHotspots()
         if (
             this.navigationContext.anchors.length === 0 ||
             this.matchTick - this.navigationContext.builtAtTick >= NAV_REBUILD_INTERVAL
@@ -74,9 +78,20 @@ class BotManagerClass {
 
     notifyDamage(victim, attacker = null) {
         if (!victim) return
-        const bot = this.bots.find((entry) => entry.player === victim)
-        if (!bot?.onDamaged) return
-        bot.onDamaged(attacker && attacker !== victim ? attacker : null)
+        this.recordCombatHotspot(victim, attacker)
+        const victimBot = this.bots.find((entry) => entry.player === victim)
+        if (victimBot?.onDamaged) {
+            victimBot.onDamaged(attacker && attacker !== victim ? attacker : null)
+        }
+
+        if (!victim.dead) return
+
+        const attackerBot =
+            attacker && attacker !== victim
+                ? this.bots.find((entry) => entry.player === attacker)
+                : null
+        if (attackerBot?.onFrag) attackerBot.onFrag(victim)
+        if (victimBot?.onKilledBy) victimBot.onKilledBy(attacker && attacker !== victim ? attacker : null)
     }
 
     respawnBot(bot) {
@@ -208,8 +223,12 @@ class BotManagerClass {
 
     buildNavigationContext() {
         const anchors = this.collectNavigationAnchors()
+        const hotspots = this.getActiveHotspots()
+        const zones = this.buildZoneContext(anchors, hotspots)
         return {
             anchors,
+            hotspots,
+            zones,
             builtAtTick: this.matchTick,
         }
     }
@@ -244,6 +263,99 @@ class BotManagerClass {
         }
 
         return anchors
+    }
+
+    getActiveHotspots() {
+        return this.combatHotspots
+            .filter((entry) => entry.intensity > HOTSPOT_MIN_INTENSITY)
+            .map((entry) => ({
+                x: entry.x,
+                y: entry.y,
+                intensity: entry.intensity,
+                ttl: entry.ttl,
+            }))
+    }
+
+    buildZoneContext(anchors, hotspots) {
+        const cols = Map.getCols()
+        const rows = Map.getRows()
+        const zoneCols = 3
+        const zoneRows = 2
+        const zones = []
+
+        for (let zx = 0; zx < zoneCols; zx++) {
+            for (let zy = 0; zy < zoneRows; zy++) {
+                const minCol = Math.floor((zx / zoneCols) * cols)
+                const maxCol = Math.floor(((zx + 1) / zoneCols) * cols)
+                const minRow = Math.floor((zy / zoneRows) * rows)
+                const maxRow = Math.floor(((zy + 1) / zoneRows) * rows)
+                const centerX = ((minCol + maxCol) * 0.5 + 0.5) * PhysicsConstants.TILE_W
+                const centerY = ((minRow + maxRow) * 0.5 + 0.5) * PhysicsConstants.TILE_H
+                const anchorValue = anchors
+                    .filter((a) => {
+                        const col = Math.floor(a.x / PhysicsConstants.TILE_W)
+                        const row = Math.floor(a.y / PhysicsConstants.TILE_H)
+                        return col >= minCol && col < maxCol && row >= minRow && row < maxRow
+                    })
+                    .reduce((sum, a) => sum + (a.value ?? 0), 0)
+                const danger = hotspots
+                    .map(
+                        (h) =>
+                            h.intensity /
+                            Math.max(1, Math.hypot(h.x - centerX, h.y - centerY) / PhysicsConstants.TILE_W),
+                    )
+                    .reduce((sum, v) => sum + v, 0)
+                zones.push({
+                    id: `${zx}:${zy}`,
+                    centerX,
+                    centerY,
+                    resourceValue: anchorValue,
+                    danger,
+                })
+            }
+        }
+
+        return zones
+    }
+
+    recordCombatHotspot(victim, attacker) {
+        const points = [{ x: victim.x, y: victim.y, amount: 0.45 }]
+        if (attacker && !attacker.dead) {
+            points.push({
+                x: (victim.x + attacker.x) * 0.5,
+                y: (victim.y + attacker.y) * 0.5,
+                amount: 0.3,
+            })
+        }
+
+        for (const p of points) {
+            const existing = this.combatHotspots.find(
+                (entry) => Math.hypot(entry.x - p.x, entry.y - p.y) < PhysicsConstants.TILE_W * 2,
+            )
+            if (existing) {
+                existing.x = (existing.x * 0.7 + p.x * 0.3)
+                existing.y = (existing.y * 0.7 + p.y * 0.3)
+                existing.intensity = Math.min(2, existing.intensity + p.amount)
+                existing.ttl = Math.max(existing.ttl, 240)
+            } else {
+                this.combatHotspots.push({
+                    x: p.x,
+                    y: p.y,
+                    intensity: p.amount,
+                    ttl: 240,
+                })
+            }
+        }
+    }
+
+    decayCombatHotspots() {
+        for (const hotspot of this.combatHotspots) {
+            hotspot.intensity *= HOTSPOT_DECAY
+            hotspot.ttl--
+        }
+        this.combatHotspots = this.combatHotspots.filter(
+            (entry) => entry.ttl > 0 && entry.intensity > HOTSPOT_MIN_INTENSITY,
+        )
     }
 
     isStandableCell(col, row) {

@@ -194,6 +194,29 @@ const AIM_SETTLE_THRESHOLD = {
     medium: 0.12,
     hard: 0.08,
 }
+const ITEM_MEMORY_RESPAWN_DRIFT = {
+    easy: 0.22,
+    medium: 0.14,
+    hard: 0.08,
+}
+const ZONE_COMMIT_FRAMES = {
+    easy: [26, 44],
+    medium: [34, 56],
+    hard: [42, 68],
+}
+const PANIC_SWITCH_DELAY_CHANCE = {
+    easy: 0.3,
+    medium: 0.2,
+    hard: 0.12,
+}
+const TUNNEL_VISION_MISTAKE_CHANCE = {
+    easy: 0.18,
+    medium: 0.12,
+    hard: 0.07,
+}
+const FRAG_CONFIDENCE_BOOST = 0.14
+const FRAG_STRESS_DROP = 0.16
+const KILLED_STRESS_GAIN = 0.28
 const SOUND_AWARENESS_RANGE = {
     easy: 280,
     medium: 360,
@@ -259,6 +282,14 @@ export class Bot {
     currentIntention = 'fight'
     combatPrimitive = 'pressure'
     intentionCommitTimer = 0
+    itemMemory = new globalThis.Map()
+    zoneCommitTimer = 0
+    currentZoneId = null
+    surpriseTimer = 0
+    revengeTargetId = null
+    revengeTimer = 0
+    tunnelVisionTimer = 0
+    postFragTimer = 0
 
     constructor(difficulty = 'medium', skin = SkinId.RED) {
         let selectedDifficulty = difficulty
@@ -308,6 +339,12 @@ export class Bot {
         if (this.pursuitCommitTimer > 0) this.pursuitCommitTimer--
         if (this.routeCommitTimer > 0) this.routeCommitTimer--
         if (this.intentionCommitTimer > 0) this.intentionCommitTimer--
+        if (this.zoneCommitTimer > 0) this.zoneCommitTimer--
+        if (this.surpriseTimer > 0) this.surpriseTimer--
+        if (this.revengeTimer > 0) this.revengeTimer--
+        else this.revengeTargetId = null
+        if (this.tunnelVisionTimer > 0) this.tunnelVisionTimer--
+        if (this.postFragTimer > 0) this.postFragTimer--
         this.updateMentalState()
 
         if (--this.thinkTimer <= 0) {
@@ -323,6 +360,7 @@ export class Bot {
 
     onDamaged(fromPlayer) {
         this.thinkTimer = 0
+        this.surpriseTimer = 20
         this.mentalState.lastDamageTimer = 90
         this.mentalState.stress = clamp(this.mentalState.stress + DAMAGE_STRESS_GAIN, 0, 1)
         this.mentalState.confidence = clamp(this.mentalState.confidence - DAMAGE_CONFIDENCE_LOSS, 0, 1)
@@ -333,6 +371,11 @@ export class Bot {
             this.updateEnemyMemory(fromPlayer, this.hasLineOfSight(fromPlayer))
             const memory = this.enemyMemory.get(fromPlayer.id)
             if (memory) memory.wasDamagedByRecently = 90
+            this.revengeTargetId = fromPlayer.id
+            this.revengeTimer = 180
+            if (this.mentalState.stress > 0.55) {
+                this.tunnelVisionTimer = randRange(40, 90)
+            }
         }
 
         if (fromPlayer && !this.target) {
@@ -344,6 +387,29 @@ export class Bot {
                 this.lastKnownEnemyPosition = { x: fromPlayer.x, y: fromPlayer.y }
                 this.lastKnownEnemyTimer = LAST_KNOWN_DECAY
             }
+        }
+    }
+
+    onFrag(victim) {
+        this.postFragTimer = randRange(45, 90)
+        this.mentalState.confidence = clamp(this.mentalState.confidence + FRAG_CONFIDENCE_BOOST, 0, 1)
+        this.mentalState.stress = clamp(this.mentalState.stress - FRAG_STRESS_DROP, 0, 1)
+        this.mentalState.recentSuccess = clamp(this.mentalState.recentSuccess + 0.25, 0, 2)
+        this.mentalState.recentFailure = clamp(this.mentalState.recentFailure - 0.18, 0, 2)
+        if (victim?.id != null && Math.random() < 0.25 + this.personality.aggressionBias * 0.2) {
+            this.revengeTargetId = victim.id
+            this.revengeTimer = 70
+        }
+    }
+
+    onKilledBy(attacker) {
+        this.mentalState.stress = clamp(this.mentalState.stress + KILLED_STRESS_GAIN, 0, 1)
+        this.mentalState.confidence = clamp(this.mentalState.confidence - 0.2, 0, 1)
+        this.tunnelVisionTimer = 0
+        this.postFragTimer = 0
+        if (attacker?.id != null) {
+            this.revengeTargetId = attacker.id
+            this.revengeTimer = 240
         }
     }
 
@@ -368,6 +434,7 @@ export class Bot {
         const perception = this.buildPerception(enemies)
         this.targetPerception = perception
         this.target = this.chooseEnemyTarget(enemies, perception)
+        this.updateItemMemory()
         this.targetPosition = null
         this.aimTarget = null
         this.routeTarget = null
@@ -387,6 +454,11 @@ export class Bot {
             }
             if (!this.targetPosition) this.wander()
             return
+        }
+
+        if (this.postFragTimer > 0 && !perception.visibleEnemies.length) {
+            // After a kill, human players often reposition before re-engaging.
+            if (this.moveToControlZone()) return
         }
 
         const shouldSeekItems = this.shouldSeekItems(enemies)
@@ -415,7 +487,7 @@ export class Bot {
             this.combatStyle = 'aggressive'
             this.targetPosition = null
             this.aimTarget = null
-            this.wander()
+            if (!this.moveToControlZone()) this.wander()
         }
     }
 
@@ -451,6 +523,8 @@ export class Bot {
         const pool = visibleCloseEnemies.length ? visibleCloseEnemies : enemies
         let best = null
         let bestScore = -Infinity
+        let secondBest = null
+        let secondBestScore = -Infinity
 
         for (const enemy of pool) {
             const visible = this.canObserveEnemy(enemy)
@@ -464,6 +538,8 @@ export class Bot {
             const threat = enemy.quadDamage ? 0.6 : 0
             const visibility = visible ? 0.35 : 0
             const confidence = memory?.confidence ?? (visible ? 1 : 0.2)
+            const revengeBonus =
+                this.revengeTimer > 0 && this.revengeTargetId === enemy.id ? 0.45 : 0
             const finishingBonus = enemy.health <= 35 ? 0.6 : 0
             const closeEngageBonus =
                 distance < CLOSE_RANGE * 1.5 ? 1.4 : distance < MEDIUM_RANGE ? 0.5 : 0
@@ -475,11 +551,28 @@ export class Bot {
                 finishingBonus -
                 threat +
                 confidence * 0.6 +
+                revengeBonus +
                 (enemy === this.target ? TARGET_STICKINESS_BONUS : 0)
             if (score > bestScore) {
+                secondBest = best
+                secondBestScore = bestScore
                 bestScore = score
                 best = enemy
+            } else if (score > secondBestScore) {
+                secondBestScore = score
+                secondBest = enemy
             }
+        }
+
+        if (
+            best &&
+            secondBest &&
+            this.tunnelVisionTimer > 0 &&
+            Math.random() <
+                TUNNEL_VISION_MISTAKE_CHANCE[this.getDifficultyKey()] *
+                    (1 + this.mentalState.stress * 0.4)
+        ) {
+            best = secondBest
         }
 
         if (best) this.commitTarget(best.id)
@@ -505,7 +598,8 @@ export class Bot {
 
     scoreItem(item) {
         if (!item) return -Infinity
-        const distance = distanceToPoint(this.player, itemWorldPosition(item))
+        const itemPos = itemWorldPosition(item)
+        const distance = distanceToPoint(this.player, itemPos)
         if (distance < ITEM_PICKUP_CONFIRM_DISTANCE) return -Infinity
 
         const isActive = item.active !== false
@@ -531,6 +625,11 @@ export class Bot {
             else value *= 0.35
         }
 
+        const contestRisk = this.estimateItemContestRisk(itemPos)
+        const zoneBias = this.getZoneResourceBias(itemPos)
+        const timingOpportunity = this.getItemTimingOpportunity(item)
+        value *= 1 + zoneBias * 0.22 + timingOpportunity * 0.4
+
         if (!isActive) {
             if (
                 this.config.itemAwareness < 0.8 ||
@@ -543,6 +642,8 @@ export class Bot {
             value *= 1.5 * (1 - item.respawnTimer / ITEM_RESPAWN_PREP_WINDOW)
         }
 
+        value *= 1 - contestRisk * (this.player.health < 55 ? 0.6 : 0.3)
+
         return value / Math.max(distance, 32)
     }
 
@@ -552,6 +653,7 @@ export class Bot {
             const dist = distanceBetween(this.player, observedEnemy)
             if (dist < MEDIUM_RANGE * 1.8) return false
         }
+        if (this.hasUrgentUpcomingItem()) return true
         if (this.player.quadDamage) return false
         if (this.seekItemsTimer > 0) {
             this.seekItemsTimer--
@@ -581,6 +683,140 @@ export class Bot {
             return true
         }
         return false
+    }
+
+    updateItemMemory() {
+        const items = Map.getItems() ?? []
+        for (const item of items) {
+            const key = this.getItemMemoryKey(item)
+            const memory = this.itemMemory.get(key) ?? {
+                seenTick: 0,
+                observedActive: true,
+                estimatedRespawn: 0,
+                lastType: item.type,
+            }
+
+            memory.lastType = item.type
+            memory.observedActive = item.active !== false
+            memory.seenTick = LAST_KNOWN_DECAY
+
+            if (item.active === false) {
+                const baseRespawn = Number.isFinite(item.respawnTimer) ? item.respawnTimer : ITEM_RESPAWN_PREP_WINDOW
+                const drift = ITEM_MEMORY_RESPAWN_DRIFT[this.getDifficultyKey()]
+                memory.estimatedRespawn = Math.max(
+                    0,
+                    Math.floor(baseRespawn * (1 + (Math.random() - 0.5) * drift)),
+                )
+            } else {
+                memory.estimatedRespawn = 0
+            }
+
+            this.itemMemory.set(key, memory)
+        }
+
+        for (const memory of this.itemMemory.values()) {
+            if (memory.seenTick > 0) memory.seenTick--
+            if (memory.estimatedRespawn > 0) memory.estimatedRespawn--
+        }
+    }
+
+    getItemMemoryKey(item) {
+        return `${item.type}:${item.col}:${item.row}`
+    }
+
+    getItemTimingOpportunity(item) {
+        const key = this.getItemMemoryKey(item)
+        const memory = this.itemMemory.get(key)
+        if (!memory) return 0
+        if (item.active !== false) return 1
+
+        const timer =
+            Number.isFinite(item.respawnTimer) && item.respawnTimer >= 0
+                ? item.respawnTimer
+                : memory.estimatedRespawn
+        if (!Number.isFinite(timer)) return 0
+        if (timer > ITEM_RESPAWN_PREP_WINDOW) return 0
+        return clamp(1 - timer / ITEM_RESPAWN_PREP_WINDOW, 0, 1)
+    }
+
+    estimateItemContestRisk(position) {
+        if (!position) return 0
+        const targetEnemy = this.target
+        if (!targetEnemy) return 0
+        const enemyDistance = distanceToPoint(targetEnemy, position)
+        const selfDistance = distanceToPoint(this.player, position)
+        const ratio = enemyDistance / Math.max(selfDistance, 1)
+        const hotDanger = this.estimateHotspotDanger(position)
+        const base = ratio < 1 ? 0.52 : ratio < 1.3 ? 0.34 : 0.14
+        return clamp(base + hotDanger * 0.45, 0, 1)
+    }
+
+    getZoneResourceBias(position) {
+        const zones = this.navigationContext?.zones ?? []
+        if (!zones.length || !position) return 0
+        let best = null
+        let bestDist = Infinity
+        for (const zone of zones) {
+            const dist = Math.hypot(zone.centerX - position.x, zone.centerY - position.y)
+            if (dist < bestDist) {
+                bestDist = dist
+                best = zone
+            }
+        }
+        if (!best) return 0
+        const dangerPenalty = best.danger * 0.6
+        return clamp(best.resourceValue * 0.08 - dangerPenalty, -1, 1)
+    }
+
+    hasUrgentUpcomingItem() {
+        const items = Map.getItems() ?? []
+        for (const item of items) {
+            if (!HIGH_VALUE_ITEMS.has(item.type)) continue
+            const timing = this.getItemTimingOpportunity(item)
+            if (timing < 0.58) continue
+            const dist = distanceToPoint(this.player, itemWorldPosition(item))
+            if (dist > MEDIUM_RANGE * 2.2) continue
+            if (Math.random() < 0.7 + this.personality.greedBias * 0.2) return true
+        }
+        return false
+    }
+
+    moveToControlZone() {
+        const zone = this.chooseControlZone()
+        if (!zone) return false
+        this.currentZoneId = zone.id
+        this.zoneCommitTimer = randRange(...ZONE_COMMIT_FRAMES[this.getDifficultyKey()])
+        this.targetPosition = { x: zone.centerX, y: zone.centerY }
+        this.aimTarget = this.targetPosition
+        this.combatStyle = this.player.health < 55 ? 'retreat' : 'aggressive'
+        this.decideMovement(null, this.targetPosition)
+        this.decideJump(this.targetPosition)
+        return true
+    }
+
+    chooseControlZone() {
+        const zones = this.navigationContext?.zones ?? []
+        if (!zones.length) return null
+        if (this.zoneCommitTimer > 0 && this.currentZoneId) {
+            const current = zones.find((entry) => entry.id === this.currentZoneId)
+            if (current) return current
+        }
+
+        let best = null
+        let bestScore = -Infinity
+        const weak = effectiveHp(this.player) < 75
+        for (const zone of zones) {
+            const dist = Math.hypot(zone.centerX - this.player.x, zone.centerY - this.player.y)
+            const distPenalty = dist / (PhysicsConstants.TILE_W * 16)
+            const dangerPenalty = zone.danger * (weak ? 1.8 : 1.2)
+            const resourceBonus = zone.resourceValue * (this.personality.greedBias * 0.8 + 0.7)
+            const score = resourceBonus - distPenalty - dangerPenalty
+            if (score > bestScore) {
+                bestScore = score
+                best = zone
+            }
+        }
+        return best
     }
 
     getEngagementScore(target, enemies) {
@@ -861,6 +1097,17 @@ export class Bot {
         const currentHasAmmo = this.hasAmmo(this.player.currentWeapon)
         const nextWeapon = this.chooseWeaponForContext(distance)
 
+        if (
+            this.target &&
+            this.mentalState.stress > 0.5 &&
+            Math.random() <
+                PANIC_SWITCH_DELAY_CHANCE[this.getDifficultyKey()] *
+                    (1 + (this.surpriseTimer > 0 ? 0.4 : 0))
+        ) {
+            this.weaponSwitchCooldown = Math.max(this.weaponSwitchCooldown, randRange(4, 10))
+            return
+        }
+
         if (!currentHasAmmo) {
             if (nextWeapon != null && nextWeapon !== this.player.currentWeapon) {
                 this.player.switchWeapon(nextWeapon)
@@ -923,8 +1170,10 @@ export class Bot {
 
     updateStrafeState() {
         if (this.strafeTimer > 0) return
-        this.strafeTimer = randRange(30, 60)
-        if (Math.random() < 0.6) {
+        const stable = this.combatPrimitive === 'hold' || this.combatPrimitive === 'backOff'
+        this.strafeTimer = stable ? randRange(38, 70) : randRange(30, 60)
+        const flipChance = stable ? 0.35 : 0.6
+        if (Math.random() < flipChance) {
             this.strafeDirection *= -1
         }
     }
@@ -1264,7 +1513,8 @@ export class Bot {
         const trace = Physics.rayTrace(point.x, point.y, angle, dist)
         const blocked = trace?.hitWall && trace.distance < dist - LOS_STEP_SIZE
         const lineRisk = blocked ? 0.2 : 1
-        return clamp(openness * 0.55 + lineRisk * 0.75, 0, 1)
+        const hotDanger = this.estimateHotspotDanger(point)
+        return clamp(openness * 0.45 + lineRisk * 0.6 + hotDanger * 0.55, 0, 1)
     }
 
     estimateCoverScore(point) {
@@ -1284,6 +1534,19 @@ export class Bot {
         return clamp(solid / samples, 0, 1)
     }
 
+    estimateHotspotDanger(point) {
+        const hotspots = this.navigationContext?.hotspots ?? []
+        if (!hotspots.length) return 0
+        const danger = hotspots
+            .map(
+                (h) =>
+                    h.intensity /
+                    Math.max(1, Math.hypot(h.x - point.x, h.y - point.y) / PhysicsConstants.TILE_W),
+            )
+            .reduce((sum, v) => sum + v, 0)
+        return clamp(danger * 0.55, 0, 1)
+    }
+
     hasReachedRouteTarget(routeTarget) {
         return distanceToPoint(this.player, routeTarget) <= ROUTE_REACHED_DISTANCE
     }
@@ -1300,6 +1563,7 @@ export class Bot {
     shouldRetreatFrom(target) {
         if (!target || this.player.quadDamage) return false
         if (this.combatStyle === 'retreat') return true
+        if (this.surpriseTimer > 0 && this.player.health < 55) return true
         return (
             this.player.health + this.player.armor * 0.66 <
                 effectiveHp(target) - RETREAT_DISTANCE / 6 && this.player.health < 40
@@ -1379,8 +1643,13 @@ export class Bot {
             0,
             1,
         )
+        this.mentalState.recentSuccess = clamp(this.mentalState.recentSuccess * 0.992, 0, 2)
+        this.mentalState.recentFailure = clamp(this.mentalState.recentFailure * 0.993, 0, 2)
         this.mentalState.confidence = clamp(
-            this.mentalState.confidence + CONFIDENCE_RECOVERY[this.getDifficultyKey()] * (1 - this.mentalState.stress * 0.5),
+            this.mentalState.confidence +
+                CONFIDENCE_RECOVERY[this.getDifficultyKey()] *
+                    (1 - this.mentalState.stress * 0.5) *
+                    (1 + this.mentalState.recentSuccess * 0.07 - this.mentalState.recentFailure * 0.05),
             0,
             1,
         )
@@ -1898,6 +2167,14 @@ export class Bot {
         this.intentionCommitTimer = 0
         this.currentIntention = 'fight'
         this.combatPrimitive = 'pressure'
+        this.zoneCommitTimer = 0
+        this.currentZoneId = null
+        this.surpriseTimer = 0
+        this.revengeTargetId = null
+        this.revengeTimer = 0
+        this.tunnelVisionTimer = 0
+        this.postFragTimer = 0
+        this.itemMemory.clear()
         this.enemyMemory.clear()
         this.lastKnownEnemyPosition = null
         this.lastKnownEnemyTimer = 0
