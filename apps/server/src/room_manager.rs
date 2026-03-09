@@ -30,6 +30,8 @@ pub struct RoomManager {
     player_rooms: Mutex<HashMap<PlayerId, RoomId>>,
     pub metrics: RoomMetrics,
     server_started_at: Instant,
+    max_rooms: usize,
+    pub max_players_per_room: usize,
 }
 
 pub struct JoinSuccess {
@@ -57,13 +59,16 @@ impl fmt::Display for RoomCreateError {
 }
 
 impl RoomManager {
-    pub fn new(server_started_at: Instant) -> Self {
+    pub fn new(server_started_at: Instant, max_rooms: usize, max_players_per_room: usize) -> Self {
+        let effective_max_players = max_players_per_room.min(ROOM_MAX_PLAYERS_HARD_CAP);
         Self {
             rooms: RwLock::new(HashMap::new()),
             names: RwLock::new(HashMap::new()),
             player_rooms: Mutex::new(HashMap::new()),
             metrics: RoomMetrics::default(),
             server_started_at,
+            max_rooms,
+            max_players_per_room: effective_max_players,
         }
     }
 
@@ -80,9 +85,10 @@ impl RoomManager {
         config: RoomConfig,
         map: GameMap,
     ) -> Result<Arc<RoomHandle>, RoomCreateError> {
-        if config.max_players == 0 || config.max_players > ROOM_MAX_PLAYERS_HARD_CAP {
+        if config.max_players == 0 || config.max_players > self.max_players_per_room {
             return Err(RoomCreateError::InvalidMaxPlayers(format!(
-                "maxPlayers must be 1..={ROOM_MAX_PLAYERS_HARD_CAP}"
+                "maxPlayers must be 1..={}",
+                self.max_players_per_room
             )));
         }
 
@@ -94,6 +100,10 @@ impl RoomManager {
                 return Ok(Arc::clone(room));
             }
             names.remove(&config.name);
+        }
+
+        if rooms.len() >= self.max_rooms {
+            return Err(RoomCreateError::Other("server room limit reached".to_string()));
         }
 
         let room_id = RoomId::from(Uuid::new_v4().simple().to_string());
@@ -111,9 +121,10 @@ impl RoomManager {
         config: RoomConfig,
         map: GameMap,
     ) -> Result<Arc<RoomHandle>, RoomCreateError> {
-        if config.max_players == 0 || config.max_players > ROOM_MAX_PLAYERS_HARD_CAP {
+        if config.max_players == 0 || config.max_players > self.max_players_per_room {
             return Err(RoomCreateError::InvalidMaxPlayers(format!(
-                "maxPlayers must be 1..={ROOM_MAX_PLAYERS_HARD_CAP}"
+                "maxPlayers must be 1..={}",
+                self.max_players_per_room
             )));
         }
 
@@ -122,6 +133,10 @@ impl RoomManager {
 
         if names.contains_key(&config.name) {
             return Err(RoomCreateError::NameAlreadyExists);
+        }
+
+        if rooms.len() >= self.max_rooms {
+            return Err(RoomCreateError::Other("server room limit reached".to_string()));
         }
 
         let room_id = RoomId::from(Uuid::new_v4().simple().to_string());
@@ -377,7 +392,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_list_and_close_room() {
-        let manager = RoomManager::new(Instant::now());
+        let manager = RoomManager::new(Instant::now(), 50, 8);
         let room = manager.create_room(config("alpha", 2), map()).await;
         assert!(room.is_ok());
 
@@ -391,7 +406,7 @@ mod tests {
 
     #[tokio::test]
     async fn join_until_full() {
-        let manager = RoomManager::new(Instant::now());
+        let manager = RoomManager::new(Instant::now(), 50, 8);
         let room = manager
             .create_room(config("beta", 1), map())
             .await
@@ -411,7 +426,7 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_join_respects_capacity() {
-        let manager = Arc::new(RoomManager::new(Instant::now()));
+        let manager = Arc::new(RoomManager::new(Instant::now(), 50, 8));
         let room = manager
             .create_room(config("gamma", 2), map())
             .await
@@ -441,7 +456,7 @@ mod tests {
 
     #[tokio::test]
     async fn leave_last_player_triggers_auto_close_flow() {
-        let manager = RoomManager::new(Instant::now());
+        let manager = RoomManager::new(Instant::now(), 50, 8);
         let room = manager
             .create_room(config("delta", 2), map())
             .await
@@ -460,7 +475,7 @@ mod tests {
 
     #[tokio::test]
     async fn disconnect_cleanup_reuses_leave_path() {
-        let manager = RoomManager::new(Instant::now());
+        let manager = RoomManager::new(Instant::now(), 50, 8);
         let room = manager
             .create_room(config("epsilon", 2), map())
             .await
@@ -477,7 +492,7 @@ mod tests {
 
     #[tokio::test]
     async fn moving_between_rooms_clears_old_membership() {
-        let manager = RoomManager::new(Instant::now());
+        let manager = RoomManager::new(Instant::now(), 50, 8);
         let room_a = manager
             .create_room(config("a", 8), map())
             .await
