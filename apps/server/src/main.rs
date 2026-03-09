@@ -3,6 +3,8 @@
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::panic)]
 
+use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -10,7 +12,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::State;
+use axum::extract::{ConnectInfo, State};
 use axum::http::{header, Method, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
@@ -55,6 +57,10 @@ struct AppState {
     next_player_id: AtomicU64,
     map_dir: PathBuf,
     started_at: Instant,
+    max_connections_per_ip: usize,
+    max_message_bytes: usize,
+    max_players_per_room: usize,
+    ip_connections: tokio::sync::Mutex<HashMap<IpAddr, usize>>,
 }
 
 enum RtcCmd {
@@ -142,11 +148,36 @@ async fn main() -> std::io::Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(DEFAULT_MAP_DIR));
 
+    let max_connections_per_ip: usize = std::env::var("MAX_CONNECTIONS_PER_IP")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10);
+    let max_rooms: usize = std::env::var("MAX_ROOMS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50);
+    let max_players_per_room: usize = std::env::var("MAX_PLAYERS_PER_ROOM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8);
+    let max_message_bytes: usize = std::env::var("MAX_MESSAGE_BYTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(65536);
+
     let state = Arc::new(AppState {
-        room_manager: Arc::new(RoomManager::new(Instant::now())),
+        room_manager: Arc::new(RoomManager::new(
+            Instant::now(),
+            max_rooms,
+            max_players_per_room,
+        )),
         next_player_id: AtomicU64::new(1),
         map_dir,
         started_at: Instant::now(),
+        max_connections_per_ip,
+        max_message_bytes,
+        max_players_per_room,
+        ip_connections: tokio::sync::Mutex::new(HashMap::new()),
     });
 
     tokio::spawn(run_console(Arc::clone(&state)));
@@ -170,7 +201,12 @@ async fn main() -> std::io::Result<()> {
     info!("listening on {addr}");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).tcp_nodelay(true).await
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .tcp_nodelay(true)
+    .await
 }
 
 async fn list_rooms_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -255,7 +291,7 @@ async fn create_room_handler(
 
     let max_players_u32 = payload
         .max_players
-        .unwrap_or(room_manager::ROOM_MAX_PLAYERS_HARD_CAP as u32);
+        .unwrap_or(state.max_players_per_room as u32);
     let max_players = match usize::try_from(max_players_u32) {
         Ok(value) => value,
         Err(_) => {
@@ -360,13 +396,45 @@ fn api_error(status: StatusCode, error: &str, message: &str) -> axum::response::
 }
 
 async fn rtc_ws_handler(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_rtc_socket(state, socket))
+    let client_ip = addr.ip();
+    ws.on_upgrade(move |socket| handle_rtc_socket(state, socket, client_ip))
 }
 
-async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
+/// Outer handler: enforces per-IP connection limit, then delegates to inner.
+async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket, client_ip: IpAddr) {
+    {
+        let mut ip_conns = state.ip_connections.lock().await;
+        let count = ip_conns.entry(client_ip).or_insert(0);
+        if *count >= state.max_connections_per_ip {
+            warn!(
+                %client_ip,
+                limit = state.max_connections_per_ip,
+                "connection rejected: per-IP limit reached"
+            );
+            return;
+        }
+        *count += 1;
+    }
+
+    handle_rtc_socket_inner(Arc::clone(&state), socket).await;
+
+    {
+        let mut ip_conns = state.ip_connections.lock().await;
+        if let Some(count) = ip_conns.get_mut(&client_ip) {
+            if *count <= 1 {
+                ip_conns.remove(&client_ip);
+            } else {
+                *count -= 1;
+            }
+        }
+    }
+}
+
+async fn handle_rtc_socket_inner(state: Arc<AppState>, socket: WebSocket) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     let Some(Ok(Message::Text(offer_text))) = ws_receiver.next().await else {
@@ -487,6 +555,7 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
         }
     });
 
+    let max_message_bytes = state.max_message_bytes;
     let game_outbound_rx_for_dc = Arc::clone(&game_outbound_rx);
     let rtc_cmd_tx_for_dc = rtc_cmd_tx.clone();
     peer_connection.on_data_channel(Box::new(move |dc| {
@@ -514,6 +583,9 @@ async fn handle_rtc_socket(state: Arc<AppState>, socket: WebSocket) {
                 let rtc_cmd_tx_for_msg2 = rtc_cmd_tx_for_msg.clone();
                 Box::pin(async move {
                     if msg.is_string {
+                        return;
+                    }
+                    if msg.data.len() > max_message_bytes {
                         return;
                     }
                     let Ok(client_msg) = decode_client_message(&msg.data) else {
@@ -620,7 +692,7 @@ async fn handle_client_msg(
             };
             let config = RoomConfig {
                 name: room_ref.clone(),
-                max_players: room_manager::ROOM_MAX_PLAYERS_HARD_CAP,
+                max_players: state.max_players_per_room,
                 map_id: map_name,
                 mode: "deathmatch".to_string(),
                 tick_rate: 60,
