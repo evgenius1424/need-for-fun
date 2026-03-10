@@ -1,0 +1,9 @@
+{
+  "name": "@nff/shared",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "zod": "^3.24.1"
+  }
+}

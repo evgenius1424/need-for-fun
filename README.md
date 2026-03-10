@@ -108,3 +108,20 @@ The server reads console input from stdin. Use:
 - Rooms are public and passwordless.
 - No persistence: process restart resets all rooms.
 - Metrics are tracked in memory (`rooms_created_total`, `rooms_closed_total`, `players_joined_total`, `players_left_total`, plus current counters via manager state).
+
+## Lobby prototype (TypeScript)
+
+A new prototype lobby stack lives in:
+- `apps/lobby-server` (Express + WS API)
+- `apps/lobby-web` (TanStack Router/Start-style SPA)
+- `packages/shared` (validation schemas and shared types)
+
+See `apps/lobby-server/README.md` for security architecture, trust boundaries, and migration path to Postgres/Redis.
+
+### Why room code and player session are separate
+Room code is public and shareable for navigation (`/room/:roomCode`), while player identity is private and authenticated through a signed session token in an HttpOnly cookie. This prevents using room URL alone to impersonate room members.
+
+### Prototype-only UI choices
+- simple static styling (prototype-only)
+- minimal component visuals
+- no animation/branding polish
