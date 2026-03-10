@@ -113,7 +113,7 @@ The server reads console input from stdin. Use:
 
 A new prototype lobby stack lives in:
 - `apps/lobby-server` (Express + WS API)
-- `apps/lobby-web` (React SPA)
+- `apps/lobby-web` (TanStack Router/Start-style SPA)
 - `packages/shared` (validation schemas and shared types)
 
 See `apps/lobby-server/README.md` for security architecture, trust boundaries, and migration path to Postgres/Redis.
@@ -122,6 +122,6 @@ See `apps/lobby-server/README.md` for security architecture, trust boundaries, a
 Room code is public and shareable for navigation (`/room/:roomCode`), while player identity is private and authenticated through a signed session token in an HttpOnly cookie. This prevents using room URL alone to impersonate room members.
 
 ### Prototype-only UI choices
-- simple static styling
+- simple static styling (prototype-only)
 - minimal component visuals
 - no animation/branding polish

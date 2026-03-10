@@ -18,6 +18,10 @@ Current implementation uses in-memory repositories behind interfaces (`RoomRepos
 - Host leaving transfers host role to first remaining player.
 - Empty rooms are deleted.
 
+## Reconnect and duplicate prevention
+- `POST /api/rooms/:roomCode/join` now restores an existing valid session for that room rather than creating duplicate player rows.
+- WebSocket broadcasts are room-scoped so room snapshots are never leaked across rooms.
+
 ## Run
 ```bash
 npm run lobby:dev

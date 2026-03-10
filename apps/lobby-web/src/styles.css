@@ -1,6 +1,89 @@
-body { font-family: Arial, sans-serif; background: #f5f7fb; margin: 0; }
-.container { max-width: 700px; margin: 2rem auto; background: white; padding: 1.2rem; border-radius: 10px; }
-.card { border: 1px solid #ddd; padding: 0.75rem; margin: 0.5rem 0; list-style: none; }
-input, button { padding: 0.5rem; margin-right: 0.5rem; }
-.error { color: #9f1d1d; background: #fee; padding: 0.5rem; margin: 0.5rem 0; }
-.loading { color: #555; }
+body {
+  font-family: Arial, sans-serif;
+  background: #f5f7fb;
+  margin: 0;
+}
+
+.container {
+  max-width: 700px;
+  margin: 2rem auto;
+  background: white;
+  padding: 1.2rem;
+  border-radius: 10px;
+}
+
+.card {
+  border: 1px solid #ddd;
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+  list-style: none;
+}
+
+input,
+button {
+  padding: 0.5rem;
+  margin-right: 0.5rem;
+}
+
+.error {
+  color: #9f1d1d;
+  background: #fee;
+  padding: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.loading {
+  color: #555;
+}
+
+.game-shell {
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  overflow: hidden;
+}
+
+#game {
+  width: 100%;
+  height: 100%;
+}
+
+#console {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 360px;
+  transform: translateY(-100%);
+  transition: transform 0.2s ease-out;
+  background: rgba(30, 30, 30, 0.95);
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  color: #e0e0e0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+}
+
+#console.open {
+  transform: translateY(0);
+}
+
+#console-content {
+  flex: 1;
+  padding: 12px;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+
+#console-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-top: 1px solid #444;
+  background: rgba(20, 20, 20, 0.9);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}

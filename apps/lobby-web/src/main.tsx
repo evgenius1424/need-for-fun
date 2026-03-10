@@ -1,17 +1,11 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
-import { LobbyPage } from './pages/LobbyPage';
-import { RoomPage } from './pages/RoomPage';
+import { RouterProvider } from '@tanstack/react-router';
+import { router } from './router';
 import './styles.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<LobbyPage />} />
-        <Route path="/room/:roomCode" element={<RoomPage />} />
-      </Routes>
-    </BrowserRouter>
+    <RouterProvider router={router} />
   </React.StrictMode>,
 );
