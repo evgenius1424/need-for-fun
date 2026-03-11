@@ -15,7 +15,15 @@
     "build": "npm run wasm:build && npm run web:build && npm run server:build",
     "preview": "(npm run web:preview & npm run server:preview & wait)",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "lobby:server:dev": "npm --prefix apps/lobby-server run dev",
+    "lobby:web:dev": "npm --prefix apps/lobby-web run dev",
+    "lobby:dev": "(npm run lobby:server:dev & npm run lobby:web:dev & wait)",
+    "lobby:test": "npm --prefix apps/lobby-server run test && npm --prefix apps/lobby-web run test",
+    "lobby:web:build": "npm --prefix apps/lobby-web run build",
+    "lobby:server:start": "npm --prefix apps/lobby-server run start",
+    "lobby:single:dev": "npm run lobby:dev",
+    "lobby:single:start": "npm run lobby:web:build && npm --prefix apps/lobby-server run start"
   },
   "repository": {
     "type": "git",

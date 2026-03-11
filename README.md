@@ -108,3 +108,24 @@ The server reads console input from stdin. Use:
 - Rooms are public and passwordless.
 - No persistence: process restart resets all rooms.
 - Metrics are tracked in memory (`rooms_created_total`, `rooms_closed_total`, `players_joined_total`, `players_left_total`, plus current counters via manager state).
+
+## Lobby prototype (TypeScript)
+
+A new prototype lobby stack lives in:
+- `apps/lobby-server` (Express REST + SSE API)
+- `apps/lobby-web` (React SPA)
+- `packages/shared` (validation schemas and shared types)
+
+See `apps/lobby-server/README.md` for security architecture, trust boundaries, and migration path to Postgres/Redis.
+
+### Why room code and player session are separate
+Room code is public and shareable for navigation (`/room/:roomCode`), while player identity is private and authenticated through a signed session token in an HttpOnly cookie. This prevents using room URL alone to impersonate room members, and works cleanly with same-origin cookie auth + SSE reconnect.
+
+### Prototype-only UI choices
+- simple static styling
+- minimal component visuals
+- no animation/branding polish
+
+
+### Single app note
+The lobby prototype is deployable as one app: backend serves API + SSE and also serves the built SPA assets from the same origin.
